@@ -28,7 +28,9 @@ defmodule HomeElixir.MixProject do
   defp deps do
     [
       {:mint_web_socket, "~> 1.0"},
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:plug, "~> 1.18"},
+      {:plug_cowboy, "~> 2.7"}
     ]
   end
 end

@@ -7,8 +7,9 @@ defmodule HomeElixir.Application do
     children =
       [
         {Registry, keys: :unique, name: HomeElixir.NodeLookup},
-        {HomeElixir.Registry, []}
-      ] ++ ha_client_child()
+        {HomeElixir.Registry, []},
+        {HomeElixir.FlowStore, []}
+      ] ++ ha_client_child() ++ web_child()
 
     opts = [strategy: :one_for_one, name: HomeElixir.Supervisor]
     Supervisor.start_link(children, opts)
@@ -25,6 +26,21 @@ defmodule HomeElixir.Application do
       [
         {HomeElixir.HA.Client,
          [name: HomeElixir.HA.client_name(), url: url, token: token]}
+      ]
+    else
+      []
+    end
+  end
+
+  # Serves the flow manager at `PORT` (or the `:home_elixir, :web_port` config).
+  defp web_child do
+    if Application.get_env(:home_elixir, :start_web, true) do
+      port =
+        System.get_env("PORT") ||
+          to_string(Application.get_env(:home_elixir, :web_port, 4000))
+
+      [
+        Plug.Cowboy.child_spec(scheme: :http, plug: HomeElixir.Web, port: String.to_integer(port))
       ]
     else
       []
