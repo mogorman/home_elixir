@@ -1,20 +1,20 @@
 defmodule HomeElixir.Web do
   @moduledoc """
   Web UI + JSON API for managing flows: a list page, an inline-highlighted
-  editor for flow files, an IEx-style dev shell over the live VM, and a
-  live-updating log page.
+  editor for flow files, and a live-updating log page.
+
+  The dev shell is the real IEx, launched from a terminal with `iex -S mix`
+  (starts the app, then drops into IEx connected to the running node).
 
   Routes:
     GET  /                        flow list (load/unload/edit)
     GET  /edit                    editor for a new flow
     GET  /edit/:name              editor preloaded with flows/:name.ex
-    GET  /shell                   IEx-style dev shell
     GET  /logs                    live log view
     GET  /api/flows               list flows (JSON)
     GET  /api/logs?since=N        log lines newer than N (JSON)
     POST /api/flows/:name/load | unload
     POST /api/flows/save | check
-    POST /api/shell/eval | reset
   """
 
   @behaviour Plug
@@ -39,9 +39,6 @@ defmodule HomeElixir.Web do
   def call(%{method: "GET", request_path: "/edit/" <> name} = conn, _opts),
     do: html(conn, editor_page(name, read_flow(name)))
 
-  def call(%{method: "GET", request_path: "/shell"} = conn, _opts),
-    do: html(conn, shell_page())
-
   def call(%{method: "GET", request_path: "/logs"} = conn, _opts),
     do: html(conn, logs_page())
 
@@ -63,12 +60,6 @@ defmodule HomeElixir.Web do
 
       ["", "api", "flows", "check"] ->
         check_endpoint(conn)
-
-      ["", "api", "shell", "eval"] ->
-        text(conn, 200, HomeElixir.Shell.eval(body(conn)))
-
-      ["", "api", "shell", "reset"] ->
-        text(conn, 200, HomeElixir.Shell.reset())
 
       _ ->
         not_found(conn)
@@ -180,7 +171,9 @@ defmodule HomeElixir.Web do
   defp html(conn, body), do: conn |> put_resp_content_type("text/html") |> send_resp(200, body)
   defp json(conn, data), do: conn |> put_resp_content_type("application/json") |> send_resp(200, Jason.encode!(data))
   defp text(conn, status, data), do: conn |> put_resp_content_type("text/plain") |> send_resp(status, data)
-  defp not_found(conn), do: json(conn, %{error: "not found"}) |> put_status(404)
+  defp not_found(conn) do
+    conn |> put_resp_content_type("application/json") |> send_resp(404, Jason.encode!(%{error: "not found"}))
+  end
 
   defp reply(conn, :ok), do: json(conn, %{ok: true})
   defp reply(conn, {:error, reason}), do: conn |> put_status(400) |> json(%{error: reason})
@@ -192,7 +185,7 @@ defmodule HomeElixir.Web do
     """
     #{base_html("Flows")}
       <table id="flows"></table>
-      <p><a href="/edit">New flow</a> &nbsp;·&nbsp; <a href="/shell">Dev shell</a> &nbsp;·&nbsp; <a href="/logs">Logs</a></p>
+      <p><a href="/edit">New flow</a> &nbsp;·&nbsp; <a href="/logs">Logs</a> &nbsp;·&nbsp; <code>iex -S mix</code> for the IEx dev shell</p>
       <script>
         async function refresh() {
           const flows = await (await fetch("/api/flows")).json();
@@ -275,36 +268,6 @@ defmodule HomeElixir.Web do
         }
         document.getElementById("save").onclick = doSave;
         document.getElementById("check").onclick = doCheck;
-      </script>
-    """
-  end
-
-  defp shell_page do
-    """
-    #{base_html("Dev shell", dark: true)}
-      <div id="out"></div>
-      <div class="prompt"><span id="prompt">iex&gt; </span><input id="in" autocomplete="off" autofocus></div>
-      <script>
-        const out = document.getElementById("out");
-        const inp = document.getElementById("in");
-        const prompt = document.getElementById("prompt");
-        let cont = false;
-        function add(t) { out.textContent += t + "\\n"; out.scrollTop = out.scrollHeight; }
-        function setPrompt() { prompt.textContent = cont ? "iex&gt; ...> " : "iex&gt; "; }
-        async function reset() {
-          cont = false; setPrompt();
-          add(await (await fetch("/api/shell/reset")).text());
-        }
-        async function send() {
-          const line = inp.value; inp.value = "";
-          if (!line) return;
-          add(prompt.textContent + line);
-          const resp = await (await fetch("/api/shell/eval", { method: "POST", body: line })).text();
-          if (resp === "[continue]") { cont = true; setPrompt(); }
-          else { cont = false; setPrompt(); add(resp); }
-        }
-        inp.addEventListener("keydown", e => { if (e.key === "Enter") send(); });
-        reset();
       </script>
     """
   end

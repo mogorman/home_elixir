@@ -9,7 +9,6 @@ defmodule HomeElixir.Application do
         {Registry, keys: :unique, name: HomeElixir.NodeLookup},
         {HomeElixir.Registry, []},
         {HomeElixir.FlowStore, []},
-        {HomeElixir.Shell, []},
         {HomeElixir.Log, []}
       ] ++ ha_client_child() ++ web_child()
 
