@@ -275,6 +275,7 @@ defmodule HomeElixir.Web do
     """
     #{base_html("Edit flow")}
       <p><span id="hint"></span>
+         <label>Name <input id="name" spellcheck="false"></label>
          <button id="check">Check</button>
          <button id="save">Save</button>
          <span id="status"></span></p>
@@ -291,19 +292,49 @@ defmodule HomeElixir.Web do
         const pre = document.querySelector(".cm pre");
         const hint = document.getElementById("hint");
         const status = document.getElementById("status");
+        const nameInput = document.getElementById("name");
         editor.value = FLOW;
         function snake(n) {
           return n.replace(/([a-z0-9])([A-Z])/g, "$1_$2")
                   .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2").toLowerCase();
         }
+        function moduleSegment(name) {
+          const seg = name.replace(/[^A-Za-z0-9]+/g, "_").split("_").filter(Boolean)
+            .map((s) => s[0].toUpperCase() + s.slice(1).toLowerCase()).join("");
+          return seg || "MyFlow";
+        }
+        function currentModule() {
+          const m = editor.value.match(/defmodule\\s+([A-Za-z0-9_.]+)/);
+          return m ? m[1] : null;
+        }
+        function setCurrentModule(mod) {
+          const m = editor.value.match(/defmodule\\s+[A-Za-z0-9_.]+/);
+          if (!m) return;
+          editor.value = editor.value.slice(0, m.index) + "defmodule " + mod +
+                         editor.value.slice(m.index + m[0].length);
+        }
         function render() {
-          hl.textContent = editor.value;
-          hljs.highlightElement(hl);
+          let html;
+          try {
+            html = hljs.highlight(editor.value, { language: "elixir" }).value;
+          } catch (e) {
+            html = editor.value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+          }
+          hl.innerHTML = html;
           pre.scrollTop = editor.scrollTop;
           pre.scrollLeft = editor.scrollLeft;
-          const m = editor.value.match(/defmodule\\s+([A-Za-z0-9_.]+)/);
-          hint.textContent = m ? ("saves as " + snake(m[1].split(".").pop()) + ".ex") : "add a defmodule to save";
+          const mod = currentModule();
+          hint.textContent = mod ? ("saves as " + snake(mod.split(".").pop()) + ".ex")
+                                 : "add a defmodule to save";
+          if (mod && document.activeElement !== nameInput) {
+            const n = snake(mod.split(".").pop());
+            if (nameInput.value !== n) nameInput.value = n;
+          }
         }
+        nameInput.addEventListener("input", () => {
+          setCurrentModule("HomeElixir.Flows." + moduleSegment(nameInput.value));
+          render();
+        });
         editor.addEventListener("input", render);
         editor.addEventListener("scroll", () => {
           pre.scrollTop = editor.scrollTop;
@@ -404,6 +435,8 @@ defmodule HomeElixir.Web do
         .loaded { color: #0a7a2f; font-weight: bold; }
         .off { color: #888; }
         button { cursor: pointer; }
+        #name { width: 11rem; font: 13px ui-monospace, monospace; padding: .15rem .35rem;
+                border: 1px solid #ccc; margin-left: 1rem; }
         .cm { position: relative; border: 1px solid #ccc; height: 42vh;
               min-height: 280px; background: #f6f8fa; }
         .cm pre, .cm textarea { margin: 0; padding: 12px; position: absolute; inset: 0;
