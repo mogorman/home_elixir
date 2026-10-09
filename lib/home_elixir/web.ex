@@ -200,13 +200,17 @@ defmodule HomeElixir.Web do
       <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
       <style>
         html, body { margin: 0; height: 100%; background: #1e1e1e; }
-        #terminal { width: 100%; height: 100%; padding: 4px 8px; }
+        #topbar { height: 36px; line-height: 36px; padding: 0 12px; background: #2d2d2d;
+                  color: #ddd; font-family: ui-monospace, monospace; font-size: 13px; }
+        #topbar a { color: #7cb; text-decoration: none; }
+        #terminal { width: 100%; height: calc(100% - 36px); padding: 4px 8px; box-sizing: border-box; }
       </style>
     </head>
     <body>
+      <div id="topbar"><a href="/" class="back">&larr; Flows</a></div>
       <div id="terminal"></div>
       <script>
-        const term = new Terminal({ cursorBlink: true, fontFamily: "monospace", fontSize: 13 });
+        const term = new Terminal({ cursorBlink: true, fontFamily: "monospace", fontSize: 13, convertEol: true });
         const fit = new FitAddon.FitAddon();
         term.loadAddon(fit);
         term.open(document.getElementById("terminal"));
@@ -217,6 +221,7 @@ defmodule HomeElixir.Web do
         ws.onmessage = (e) => term.write(e.data instanceof ArrayBuffer ? new Uint8Array(e.data) : e.data);
         ws.onclose = () => term.write("\\r\\n\\x1b[90m[connection closed]\\x1b[0m\\r\\n");
         term.onData((d) => { if (ws.readyState === WebSocket.OPEN) ws.send(d); });
+        document.querySelector("a.back").addEventListener("click", () => { try { ws.close(); } catch (_) {} });
         window.addEventListener("resize", () => fit.fit());
         term.focus();
       </script>

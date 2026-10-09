@@ -22,3 +22,12 @@ config :home_elixir, start_web: config_env() != :test
 # Restore the loaded/unloaded flow state on restart (persisted in flows/.loaded);
 # the first run loads every flow. Off in tests.
 config :home_elixir, restore_flows: config_env() != :test
+
+# Local HA credentials. config/secret.exs is gitignored; create it to enable HA
+# without exporting env vars. HA_URL/HA_TOKEN env vars take precedence (see
+# Application.ha_client_child/0). Skipped when the file is absent.
+secret = Path.join(__DIR__, "secret.exs")
+
+if File.exists?(secret) do
+  import_config secret
+end

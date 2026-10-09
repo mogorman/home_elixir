@@ -7,8 +7,8 @@ defmodule HomeElixir.Terminal do
   home_elixir`, see README) the shell is `iex --remsh home_elixir` — a genuine
   remote connection into this app's VM, with its code path, so `Node.list()`,
   `HomeElixir.FlowStore.list()`, the HA client, etc. all see the live instance
-  rather than a second app. `stdbuf` forces line-buffered output so IEx streams
-  over the port.
+   rather than a second app. `script` runs IEx in a pseudo-terminal so keystrokes
+   echo and line editing work over the port.
 
   If the app is NOT a named node, it falls back to a self-contained
   `iex -S mix` (its own app instance) with `HOME_ELIXIR_NO_WEB=1` so it stays
@@ -23,7 +23,15 @@ defmodule HomeElixir.Terminal do
 
   def websocket_init(state) do
     {cmd, env} = spawn_spec()
-    port = Port.open({:spawn, "stdbuf -oL -eL " <> cmd}, [:stream, :binary, :exit_status, {:env, env}])
+
+    # `script` runs the shell in a pseudo-terminal so keystrokes echo and line
+    # editing work; its own stdio is a pipe this port reads/writes.
+    port =
+      Port.open(
+        {:spawn, "script -qec \"#{cmd}\" /dev/null"},
+        [:stream, :binary, :exit_status, {:env, env}]
+      )
+
     {:ok, Map.put(state, :port, port)}
   end
 
