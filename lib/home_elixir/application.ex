@@ -9,11 +9,16 @@ defmodule HomeElixir.Application do
         {Registry, keys: :unique, name: HomeElixir.NodeLookup},
         {HomeElixir.Registry, []},
         {HomeElixir.FlowStore, []},
-        {HomeElixir.Shell, []}
+        {HomeElixir.Shell, []},
+        {HomeElixir.Log, []}
       ] ++ ha_client_child() ++ web_child()
 
     opts = [strategy: :one_for_one, name: HomeElixir.Supervisor]
-    Supervisor.start_link(children, opts)
+    {:ok, pid} = Supervisor.start_link(children, opts)
+
+    :logger.add_handler(:home_elixir_log, HomeElixir.LogHandler, %{})
+
+    {:ok, pid}
   end
 
   # Starts the shared, named HA client when HA is configured (and auto-start is

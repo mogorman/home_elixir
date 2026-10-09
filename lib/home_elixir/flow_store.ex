@@ -13,6 +13,8 @@ defmodule HomeElixir.FlowStore do
 
   use GenServer
 
+  require Logger
+
   alias HomeElixir.Registry
 
   def start_link(_opts \\ []) do
@@ -98,9 +100,15 @@ defmodule HomeElixir.FlowStore do
 
         reply =
           case Registry.load(mod) do
-            {:ok, _pid} -> :ok
-            {:error, :already_loaded} -> :ok
-            {:error, reason} -> {:error, reason}
+            {:ok, _pid} ->
+              Logger.info("loaded flow #{name} (#{inspect(mod)})")
+              :ok
+
+            {:error, :already_loaded} ->
+              :ok
+
+            {:error, reason} ->
+              {:error, reason}
           end
 
         {:reply, reply, cache}
@@ -114,7 +122,9 @@ defmodule HomeElixir.FlowStore do
     case resolve(name) do
       {:ok, path} ->
         {mod, cache} = atom_for(path, cache)
-        {:reply, Registry.unload(mod), cache}
+        result = Registry.unload(mod)
+        Logger.info("unloaded flow #{name} (#{inspect(result)})")
+        {:reply, result, cache}
 
       error ->
         {:reply, error, cache}

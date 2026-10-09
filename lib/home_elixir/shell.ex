@@ -1,66 +1,93 @@
 defmodule HomeElixir.Shell do
   @moduledoc """
-  A line-based Elixir eval shell over the live VM, for debugging.
+  A live IEx-style evaluator attached to the running application.
 
-  Each `eval/1` runs the line with `Code.eval_string/2`, captures any IO it
-  produces, persists variable bindings across lines, and returns the combined
-  terminal text. Because it runs in the running app's VM, it can reach the
-  flows, the `Registry`, and the HA client.
+  Runs real Elixir against the app's VM (all modules, flows, and the HA client
+  are reachable). Supports multi-line input, the helper functions in
+  `HomeElixir.ShellHelpers` (`h/1`, `ls/0`, `pwd/0`, `whereis/1`),
+  and persists variable bindings between lines. Results are shown as values
+  (`=> ...`); logged output goes to the log page.
   """
-
   use GenServer
 
-  def start_link(_opts \\ []) do
-    GenServer.start_link(__MODULE__, [], name: __MODULE__)
-  end
+  @continue "[continue]"
 
-  def eval(input) when is_binary(input), do: GenServer.call(__MODULE__, {:eval, input})
-  def reset, do: GenServer.call(__MODULE__, :reset)
+  def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
-  @impl true
-  def init(_), do: {:ok, []}
+  @spec eval(String.t()) :: String.t()
+  def eval(line), do: GenServer.call(__MODULE__, {:eval, line})
 
-  @impl true
-  def handle_call({:eval, input}, _from, binding) do
-    {text, new_binding} = do_eval(input, binding)
-    {:reply, text, new_binding}
-  end
+  @spec reset() :: String.t()
+  def reset(), do: GenServer.call(__MODULE__, :reset)
 
-  def handle_call(:reset, _from, _binding) do
-    {:reply, welcome(), []}
-  end
+  def init(_), do: {:ok, %{bindings: [], counter: 1, pending: "", banner: banner()}}
 
-  # ---- internals ----
+  def handle_call({:eval, line}, _from, state) do
+    source = state.pending <> line
 
-  # Value-only by design: capturing IO with ExUnit.CaptureIO corrupts the VM's
-  # compiler state after a compile error, poisoning later evals. Returning the
-  # last expression's value (use `inspect/1` to view anything) avoids that.
-  defp do_eval(input, binding) do
-    input = String.trim(input)
+    case complete?(source) do
+      :incomplete ->
+        {:reply, @continue, %{state | pending: source <> "\n"}}
 
-    if input == "" do
-      {"", binding}
-    else
-      try do
-        {value, new_binding} = Code.eval_string(input, binding)
-        {value_str(value), new_binding}
-      rescue
-        e -> {Exception.format(:error, e, __STACKTRACE__), binding}
-      end
+      :complete ->
+        do_eval(source, %{state | pending: ""})
     end
   end
 
-  defp value_str(nil), do: ""
-  defp value_str(value), do: "= #{inspect(value)}\n"
+  def handle_call(:reset, _from, _),
+    do: {:reply, "shell reset.\n", %{bindings: [], counter: 1, pending: "", banner: banner()}}
 
-  defp welcome do
+  # ---- evaluation ----
+
+  defp do_eval(source, state) do
+    code = "require Logger\nimport HomeElixir.ShellHelpers\n" <> source
+    n = state.counter
+
+    try do
+      {value, bindings} = Code.eval_string(code, state.bindings)
+      {:reply, show_value(value), %{state | bindings: bindings, counter: n + 1}}
+    rescue
+      e -> {:reply, show_error(e), %{state | counter: n + 1}}
+    catch
+      kind, reason -> {:reply, "exception: #{kind} #{inspect(reason)}\n", %{state | counter: n + 1}}
+    end
+  end
+
+  # Multi-line: accumulate until the input parses as a complete expression.
+  defp complete?(source) do
+    case Code.string_to_quoted(source) do
+      {:ok, _} ->
+        :complete
+
+      {:error, {_meta, msg, _}} ->
+        cond do
+          String.starts_with?(msg, "missing terminator") -> :incomplete
+          String.ends_with?(msg, "syntax error before: ") -> :incomplete
+          true -> :complete
+        end
+
+      {:error, _} ->
+        :complete
+    end
+  end
+
+  defp show_value({:module, mod, _, _}), do: "=> #{inspect(mod)}\n"
+
+  defp show_value(value), do: "=> #{inspect(value, limit: 50)}\n"
+
+  defp show_error(e) do
+    "** (" <> error_class(e) <> ") " <> Exception.message(e) <> "\n"
+  end
+
+  defp error_class(e), do: e.__struct__ |> Module.split() |> List.last() |> to_string()
+
+  # ---- welcome ----
+
+  defp banner do
     """
-    home_elixir debug shell — connected to the live VM
-    try:
-      HomeElixir.FlowStore.list()
-      HomeElixir.Registry.loaded?(HomeElixir.Flows.WatchAll)
-      HomeElixir.HA.connected?()
-    variables persist across lines; type "reset" to clear
+    Welcome to the home_elixir dev shell (IEx-style).
+    Helpers: h(Name), ls(), pwd(), whereis(name).
+    Variable bindings persist between lines. `reset()` clears them.
     """
   end
 end

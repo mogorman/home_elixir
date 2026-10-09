@@ -33,4 +33,16 @@ defmodule HomeElixir.ShellTest do
     Shell.reset()
     assert Shell.eval("y") =~ ~r/UndefinedFunction|error|match/i
   end
+
+  test "accumulates multi-line input until it parses" do
+    assert Shell.eval("defmodule ShellMulti do") == "[continue]"
+    assert Shell.eval("def f, do: 1") == "[continue]"
+    assert Shell.eval("end") =~ "ShellMulti"
+  end
+
+  test "exposes IEx-style helper functions" do
+    assert Shell.eval("pwd()") =~ "=>"
+    assert Shell.eval("h(HomeElixir.ShellHelpers)") =~ "=>"
+    assert Shell.eval("whereis(:no_such_process)") == "=> nil\n"
+  end
 end

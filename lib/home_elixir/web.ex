@@ -1,16 +1,19 @@
 defmodule HomeElixir.Web do
   @moduledoc """
-  Web UI + JSON API for managing flows: a list page, a CodeMirror-free
-  highlight.js editor for creating/editing flow files, and a line-based dev
-  shell over the live VM.
+  Web UI + JSON API for managing flows: a list page, an inline-highlighted
+  editor for flow files, an IEx-style dev shell over the live VM, and a
+  live-updating log page.
 
   Routes:
     GET  /                        flow list (load/unload/edit)
     GET  /edit                    editor for a new flow
     GET  /edit/:name              editor preloaded with flows/:name.ex
-    GET  /shell                   dev shell
+    GET  /shell                   IEx-style dev shell
+    GET  /logs                    live log view
     GET  /api/flows               list flows (JSON)
-    POST /api/flows/:name/load | unload | save | check
+    GET  /api/logs?since=N        log lines newer than N (JSON)
+    POST /api/flows/:name/load | unload
+    POST /api/flows/save | check
     POST /api/shell/eval | reset
   """
 
@@ -39,6 +42,12 @@ defmodule HomeElixir.Web do
   def call(%{method: "GET", request_path: "/shell"} = conn, _opts),
     do: html(conn, shell_page())
 
+  def call(%{method: "GET", request_path: "/logs"} = conn, _opts),
+    do: html(conn, logs_page())
+
+  def call(%{method: "GET", request_path: "/api/logs"} = conn, _opts),
+    do: logs_endpoint(conn)
+
   # ---- POST ----
 
   def call(%{method: "POST"} = conn, _opts) do
@@ -49,10 +58,10 @@ defmodule HomeElixir.Web do
       ["", "api", "flows", name, "unload"] ->
         reply(conn, HomeElixir.FlowStore.unload(name))
 
-      ["", "api", "flows", name, "save"] ->
-        save_endpoint(conn, name)
+      ["", "api", "flows", "save"] ->
+        save_endpoint(conn)
 
-      ["", "api", "flows", _, "check"] ->
+      ["", "api", "flows", "check"] ->
         check_endpoint(conn)
 
       ["", "api", "shell", "eval"] ->
@@ -70,15 +79,30 @@ defmodule HomeElixir.Web do
 
   # ---- handlers ----
 
-  defp save_endpoint(conn, name) do
+  defp save_endpoint(conn) do
     source = body(conn)
 
-    try do
-      save_flow(name, source)
-      reply(conn, :ok)
-    rescue
-      e ->
-        text(conn, 400, "saved, but reload failed:\n" <> Exception.message(e))
+    case name_from_source(source) do
+      nil ->
+        text(conn, 400, "could not find a `defmodule` in the source")
+
+      name ->
+        try do
+          save_flow(name, source)
+          text(conn, 200, "saved " <> name <> ".ex")
+        rescue
+          e ->
+            text(conn, 400, "saved " <> name <> ".ex, but reload failed:\n" <> Exception.message(e))
+        end
+    end
+  end
+
+  # Derive the flow file name from the module name in the source (single source
+  # of truth, so the name and module can't drift apart).
+  defp name_from_source(source) do
+    case Regex.run(~r/defmodule\s+([A-Za-z0-9_.]+)/, source) do
+      [_, mod] -> mod |> String.split(".") |> List.last() |> Macro.underscore()
+      _ -> nil
     end
   end
 
@@ -86,6 +110,22 @@ defmodule HomeElixir.Web do
     case HomeElixir.FlowStore.check(body(conn)) do
       {:ok, msg} -> text(conn, 200, msg)
       {:error, msg} -> text(conn, 400, msg)
+    end
+  end
+
+  defp logs_endpoint(conn) do
+    lines = HomeElixir.Log.lines(parse_since(conn.query_string))
+    json(conn, Enum.map(lines, fn {id, line} -> %{"id" => id, "line" => line} end))
+  end
+
+  defp parse_since(query) do
+    case URI.decode_query(query || "") |> Map.get("since") do
+      nil -> 0
+      s ->
+        case Integer.parse(s) do
+          {n, _} -> n
+          :error -> 0
+        end
     end
   end
 
@@ -152,7 +192,7 @@ defmodule HomeElixir.Web do
     """
     #{base_html("Flows")}
       <table id="flows"></table>
-      <p><a href="/edit">New flow</a> &nbsp;·&nbsp; <a href="/shell">Dev shell</a></p>
+      <p><a href="/edit">New flow</a> &nbsp;·&nbsp; <a href="/shell">Dev shell</a> &nbsp;·&nbsp; <a href="/logs">Logs</a></p>
       <script>
         async function refresh() {
           const flows = await (await fetch("/api/flows")).json();
@@ -182,42 +222,55 @@ defmodule HomeElixir.Web do
     """
   end
 
-  defp editor_page(name, source) do
-    name_json = Jason.encode!(name || "")
+  defp editor_page(_name, source) do
     source_json = Jason.encode!(source)
 
     """
     #{base_html("Edit flow")}
-      <p><label>Name <input id="name" value=#{name_json}></label>
+      <p><span id="hint"></span>
          <button id="check">Check</button>
          <button id="save">Save</button>
          <span id="status"></span></p>
-      <textarea id="editor" spellcheck="false"></textarea>
-      <pre class="preview"><code id="preview" class="language-elixir"></code></pre>
+      <div class="cm">
+        <pre class="cm-hl" aria-hidden="true"><code id="hl" class="hljs language-elixir"></code></pre>
+        <textarea id="editor" spellcheck="false" autocomplete="off"></textarea>
+      </div>
       <script src="#{@hljs}/highlight.min.js"></script>
       <script src="#{@hljs}/languages/elixir.min.js"></script>
       <script>
-        const FLOW = { name: #{name_json}, source: #{source_json} };
-        const nameEl = document.getElementById("name");
+        const FLOW = #{source_json};
         const editor = document.getElementById("editor");
-        const preview = document.getElementById("preview");
+        const hl = document.getElementById("hl");
+        const pre = document.querySelector(".cm pre");
+        const hint = document.getElementById("hint");
         const status = document.getElementById("status");
-        nameEl.value = FLOW.name;
-        editor.value = FLOW.source;
+        editor.value = FLOW;
+        function snake(n) {
+          return n.replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+                  .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2").toLowerCase();
+        }
         function render() {
-          preview.textContent = editor.value;
-          hljs.highlightElement(preview);
+          hl.textContent = editor.value;
+          hljs.highlightElement(hl);
+          pre.scrollTop = editor.scrollTop;
+          pre.scrollLeft = editor.scrollLeft;
+          const m = editor.value.match(/defmodule\\s+([A-Za-z0-9_.]+)/);
+          hint.textContent = m ? ("saves as " + snake(m[1].split(".").pop()) + ".ex") : "add a defmodule to save";
         }
         editor.addEventListener("input", render);
+        editor.addEventListener("scroll", () => {
+          pre.scrollTop = editor.scrollTop;
+          pre.scrollLeft = editor.scrollLeft;
+        });
         render();
-        const name = () => nameEl.value.trim();
-        const src = () => editor.value;
         async function doSave() {
-          const r = await fetch(`/api/flows/${encodeURIComponent(name())}/save`, { method: "POST", body: src() });
-          status.textContent = (await r.text()) || "saved";
+          status.textContent = "saving…";
+          const r = await fetch("/api/flows/save", { method: "POST", body: editor.value });
+          status.textContent = await r.text();
         }
         async function doCheck() {
-          const r = await fetch(`/api/flows/${encodeURIComponent(name())}/check`, { method: "POST", body: src() });
+          status.textContent = "checking…";
+          const r = await fetch("/api/flows/check", { method: "POST", body: editor.value });
           status.textContent = await r.text();
         }
         document.getElementById("save").onclick = doSave;
@@ -230,20 +283,57 @@ defmodule HomeElixir.Web do
     """
     #{base_html("Dev shell", dark: true)}
       <div id="out"></div>
-      <div class="prompt">iex&gt; <input id="in" autocomplete="off" autofocus></div>
+      <div class="prompt"><span id="prompt">iex&gt; </span><input id="in" autocomplete="off" autofocus></div>
       <script>
         const out = document.getElementById("out");
         const inp = document.getElementById("in");
+        const prompt = document.getElementById("prompt");
+        let cont = false;
         function add(t) { out.textContent += t + "\\n"; out.scrollTop = out.scrollHeight; }
-        async function reset() { add(await (await fetch("/api/shell/reset")).text()); }
+        function setPrompt() { prompt.textContent = cont ? "iex&gt; ...> " : "iex&gt; "; }
+        async function reset() {
+          cont = false; setPrompt();
+          add(await (await fetch("/api/shell/reset")).text());
+        }
         async function send() {
           const line = inp.value; inp.value = "";
           if (!line) return;
-          add("> " + line);
-          add(await (await fetch("/api/shell/eval", { method: "POST", body: line })).text());
+          add(prompt.textContent + line);
+          const resp = await (await fetch("/api/shell/eval", { method: "POST", body: line })).text();
+          if (resp === "[continue]") { cont = true; setPrompt(); }
+          else { cont = false; setPrompt(); add(resp); }
         }
         inp.addEventListener("keydown", e => { if (e.key === "Enter") send(); });
         reset();
+      </script>
+    """
+  end
+
+  defp logs_page do
+    """
+    #{base_html("Logs", dark: true)}
+      <p><a href="/">&larr; Flows</a></p>
+      <div id="logs"></div>
+      <script>
+        const box = document.getElementById("logs");
+        let since = 0;
+        async function poll() {
+          try {
+            const items = await (await fetch("/api/logs?since=" + since)).json();
+            for (const it of items) {
+              const div = document.createElement("div");
+              div.textContent = it.line;
+              if (it.line.startsWith("error")) div.className = "err";
+              else if (it.line.startsWith("warning")) div.className = "warn";
+              box.appendChild(div);
+              since = it.id;
+            }
+            while (box.children.length > 800) box.removeChild(box.firstChild);
+            box.scrollTop = box.scrollHeight;
+          } catch (e) {}
+        }
+        poll();
+        setInterval(poll, 1500);
       </script>
     """
   end
@@ -270,6 +360,11 @@ defmodule HomeElixir.Web do
         .prompt { margin-top: .5rem; }
         .prompt input { width: 80%; background: #0b0b0b; color: #ddd;
                         border: 1px solid #333; padding: .3rem; }
+        #logs { font: 13px/1.5 ui-monospace, monospace; white-space: pre-wrap;
+                height: 75vh; overflow: auto; background: #0b0b0b;
+                border: 1px solid #333; padding: .6rem; }
+        #logs .err { color: #f66; }
+        #logs .warn { color: #fc6; }
       </style>
     </head>
     <body>
@@ -292,13 +387,17 @@ defmodule HomeElixir.Web do
         .loaded { color: #0a7a2f; font-weight: bold; }
         .off { color: #888; }
         button { cursor: pointer; }
-        #editor { width: 100%; box-sizing: border-box; height: 40vh; min-height: 220px;
-                  font: 13px/1.5 ui-monospace, monospace; padding: .6rem;
-                  border: 1px solid #ccc; white-space: pre; overflow: auto;
-                  tab-size: 2; }
-        .preview { margin: 0; padding: .6rem; background: #f6f8fa; border: 1px solid #ccc;
-                   border-top: none; max-height: 40vh; overflow: auto; }
-        .preview code { font: 13px/1.5 ui-monospace, monospace; white-space: pre; }
+        .cm { position: relative; border: 1px solid #ccc; height: 42vh;
+              min-height: 280px; background: #f6f8fa; }
+        .cm pre, .cm textarea { margin: 0; padding: 12px; position: absolute; inset: 0;
+              width: 100%; height: 100%; box-sizing: border-box;
+              font: 13px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+              white-space: pre; overflow: auto; tab-size: 2; letter-spacing: 0; }
+        .cm pre { pointer-events: none; z-index: 1; }
+        .cm pre .hljs { display: block; padding: 0; margin: 0; background: transparent;
+              overflow: visible; font: inherit; }
+        .cm textarea { z-index: 2; background: transparent; color: transparent;
+              caret-color: #222; border: 0; resize: none; outline: none; }
         #status { margin-left: .8rem; color: #0a7a2f; }
       </style>
     </head>
