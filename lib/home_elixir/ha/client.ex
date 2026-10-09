@@ -25,7 +25,13 @@ defmodule HomeElixir.HA.Client do
   # ---- Public API ----
 
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts)
+    {name, opts} = Keyword.pop(opts, :name)
+
+    if name do
+      GenServer.start_link(__MODULE__, opts, name: name)
+    else
+      GenServer.start_link(__MODULE__, opts)
+    end
   end
 
   @doc """
@@ -40,8 +46,22 @@ defmodule HomeElixir.HA.Client do
   end
 
   @doc """
+  Send a request and ignore its response (fire-and-forget).
+
+  Use for `call_service` and similar, where the caller does not need HA's ack.
+  Returns `:ok` (the request is dropped if not connected).
+  """
+  def fire(client, type, payload \\ %{}) do
+    GenServer.cast(client, {:fire, type, Map.new(payload || %{})})
+    :ok
+  end
+
+  @doc """
   Subscribe to Home Assistant events. Matching events are sent to `to` as
   `{:ha_event, ref, event}`. Returns the subscription `ref`.
+
+  The subscription is registered immediately; if not yet connected it is sent
+  automatically on (re)connect, so callers need not wait for a connection.
   """
   def subscribe_events(client, event_type, to, timeout \\ 5_000) do
     GenServer.call(client, {:subscribe_events, event_type, to}, timeout)
@@ -95,19 +115,31 @@ defmodule HomeElixir.HA.Client do
   end
 
   def handle_call({:subscribe_events, event_type, to}, _from, state) do
+    id = state.next_id
+    state = %{state | next_id: id + 1, subs: Map.put(state.subs, id, {event_type, to})}
+
     if state.status == :connected do
-      id = state.next_id
-      state = %{state | next_id: id + 1, subs: Map.put(state.subs, id, {event_type, to})}
       send_transport(state, %{id: id, type: "subscribe_events", event_type: event_type})
-      {:reply, id, state}
-    else
-      {:reply, {:error, {:not_connected, state.status}}, state}
     end
+
+    # Otherwise it is sent by resubscribe/1 on the next auth_ok.
+    {:reply, id, state}
   end
 
   def handle_call({:unsubscribe, ref}, _from, state) do
     send_transport(state, %{id: ref, type: "unsubscribe_events"})
     {:reply, :ok, %{state | subs: Map.delete(state.subs, ref)}}
+  end
+
+  @impl true
+  def handle_cast({:fire, type, payload}, state) do
+    if state.status == :connected do
+      id = state.next_id
+      state = %{state | next_id: id + 1}
+      send_transport(state, Map.put(payload, "id", id) |> Map.put("type", type))
+    end
+
+    {:noreply, state}
   end
 
   @impl true

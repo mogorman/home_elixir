@@ -48,29 +48,38 @@ defmodule HomeElixir.Flow.Node do
     {:noreply, %{state | routing: routing, routed?: true}}
   end
 
+  # External events (e.g. HA state changes) drive source nodes via trigger/2.
+  def handle_info(event, %{routed?: true} = state) do
+    if function_exported?(state.handler, :trigger, 2) do
+      {outputs, node_state} = state.handler.trigger(event, state.node_state)
+      {:noreply, route_outputs(outputs, %{state | node_state: node_state})}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_info(_other, state), do: {:noreply, state}
 
   @impl true
-  def handle_cast({:msg, msg}, state) do
-    process_msg(msg, state)
+  def handle_cast({:msg, msg}, %{routed?: true} = state) do
+    {outputs, node_state} = state.handler.handle(msg, state.node_state)
+    {:noreply, route_outputs(outputs, %{state | node_state: node_state})}
+  end
+
+  def handle_cast({:msg, _msg}, state) do
+    Logger.debug("dropped message before routing: #{state.node_id}")
+    {:noreply, state}
   end
 
   @impl true
   def handle_call(:__state__, _from, state), do: {:reply, state.node_state, state}
 
-  defp process_msg(msg, %{routed?: true} = state) do
-    {outputs, node_state} = state.handler.handle(msg, state.node_state)
-
+  defp route_outputs(outputs, state) do
     case Enum.at(outputs, 0) do
-      nil -> :ok
-      out -> Enum.each(state.routing, fn pid -> GenServer.cast(pid, {:msg, out}) end)
+      nil -> state
+      out ->
+        Enum.each(state.routing, fn pid -> GenServer.cast(pid, {:msg, out}) end)
+        state
     end
-
-    {:noreply, %{state | node_state: node_state}}
-  end
-
-  defp process_msg(_msg, state) do
-    Logger.debug("dropped message before routing: #{state.node_id}")
-    {:noreply, state}
   end
 end
