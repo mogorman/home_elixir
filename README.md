@@ -15,24 +15,33 @@ HA_URL=wss://... HA_TOKEN=... mix run --no-halt
 
 `HA_URL`/`HA_TOKEN` are optional — without them, flows that don't need HA still run.
 
+Start it as a **named node** too, so a dev shell can attach to the running app
+(see Dev shell):
+
+```sh
+ERL_AFLAGS="-sname home_elixir -setcookie home_elixir" \
+  HA_URL=wss://... HA_TOKEN=... mix run --no-halt
+```
+
 ## Dev shell
 
-The dev shell is the **real IEx**, connected to the running app. Two ways:
+The dev shell is real IEx **attached to the running app** — a distributed
+connection into the app's VM, not a second app instance. This works when the
+server is started as the named node `:home_elixir` (command above).
+
+**In the browser** — open the **IEx** link in the web UI (or `/terminal`). It
+opens a genuine `iex --remsh home_elixir` over xterm.js/WebSocket, so
+`HomeElixir.FlowStore.list()`, the HA client, etc. all see the live instance.
 
 **In a terminal:**
 
 ```sh
-iex -S mix
+ERL_AFLAGS="-sname home_elixir_dev -setcookie home_elixir" iex --remsh home_elixir
 ```
 
-**In the browser** — open the **IEx** link in the web UI (or `/terminal`). It
-runs genuine IEx over xterm.js on a WebSocket. A fresh `iex -S mix` app instance
-is spawned per session (so it runs alongside the server that hosts the UI).
-
-Both boot the same supervision tree (flows, `HomeElixir.FlowStore`, the HA
-client) and drop into IEx, so you can inspect and drive everything —
-`HomeElixir.FlowStore.list()`, `HomeElixir.Registry`, the HA client, etc. All the
-usual IEx helpers (`h/1`, `c/1`, `r/1`, `whereis/1`, `ls/1`, ...) work.
+The usual IEx helpers work. `HomeElixir.FlowStore.*` calls are node-aware, so
+they reach the running app's server from the attached shell. If the server is
+not a named node, the browser tab falls back to a self-contained `iex -S mix`.
 
 ## Flows
 

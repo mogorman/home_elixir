@@ -3,8 +3,9 @@ defmodule HomeElixir.Web do
   Web UI + JSON API for managing flows: a list page, an inline-highlighted
   editor for flow files, and a live-updating log page.
 
-  The dev shell is the real IEx, launched from a terminal with `iex -S mix`
-  (starts the app, then drops into IEx connected to the running node).
+  The `/terminal` route gives the browser a real IEx attached to the running
+  app: when the app is a named node it opens `iex --remsh home_elixir` (a
+  distributed connection into this VM), otherwise it falls back to `iex -S mix`.
 
   Routes:
     GET  /                        flow list (load/unload/edit)
@@ -184,8 +185,7 @@ defmodule HomeElixir.Web do
   end
 
   defp upgrade_to_terminal(conn) do
-    cmd = conn.query_string |> URI.decode_query() |> Map.get("cmd", "iex -S mix")
-    Plug.Conn.upgrade_adapter(conn, :websocket, {HomeElixir.Terminal, %{cmd: cmd}, %{}})
+    Plug.Conn.upgrade_adapter(conn, :websocket, {HomeElixir.Terminal, %{}, %{}})
   end
 
   defp terminal_page do

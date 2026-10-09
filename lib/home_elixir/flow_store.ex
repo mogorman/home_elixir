@@ -21,21 +21,21 @@ defmodule HomeElixir.FlowStore do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
-  def list, do: GenServer.call(__MODULE__, :list)
-  def load(name), do: GenServer.call(__MODULE__, {:load, name})
-  def unload(name), do: GenServer.call(__MODULE__, {:unload, name})
+  def list, do: call(:list)
+  def load(name), do: call({:load, name})
+  def unload(name), do: call({:unload, name})
 
   @doc "Drop the cached module atom for a flow so the next load recompiles it."
-  def forget(name), do: GenServer.call(__MODULE__, {:forget, name})
+  def forget(name), do: call({:forget, name})
 
   @doc "Whether a flow is currently loaded (without compiling it)."
-  def loaded?(name), do: GenServer.call(__MODULE__, {:loaded?, name})
+  def loaded?(name), do: call({:loaded?, name})
 
   @doc """
   Compile a source string and report the result, without loading it into the
   flow set. Runs in this GenServer (a stable process), not the request process.
   """
-  def check(source), do: GenServer.call(__MODULE__, {:check, source})
+  def check(source), do: call({:check, source})
 
   @impl true
   def init(_), do: {:ok, %{}}
@@ -132,6 +132,31 @@ defmodule HomeElixir.FlowStore do
   end
 
   # ---- internals ----
+
+  # Route through a node-aware server reference so these calls work from both
+  # the app node (local pid) and a dev shell attached to it (remote {name,node}).
+  defp call(msg), do: GenServer.call(server(), msg)
+
+  defp server do
+    case GenServer.whereis(__MODULE__) do
+      pid when is_pid(pid) -> pid
+      _ -> {__MODULE__, app_node()}
+    end
+  end
+
+  defp app_node do
+    short = Application.get_env(:home_elixir, :node_name, "home_elixir")
+    String.to_atom("#{short}@" <> short_host())
+  end
+
+  defp short_host do
+    case :inet.gethostname() do
+      {:ok, cs} -> List.to_string(cs)
+      cs -> List.to_string(cs)
+    end
+    |> String.split(".")
+    |> hd()
+  end
 
   defp atom_for(path, cache) do
     key = Path.basename(path, ".ex")

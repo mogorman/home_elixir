@@ -1,9 +1,18 @@
 defmodule HomeElixir.Terminal do
   @moduledoc """
-  Cowboy WebSocket handler that spawns a real shell (default `iex -S mix`,
-  i.e. a full app instance + genuine IEx) and bridges it to the browser over
-  xterm.js. `stdbuf` forces line-buffered output so IEx streams over the port;
-  `HOME_ELIXIR_NO_WEB=1` keeps the spawned instance off the parent's web port.
+  Cowboy WebSocket handler that gives the browser a real IEx bridged over
+  xterm.js.
+
+  When the app itself is a named Erlang node (started with `--sname
+  home_elixir`, see README) the shell is `iex --remsh home_elixir` — a genuine
+  remote connection into this app's VM, with its code path, so `Node.list()`,
+  `HomeElixir.FlowStore.list()`, the HA client, etc. all see the live instance
+  rather than a second app. `stdbuf` forces line-buffered output so IEx streams
+  over the port.
+
+  If the app is NOT a named node, it falls back to a self-contained
+  `iex -S mix` (its own app instance) with `HOME_ELIXIR_NO_WEB=1` so it stays
+  off the parent's web port.
   """
 
   @behaviour :cowboy_websocket
@@ -13,15 +22,40 @@ defmodule HomeElixir.Terminal do
   def init(_req, state), do: {:ok, state}
 
   def websocket_init(state) do
-    cmd = Map.get(state, :cmd, "iex -S mix")
-    port = Port.open({:spawn, "stdbuf -oL -eL " <> cmd}, [:stream, :binary, :exit_status, {:env, env()}])
+    {cmd, env} = spawn_spec()
+    port = Port.open({:spawn, "stdbuf -oL -eL " <> cmd}, [:stream, :binary, :exit_status, {:env, env}])
     {:ok, Map.put(state, :port, port)}
   end
 
-  defp env do
-    System.get_env()
-    |> Map.put("HOME_ELIXIR_NO_WEB", "1")
-    |> Enum.map(fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)
+  # The app's own distributed node name, or nil when it is not a named node.
+  defp app_node do
+    case :erlang.node() do
+      :nonode@nohost -> nil
+      node -> node
+    end
+  end
+
+  defp spawn_spec do
+    base = System.get_env()
+
+    case app_node() do
+      nil ->
+        env = base |> Map.put("HOME_ELIXIR_NO_WEB", "1") |> to_env()
+        {"iex -S mix", env}
+
+      node ->
+        short = node |> Atom.to_string() |> String.split("@") |> hd()
+        cookie = Application.get_env(:home_elixir, :node_cookie, "home_elixir")
+        # `-pa` must be repeated per dir (a single colon-joined value is ignored).
+        pa = :code.get_path() |> Enum.map(&("-pa " <> List.to_string(&1))) |> Enum.join(" ")
+        aflags = "-sname #{short}_console -setcookie #{cookie} -remsh #{short} #{pa}"
+        env = base |> Map.put("ERL_AFLAGS", aflags) |> to_env()
+        {"iex", env}
+    end
+  end
+
+  defp to_env(map) do
+    map |> Enum.map(fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)
   end
 
   def websocket_handle({:text, input}, %{port: port} = state) do
