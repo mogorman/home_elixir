@@ -116,7 +116,14 @@ defmodule HomeElixir.NodesTest do
     sub = sent_until(t, &(&1 =~ "subscribe_events"))
     assert sub["event_type"] == "state_changed"
 
-    event = %{"entity_id" => "light.kitchen", "old_state" => "off", "new_state" => "on"}
+    event = %{
+      "event_type" => "state_changed",
+      "data" => %{
+        "entity_id" => "light.kitchen",
+        "old_state" => %{"state" => "off"},
+        "new_state" => %{"state" => "on"}
+      }
+    }
     msg = emit_until(t, sub["id"], event, Flows.StateChangedTest, "out")
 
     assert %Msg{payload: "on", topic: "light.kitchen"} = msg

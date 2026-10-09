@@ -31,17 +31,17 @@ defmodule HomeElixir.Nodes.StateChanged do
 
   @impl true
   def trigger({:ha_event, _ref, event}, state) do
-    entity_id = Map.get(event, "entity_id")
+    data = Map.get(event, "data") || %{}
+    entity_id = Map.get(data, "entity_id")
 
     if state.entity_id in [nil, entity_id] do
+      new_state = Map.get(Map.get(data, "new_state") || %{}, "state")
+      old_state = Map.get(Map.get(data, "old_state") || %{}, "state")
+
       msg = %Msg{
-        payload: Map.get(event, "new_state"),
+        payload: new_state,
         topic: entity_id,
-        data: %{
-          entity_id: entity_id,
-          old_state: Map.get(event, "old_state"),
-          new_state: Map.get(event, "new_state")
-        }
+        data: %{entity_id: entity_id, old_state: old_state, new_state: new_state}
       }
 
       {[msg], state}
