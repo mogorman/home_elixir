@@ -11,6 +11,7 @@ defmodule HomeElixir.Web do
     GET  /edit                    editor for a new flow
     GET  /edit/:name              editor preloaded with flows/:name.ex
     GET  /logs                    live log view
+    GET  /terminal                real IEx in the browser (xterm.js over WebSocket)
     GET  /api/flows               list flows (JSON)
     GET  /api/logs?since=N        log lines newer than N (JSON)
     POST /api/flows/:name/load | unload
@@ -44,6 +45,10 @@ defmodule HomeElixir.Web do
 
   def call(%{method: "GET", request_path: "/api/logs"} = conn, _opts),
     do: logs_endpoint(conn)
+
+  def call(%{method: "GET", request_path: "/terminal"} = conn, _opts) do
+    if websocket?(conn), do: upgrade_to_terminal(conn), else: html(conn, terminal_page())
+  end
 
   # ---- POST ----
 
@@ -171,6 +176,55 @@ defmodule HomeElixir.Web do
   defp html(conn, body), do: conn |> put_resp_content_type("text/html") |> send_resp(200, body)
   defp json(conn, data), do: conn |> put_resp_content_type("application/json") |> send_resp(200, Jason.encode!(data))
   defp text(conn, status, data), do: conn |> put_resp_content_type("text/plain") |> send_resp(status, data)
+  defp websocket?(conn) do
+    case :lists.keyfind("upgrade", 1, conn.req_headers) do
+      {"upgrade", value} -> String.downcase(value) == "websocket"
+      _ -> false
+    end
+  end
+
+  defp upgrade_to_terminal(conn) do
+    cmd = conn.query_string |> URI.decode_query() |> Map.get("cmd", "iex -S mix")
+    Plug.Conn.upgrade_adapter(conn, :websocket, {HomeElixir.Terminal, %{cmd: cmd}, %{}})
+  end
+
+  defp terminal_page do
+    """
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Home Elixir IEx</title>
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+      <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+      <style>
+        html, body { margin: 0; height: 100%; background: #1e1e1e; }
+        #terminal { width: 100%; height: 100%; padding: 4px 8px; }
+      </style>
+    </head>
+    <body>
+      <div id="terminal"></div>
+      <script>
+        const term = new Terminal({ cursorBlink: true, fontFamily: "monospace", fontSize: 13 });
+        const fit = new FitAddon.FitAddon();
+        term.loadAddon(fit);
+        term.open(document.getElementById("terminal"));
+        fit.fit();
+        const proto = location.protocol === "https:" ? "wss://" : "ws://";
+        const ws = new WebSocket(proto + location.host + "/terminal");
+        ws.binaryType = "arraybuffer";
+        ws.onmessage = (e) => term.write(e.data instanceof ArrayBuffer ? new Uint8Array(e.data) : e.data);
+        ws.onclose = () => term.write("\\r\\n\\x1b[90m[connection closed]\\x1b[0m\\r\\n");
+        term.onData((d) => { if (ws.readyState === WebSocket.OPEN) ws.send(d); });
+        window.addEventListener("resize", () => fit.fit());
+        term.focus();
+      </script>
+    </body>
+    </html>
+    """
+  end
+
   defp not_found(conn) do
     conn |> put_resp_content_type("application/json") |> send_resp(404, Jason.encode!(%{error: "not found"}))
   end
@@ -185,7 +239,7 @@ defmodule HomeElixir.Web do
     """
     #{base_html("Flows")}
       <table id="flows"></table>
-      <p><a href="/edit">New flow</a> &nbsp;·&nbsp; <a href="/logs">Logs</a> &nbsp;·&nbsp; <code>iex -S mix</code> for the IEx dev shell</p>
+      <p><a href="/terminal">IEx</a> &nbsp;·&nbsp; <a href="/logs">Logs</a> &nbsp;·&nbsp; <a href="/edit">New flow</a></p>
       <script>
         async function refresh() {
           const flows = await (await fetch("/api/flows")).json();

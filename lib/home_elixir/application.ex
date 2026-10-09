@@ -40,7 +40,9 @@ defmodule HomeElixir.Application do
   # Serves the flow manager on `HOST:PORT` (defaults 127.0.0.1:4000; override
   # either via env var or the `:home_elixir, :web_host`/`:web_port` config).
   defp web_child do
-    if Application.get_env(:home_elixir, :start_web, true) do
+    web_disabled? = System.get_env("HOME_ELIXIR_NO_WEB") == "1"
+
+    if Application.get_env(:home_elixir, :start_web, true) and not web_disabled? do
       port =
         System.get_env("PORT") ||
           to_string(Application.get_env(:home_elixir, :web_port, 4000))

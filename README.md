@@ -17,15 +17,20 @@ HA_URL=wss://... HA_TOKEN=... mix run --no-halt
 
 ## Dev shell
 
-The dev shell is the **real IEx**, connected to the running app. Start it from a
-terminal:
+The dev shell is the **real IEx**, connected to the running app. Two ways:
+
+**In a terminal:**
 
 ```sh
 iex -S mix
 ```
 
-This boots the same supervision tree (flows, `HomeElixir.FlowStore`, the HA
-client) and drops into IEx in that VM, so you can inspect and drive everything —
+**In the browser** — open the **IEx** link in the web UI (or `/terminal`). It
+runs genuine IEx over xterm.js on a WebSocket. A fresh `iex -S mix` app instance
+is spawned per session (so it runs alongside the server that hosts the UI).
+
+Both boot the same supervision tree (flows, `HomeElixir.FlowStore`, the HA
+client) and drop into IEx, so you can inspect and drive everything —
 `HomeElixir.FlowStore.list()`, `HomeElixir.Registry`, the HA client, etc. All the
 usual IEx helpers (`h/1`, `c/1`, `r/1`, `whereis/1`, `ls/1`, ...) work.
 
