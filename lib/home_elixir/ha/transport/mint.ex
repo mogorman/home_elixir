@@ -10,8 +10,8 @@ defmodule HomeElixir.HA.Transport.Mint do
   The process owns an active-mode Mint connection, so inbound TCP/SSL data
   arrives here as messages.
 
-  ponytail: verified by compile + review, not yet against a live Home Assistant —
-  run an integration pass (connect to real HA) before relying on it.
+  Validated against a live Home Assistant over `wss://` (connect, auth, and a
+  `get_states` round-trip). `mix run scripts/ha_validate.exs` reproduces it.
   """
 
   use GenServer
@@ -26,7 +26,7 @@ defmodule HomeElixir.HA.Transport.Mint do
     url = Keyword.fetch!(opts, :url)
 
     with {:ok, t_scheme, ws_scheme, host, port, path} <- parse_url(url),
-         {:ok, conn} <- Mint.HTTP.connect(t_scheme, host, port),
+         {:ok, conn} <- Mint.HTTP.connect(t_scheme, host, port, protocols: [:http1]),
          {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, []) do
       {:ok, %{owner: owner, conn: conn, ref: ref, ws: nil}, {:continue, :handshake}}
     else
