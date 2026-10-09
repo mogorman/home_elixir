@@ -18,3 +18,7 @@ config :home_elixir, auto_start_ha: config_env() != :test
 
 # The web UI is not started during tests.
 config :home_elixir, start_web: config_env() != :test
+
+# Restore the loaded/unloaded flow state on restart (persisted in flows/.loaded);
+# the first run loads every flow. Off in tests.
+config :home_elixir, restore_flows: config_env() != :test

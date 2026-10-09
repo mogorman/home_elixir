@@ -37,6 +37,22 @@ defmodule HomeElixir.FlowStore do
   """
   def check(source), do: call({:check, source})
 
+  @doc """
+  Load the flows that were loaded last run (persisted in `.loaded`). On the very
+  first run (no state file) this loads every flow file, establishing the set.
+  Flows that fail to load are logged and skipped.
+  """
+  def restore do
+    names = if File.exists?(loaded_file()), do: read_loaded(), else: all_flow_names()
+
+    Enum.each(names, fn name ->
+      case load(name) do
+        :ok -> :ok
+        {:error, reason} -> Logger.warning("could not restore flow #{name}: #{inspect(reason)}")
+      end
+    end)
+  end
+
   @impl true
   def init(_), do: {:ok, %{}}
 
@@ -96,20 +112,26 @@ defmodule HomeElixir.FlowStore do
   def handle_call({:load, name}, _from, cache) do
     case resolve(name) do
       {:ok, path} ->
-        {mod, cache} = atom_for(path, cache)
-
         reply =
-          case Registry.load(mod) do
-            {:ok, _pid} ->
-              Logger.info("loaded flow #{name} (#{inspect(mod)})")
-              :ok
+          try do
+            {mod, _} = atom_for(path, cache)
 
-            {:error, :already_loaded} ->
-              :ok
+            case Registry.load(mod) do
+              {:ok, _pid} ->
+                Logger.info("loaded flow #{name} (#{inspect(mod)})")
+                :ok
 
-            {:error, reason} ->
-              {:error, reason}
+              {:error, :already_loaded} ->
+                :ok
+
+              {:error, reason} ->
+                {:error, reason}
+            end
+          rescue
+            e -> {:error, Exception.message(e)}
           end
+
+        if reply == :ok, do: add_loaded(name)
 
         {:reply, reply, cache}
 
@@ -124,6 +146,7 @@ defmodule HomeElixir.FlowStore do
         {mod, cache} = atom_for(path, cache)
         result = Registry.unload(mod)
         Logger.info("unloaded flow #{name} (#{inspect(result)})")
+        if result == :ok, do: remove_loaded(name)
         {:reply, result, cache}
 
       error ->
@@ -132,6 +155,29 @@ defmodule HomeElixir.FlowStore do
   end
 
   # ---- internals ----
+
+  # ---- loaded-state persistence (flows/.loaded) ----
+
+  defp loaded_file, do: Path.join(dir(), ".loaded")
+
+  defp all_flow_names do
+    dir() |> Path.join("*.ex") |> Path.wildcard() |> Enum.map(&Path.basename(&1, ".ex"))
+  end
+
+  defp read_loaded do
+    case File.read(loaded_file()) do
+      {:ok, content} -> String.split(content, ~r/\s+/, trim: true)
+      _ -> []
+    end
+  end
+
+  defp write_loaded(names) do
+    File.mkdir_p!(dir())
+    File.write!(loaded_file(), Enum.join(Enum.uniq(names), "\n"))
+  end
+
+  defp add_loaded(name), do: write_loaded(read_loaded() ++ [name])
+  defp remove_loaded(name), do: write_loaded(read_loaded() -- [name])
 
   # Route through a node-aware server reference so these calls work from both
   # the app node (local pid) and a dev shell attached to it (remote {name,node}).

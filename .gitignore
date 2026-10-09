@@ -25,3 +25,6 @@ home_elixir-*.tar
 # OpenChamber tooling (screenshots, etc.)
 /.openchamber/
 
+# Per-machine loaded-flow state (restored on restart)
+/flows/.loaded
+

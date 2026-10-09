@@ -17,6 +17,12 @@ defmodule HomeElixir.Application do
 
     :logger.add_handler(:home_elixir_log, HomeElixir.LogHandler, %{})
 
+    # Restore the loaded/unloaded state from the previous run (flows/.loaded);
+    # broken flows are logged + skipped.
+    if Application.get_env(:home_elixir, :restore_flows, false) do
+      HomeElixir.FlowStore.restore()
+    end
+
     {:ok, pid}
   end
 
