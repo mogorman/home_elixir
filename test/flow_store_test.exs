@@ -52,4 +52,12 @@ defmodule HomeElixir.FlowStoreTest do
   test "errors on an unknown flow" do
     assert {:error, :not_found} = FlowStore.load("nope")
   end
+
+  test "check reports valid and broken source" do
+    assert {:ok, "OK — compiles cleanly"} =
+      FlowStore.check("defmodule HomeElixir.Flows.CheckValid do end")
+
+    assert {:error, msg} = FlowStore.check("defmodule Broken do use Nope")
+    assert msg =~ ~r/undefined|error|missing/i
+  end
 end

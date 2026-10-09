@@ -23,6 +23,18 @@ defmodule HomeElixir.FlowStore do
   def load(name), do: GenServer.call(__MODULE__, {:load, name})
   def unload(name), do: GenServer.call(__MODULE__, {:unload, name})
 
+  @doc "Drop the cached module atom for a flow so the next load recompiles it."
+  def forget(name), do: GenServer.call(__MODULE__, {:forget, name})
+
+  @doc "Whether a flow is currently loaded (without compiling it)."
+  def loaded?(name), do: GenServer.call(__MODULE__, {:loaded?, name})
+
+  @doc """
+  Compile a source string and report the result, without loading it into the
+  flow set. Runs in this GenServer (a stable process), not the request process.
+  """
+  def check(source), do: GenServer.call(__MODULE__, {:check, source})
+
   @impl true
   def init(_), do: {:ok, %{}}
 
@@ -46,6 +58,37 @@ defmodule HomeElixir.FlowStore do
       end)
 
     {:reply, flows |> Enum.reverse() |> Enum.sort_by(& &1.name), cache}
+  end
+
+  def handle_call({:forget, name}, _from, cache) do
+    {:reply, :ok, Map.delete(cache, name)}
+  end
+
+  def handle_call({:loaded?, name}, _from, cache) do
+    loaded =
+      case Map.fetch(cache, name) do
+        {:ok, mod} -> Registry.loaded?(mod)
+        :error -> false
+      end
+
+    {:reply, loaded, cache}
+  end
+
+  def handle_call({:check, source}, _from, cache) do
+    tmp = Path.join(System.tmp_dir!(), "flow_check_#{System.unique_integer([:positive])}.ex")
+    File.write!(tmp, source)
+
+    result =
+      try do
+        Code.compile_file(tmp)
+        {:ok, "OK — compiles cleanly"}
+      rescue
+        e -> {:error, Exception.message(e)}
+      after
+        File.rm(tmp)
+      end
+
+    {:reply, result, cache}
   end
 
   def handle_call({:load, name}, _from, cache) do

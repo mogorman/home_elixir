@@ -8,7 +8,8 @@ defmodule HomeElixir.Application do
       [
         {Registry, keys: :unique, name: HomeElixir.NodeLookup},
         {HomeElixir.Registry, []},
-        {HomeElixir.FlowStore, []}
+        {HomeElixir.FlowStore, []},
+        {HomeElixir.Shell, []}
       ] ++ ha_client_child() ++ web_child()
 
     opts = [strategy: :one_for_one, name: HomeElixir.Supervisor]
@@ -32,18 +33,31 @@ defmodule HomeElixir.Application do
     end
   end
 
-  # Serves the flow manager at `PORT` (or the `:home_elixir, :web_port` config).
+  # Serves the flow manager on `HOST:PORT` (defaults 127.0.0.1:4000; override
+  # either via env var or the `:home_elixir, :web_host`/`:web_port` config).
   defp web_child do
     if Application.get_env(:home_elixir, :start_web, true) do
       port =
         System.get_env("PORT") ||
           to_string(Application.get_env(:home_elixir, :web_port, 4000))
 
+      host =
+        System.get_env("HOST") || Application.get_env(:home_elixir, :web_host, "127.0.0.1")
+
       [
-        Plug.Cowboy.child_spec(scheme: :http, plug: HomeElixir.Web, port: String.to_integer(port))
+        Plug.Cowboy.child_spec(
+          scheme: :http,
+          plug: HomeElixir.Web,
+          port: String.to_integer(port),
+          ip: parse_ip(host)
+        )
       ]
     else
       []
     end
+  end
+
+  defp parse_ip(host) do
+    host |> String.split(".") |> Enum.map(&String.to_integer/1) |> List.to_tuple()
   end
 end
