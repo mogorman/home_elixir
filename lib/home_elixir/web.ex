@@ -15,7 +15,9 @@ defmodule HomeElixir.Web do
     GET  /terminal                real IEx in the browser (xterm.js over WebSocket)
     GET  /api/flows               list flows (JSON)
     GET  /api/logs?since=N        log lines newer than N (JSON)
-    POST /api/flows/:name/load | unload
+    GET  /api/flows/:name/ui      UI elements for one flow (JSON)
+    POST /api/flows/:name/load | unload | reload
+    POST /api/flows/reload        reload all loaded flows
     POST /api/flows/save | check
   """
 
@@ -24,6 +26,7 @@ defmodule HomeElixir.Web do
   import Plug.Conn
 
   @hljs "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0"
+  @bootstrap "https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
 
   def init(_opts), do: []
 
@@ -40,6 +43,13 @@ defmodule HomeElixir.Web do
 
   def call(%{method: "GET", request_path: "/api/ui"} = conn, _opts),
     do: json(conn, HomeElixir.FlowStore.ui())
+
+  def call(%{method: "GET", request_path: "/api/flows/" <> rest} = conn, _opts) do
+    case String.split(rest, "/") do
+      [name, "ui"] -> json(conn, HomeElixir.FlowStore.flow_ui(name))
+      _ -> not_found(conn)
+    end
+  end
 
   def call(%{method: "GET", request_path: "/edit"} = conn, _opts),
     do: html(conn, editor_page(nil, new_flow_template()))
@@ -67,11 +77,17 @@ defmodule HomeElixir.Web do
       ["", "api", "flows", name, "unload"] ->
         reply(conn, HomeElixir.FlowStore.unload(name))
 
+      ["", "api", "flows", name, "reload"] ->
+        reply(conn, HomeElixir.FlowStore.reload(name))
+
       ["", "api", "flows", "save"] ->
         save_endpoint(conn)
 
       ["", "api", "flows", "check"] ->
         check_endpoint(conn)
+
+      ["", "api", "flows", "reload"] ->
+        reply(conn, HomeElixir.FlowStore.reload_all())
 
       ["", "api", "ui", "click"] ->
         click_endpoint(conn)
@@ -95,10 +111,10 @@ defmodule HomeElixir.Web do
       name ->
         try do
           save_flow(name, source)
-          text(conn, 200, "saved " <> name <> ".ex")
+          text(conn, 200, "saved " <> name <> ".ex (reload to apply)")
         rescue
           e ->
-            text(conn, 400, "saved " <> name <> ".ex, but reload failed:\n" <> Exception.message(e))
+            text(conn, 400, "saved " <> name <> ".ex, but save failed:\n" <> Exception.message(e))
         end
     end
   end
@@ -151,15 +167,7 @@ defmodule HomeElixir.Web do
   # ---- flow file ops ----
 
   defp save_flow(name, source) do
-    was_loaded = HomeElixir.FlowStore.loaded?(name)
     File.write!(flow_path(name), source)
-    HomeElixir.FlowStore.forget(name)
-
-    if was_loaded do
-      HomeElixir.FlowStore.unload(name)
-      HomeElixir.FlowStore.load(name)
-    end
-
     :ok
   end
 
@@ -217,19 +225,19 @@ defmodule HomeElixir.Web do
     <head>
       <meta charset="utf-8">
       <title>Home Elixir IEx</title>
+      <link href="#{@bootstrap}" rel="stylesheet">
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
       <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
       <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+      #{theme_script()}
       <style>
-        html, body { margin: 0; height: 100%; background: #1e1e1e; }
-        #topbar { height: 36px; line-height: 36px; padding: 0 12px; background: #2d2d2d;
-                  color: #ddd; font-family: ui-monospace, monospace; font-size: 13px; }
-        #topbar a { color: #7cb; text-decoration: none; }
-        #terminal { width: 100%; height: calc(100% - 36px); padding: 4px 8px; box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; }
+        body { display: flex; flex-direction: column; }
+        #terminal { flex: 1; padding: 4px 8px; box-sizing: border-box; background: #1e1e1e; }
       </style>
     </head>
     <body>
-      <div id="topbar"><a href="/" class="back">&larr; Flows</a> &nbsp;·&nbsp; <a href="/controls">Controls</a></div>
+    #{navbar_html(:iex)}
       <div id="terminal"></div>
       <script>
         const term = new Terminal({ cursorBlink: true, fontFamily: "monospace", fontSize: 13, convertEol: true });
@@ -243,7 +251,7 @@ defmodule HomeElixir.Web do
         ws.onmessage = (e) => term.write(e.data instanceof ArrayBuffer ? new Uint8Array(e.data) : e.data);
         ws.onclose = () => term.write("\\r\\n\\x1b[90m[connection closed]\\x1b[0m\\r\\n");
         term.onData((d) => { if (ws.readyState === WebSocket.OPEN) ws.send(d); });
-        document.querySelector("a.back").addEventListener("click", () => { try { ws.close(); } catch (_) {} });
+        window.addEventListener("beforeunload", () => { try { ws.close(); } catch (_) {} });
         window.addEventListener("resize", () => fit.fit());
         term.focus();
       </script>
@@ -265,31 +273,60 @@ defmodule HomeElixir.Web do
   defp list_page do
     """
     #{base_html("Flows")}
-      <table id="flows"></table>
-      <p><a href="/controls">Controls</a> &nbsp;·&nbsp; <a href="/terminal">IEx</a> &nbsp;·&nbsp; <a href="/logs">Logs</a> &nbsp;·&nbsp; <a href="/edit">New flow</a></p>
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Flows</span>
+          <button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>
+        </div>
+        <table class="table table-hover align-middle mb-0">
+          <thead><tr><th>name</th><th>module</th><th>status</th><th class="text-end">actions</th></tr></thead>
+          <tbody id="flows"></tbody>
+        </table>
+      </div>
       <script>
+        async function act(name, action) {
+          await fetch(`/api/flows/${name}/${action}`, { method: "POST" });
+          refresh();
+        }
+        async function reloadAll() {
+          await fetch("/api/flows/reload", { method: "POST" });
+          refresh();
+        }
+        function addBtn(parent, label, cls, fn) {
+          const b = document.createElement("button");
+          b.className = "btn btn-sm " + cls;
+          b.textContent = label;
+          b.onclick = fn;
+          parent.appendChild(b);
+        }
         async function refresh() {
           const flows = await (await fetch("/api/flows")).json();
-          const table = document.getElementById("flows");
-          table.innerHTML = "<tr><th>name</th><th>module</th><th>status</th><th></th></tr>";
+          const tbody = document.getElementById("flows");
+          tbody.innerHTML = "";
           for (const f of flows) {
             const tr = document.createElement("tr");
-            const cls = f.loaded ? "loaded" : "off";
-            const label = f.loaded ? "loaded" : "not loaded";
-            const action = f.loaded ? "unload" : "load";
-            const btnLabel = f.loaded ? "Unload" : "Load";
+            const actions = document.createElement("div");
+            actions.className = "d-flex gap-1 justify-content-end";
+            if (f.loaded) {
+              addBtn(actions, "Reload", "btn-outline-secondary", () => act(f.name, "reload"));
+              addBtn(actions, "Unload", "btn-outline-secondary", () => act(f.name, "unload"));
+            } else {
+              addBtn(actions, "Load", "btn-primary", () => act(f.name, "load"));
+            }
+            const edit = document.createElement("a");
+            edit.className = "btn btn-sm btn-outline-secondary";
+            edit.href = "/edit/" + f.name;
+            edit.textContent = "Edit";
+            actions.appendChild(edit);
             tr.innerHTML =
-              `<td>${f.name}</td><td>${f.module}</td>` +
-              `<td class="${cls}">${label}</td>` +
-              `<td><button data-a="${action}">${btnLabel}</button> ` +
-              `<a href="/edit/${f.name}">Edit</a></td>`;
-            tr.querySelector("button").onclick = async () => {
-              await fetch(`/api/flows/${f.name}/${action}`, { method: "POST" });
-              refresh();
-            };
-            table.appendChild(tr);
+              `<td class="fw-semibold">${f.name}</td>` +
+              `<td class="text-secondary">${f.module}</td>` +
+              `<td><span class="badge ${f.loaded ? "bg-success" : "bg-secondary"}">${f.loaded ? "loaded" : "not loaded"}</span></td>`;
+            tr.appendChild(actions);
+            tbody.appendChild(tr);
           }
         }
+        document.getElementById("reload-all").onclick = reloadAll;
         refresh();
         setInterval(refresh, 3000);
       </script>
@@ -298,32 +335,55 @@ defmodule HomeElixir.Web do
 
   defp controls_page do
     """
-    #{base_html("Controls")}
-      <p><a href="/">&larr; Flows</a></p>
-      <div id="controls"></div>
+    #{base_html("Controls", :controls)}
+      <div id="controls" class="d-flex flex-column gap-3"></div>
       <script>
         async function refresh() {
           const els = await (await fetch("/api/ui")).json();
           const box = document.getElementById("controls");
           box.innerHTML = "";
           if (!els.length) {
-            const p = document.createElement("p");
-            p.className = "off";
-            p.textContent = "No controls yet. Add a node with a ui: config (e.g. an Inject with a button) and load its flow.";
-            box.appendChild(p);
+            box.innerHTML = '<div class="alert alert-info mb-0">No controls yet. Add a node with a <code>ui:</code> config (e.g. an Inject with a button) and load its flow.</div>';
             return;
           }
+          const groups = new Map();
           for (const e of els) {
-            const b = document.createElement("button");
-            b.textContent = e.label || e.node;
-            b.onclick = async () => {
-              await fetch("/api/ui/click", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: e.name, node: e.node, payload: e.payload })
-              });
-            };
-            box.appendChild(b);
+            if (!groups.has(e.name)) groups.set(e.name, []);
+            groups.get(e.name).push(e);
+          }
+          for (const [flow, items] of groups) {
+            const card = document.createElement("div");
+            card.className = "card";
+            const head = document.createElement("div");
+            head.className = "card-header fw-semibold";
+            head.textContent = flow;
+            const body = document.createElement("div");
+            body.className = "card-body d-flex flex-wrap gap-2";
+            for (const e of items) {
+              if (e.type === "state") {
+                const badge = document.createElement("span");
+                const on = e.value === true || e.value === "on";
+                const off = e.value === false || e.value === "off";
+                badge.className = "badge " + (on ? "bg-success" : off ? "bg-secondary" : "bg-info text-dark");
+                badge.textContent = (e.label || e.node) + ": " + (e.value === null || e.value === undefined ? "-" : e.value);
+                body.appendChild(badge);
+              } else {
+                const b = document.createElement("button");
+                b.className = "btn btn-primary";
+                b.textContent = e.label || e.node;
+                b.onclick = async () => {
+                  await fetch("/api/ui/click", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: e.name, node: e.node, payload: e.payload })
+                  });
+                };
+                body.appendChild(b);
+              }
+            }
+            card.appendChild(head);
+            card.appendChild(body);
+            box.appendChild(card);
           }
         }
         refresh();
@@ -332,24 +392,65 @@ defmodule HomeElixir.Web do
     """
   end
 
-  defp editor_page(_name, source) do
+  defp editor_page(name, source) do
     source_json = Jason.encode!(source)
+    name_json = Jason.encode!(name)
 
     """
-    #{base_html("Edit flow")}
-      <p><span id="hint"></span>
-         <label>Name <input id="name" spellcheck="false"></label>
-         <button id="check">Check</button>
-         <button id="save">Save</button>
-         <span id="status"></span></p>
-      <div class="cm">
-        <pre class="cm-hl" aria-hidden="true"><code id="hl" class="hljs language-elixir"></code></pre>
-        <textarea id="editor" spellcheck="false" autocomplete="off"></textarea>
+    #{base_html("Edit flow", :edit)}
+      <style>
+        .cm { position: relative; border: 1px solid var(--bs-border-color); height: 46vh;
+              min-height: 280px; background: var(--bs-tertiary-bg); }
+        .cm pre, .cm textarea { margin: 0; padding: 12px; position: absolute; inset: 0;
+              width: 100%; height: 100%; box-sizing: border-box;
+              font: 13px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+              white-space: pre; overflow: auto; tab-size: 2; letter-spacing: 0; }
+        .cm pre { pointer-events: none; z-index: 1; }
+        .cm pre .hljs { display: block; padding: 0; margin: 0; background: transparent;
+              overflow: visible; font: inherit; }
+        .cm textarea { z-index: 2; background: transparent; color: var(--bs-body-color);
+              caret-color: var(--bs-body-color); border: 0; resize: none; outline: none; }
+        .flowlogs { font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.5;
+              white-space: pre-wrap; height: 240px; overflow: auto; }
+      </style>
+      <div class="card">
+        <div class="card-body">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+            <span id="hint" class="text-secondary small"></span>
+            <label class="ms-2 small">Name
+              <input id="name" class="form-control form-control-sm d-inline-block" style="width: 11rem" spellcheck="false">
+            </label>
+            <button id="check" class="btn btn-sm btn-outline-secondary">Check</button>
+            <button id="reload" class="btn btn-sm btn-outline-secondary">Reload</button>
+            <button id="save" class="btn btn-sm btn-primary">Save</button>
+            <span id="status" class="text-success small"></span>
+          </div>
+          <div class="cm">
+            <pre class="cm-hl" aria-hidden="true"><code id="hl" class="hljs language-elixir"></code></pre>
+            <textarea id="editor" spellcheck="false" autocomplete="off"></textarea>
+          </div>
+        </div>
       </div>
+      <div id="panels" class="row g-3 d-none">
+        <div class="col-12 col-lg-6">
+          <div class="card h-100">
+            <div class="card-header fw-semibold">Controls</div>
+            <div class="card-body"><div id="ctrl" class="d-flex flex-wrap gap-2"></div></div>
+          </div>
+        </div>
+        <div class="col-12 col-lg-6">
+          <div class="card h-100">
+            <div class="card-header fw-semibold">Flow logs</div>
+            <div class="card-body p-0"><div id="flowlogs" class="flowlogs"></div></div>
+          </div>
+        </div>
+      </div>
+      <link id="hljs-theme" href="#{@hljs}/styles/github-dark.min.css" rel="stylesheet">
       <script src="#{@hljs}/highlight.min.js"></script>
       <script src="#{@hljs}/languages/elixir.min.js"></script>
       <script>
         const FLOW = #{source_json};
+        const FLOWNAME = #{name_json};
         const editor = document.getElementById("editor");
         const hl = document.getElementById("hl");
         const pre = document.querySelector(".cm pre");
@@ -414,17 +515,84 @@ defmodule HomeElixir.Web do
           const r = await fetch("/api/flows/check", { method: "POST", body: editor.value });
           status.textContent = await r.text();
         }
+        async function doReload() {
+          if (!FLOWNAME) { status.textContent = "save first"; return; }
+          status.textContent = "reloading…";
+          const r = await fetch(`/api/flows/${FLOWNAME}/reload`, { method: "POST" });
+          const t = await r.text();
+          status.textContent = r.ok ? "reloaded" : t;
+          refreshControls();
+        }
         document.getElementById("save").onclick = doSave;
         document.getElementById("check").onclick = doCheck;
+        document.getElementById("reload").onclick = doReload;
+        async function refreshControls() {
+          if (!FLOWNAME) return;
+          const els = await (await fetch(`/api/flows/${FLOWNAME}/ui`)).json();
+          const box = document.getElementById("ctrl");
+          box.innerHTML = "";
+          if (!els.length) { box.innerHTML = '<span class="text-secondary small">no ui elements</span>'; return; }
+          for (const e of els) {
+            if (e.type === "state") {
+              const b = document.createElement("span");
+              const on = e.value === true || e.value === "on";
+              const off = e.value === false || e.value === "off";
+              b.className = "badge " + (on ? "bg-success" : off ? "bg-secondary" : "bg-info text-dark");
+              b.textContent = (e.label || e.node) + ": " + (e.value === null || e.value === undefined ? "-" : e.value);
+              box.appendChild(b);
+            } else {
+              const b = document.createElement("button");
+              b.className = "btn btn-sm btn-primary";
+              b.textContent = e.label || e.node;
+              b.onclick = async () => {
+                await fetch("/api/ui/click", { method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: e.name, node: e.node, payload: e.payload }) });
+              };
+              box.appendChild(b);
+            }
+          }
+        }
+        let logSince = 0;
+        async function refreshLogs() {
+          if (!FLOWNAME) return;
+          try {
+            const items = await (await fetch("/api/logs?since=" + logSince)).json();
+            const box = document.getElementById("flowlogs");
+            for (const it of items) {
+              if (it.line.includes("[" + FLOWNAME + "]")) {
+                const d = document.createElement("div");
+                d.textContent = it.line;
+                if (it.line.startsWith("error")) d.className = "text-danger";
+                else if (it.line.startsWith("warning")) d.className = "text-warning-emphasis";
+                box.appendChild(d);
+              }
+              logSince = it.id;
+            }
+            while (box.children.length > 300) box.removeChild(box.firstChild);
+            box.scrollTop = box.scrollHeight;
+          } catch (e) {}
+        }
+        if (FLOWNAME) {
+          document.getElementById("panels").classList.remove("d-none");
+          refreshControls();
+          setInterval(refreshControls, 3000);
+          setInterval(refreshLogs, 1500);
+        }
+        function setHljsTheme(t) {
+          document.getElementById("hljs-theme").href = "#{@hljs}/styles/" + (t === "dark" ? "github-dark.min.css" : "github.min.css");
+        }
+        setHljsTheme(document.documentElement.getAttribute("data-bs-theme"));
+        document.addEventListener("themechange", function (e) { setHljsTheme(e.detail); });
       </script>
     """
   end
 
   defp logs_page do
     """
-    #{base_html("Logs", dark: true)}
-      <p><a href="/">&larr; Flows</a> &nbsp;·&nbsp; <a href="/controls">Controls</a></p>
-      <div id="logs"></div>
+    #{base_html("Logs", :logs)}
+      <div id="logs" class="rounded border p-2"
+           style="font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.5;
+                  white-space: pre-wrap; height: 78vh; overflow: auto;"></div>
       <script>
         const box = document.getElementById("logs");
         let since = 0;
@@ -434,8 +602,8 @@ defmodule HomeElixir.Web do
             for (const it of items) {
               const div = document.createElement("div");
               div.textContent = it.line;
-              if (it.line.startsWith("error")) div.className = "err";
-              else if (it.line.startsWith("warning")) div.className = "warn";
+              if (it.line.startsWith("error")) div.className = "text-danger";
+              else if (it.line.startsWith("warning")) div.className = "text-warning-emphasis";
               box.appendChild(div);
               since = it.id;
             }
@@ -449,72 +617,80 @@ defmodule HomeElixir.Web do
     """
   end
 
-  defp base_html(title) do
-    base_html(title, dark: false)
-  end
+  defp base_html(title, active \\ :flows) do
+    nav = navbar_html(active)
 
-  defp base_html(title, dark: true) do
     """
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
       <title>#{title} — home_elixir</title>
-      <link rel="stylesheet" href="#{@hljs}/styles/github-dark.min.css">
-      <style>
-        body { font-family: ui-monospace, monospace; margin: 1.5rem;
-               background: #111; color: #ddd; }
-        a { color: #6cf; }
-        #out, .prompt { font: 13px/1.5 ui-monospace, monospace; }
-        #out { white-space: pre-wrap; height: 70vh; overflow: auto;
-               background: #0b0b0b; border: 1px solid #333; padding: .6rem; }
-        .prompt { margin-top: .5rem; }
-        .prompt input { width: 80%; background: #0b0b0b; color: #ddd;
-                        border: 1px solid #333; padding: .3rem; }
-        #logs { font: 13px/1.5 ui-monospace, monospace; white-space: pre-wrap;
-                height: 75vh; overflow: auto; background: #0b0b0b;
-                border: 1px solid #333; padding: .6rem; }
-        #logs .err { color: #f66; }
-        #logs .warn { color: #fc6; }
-      </style>
+      <link href="#{@bootstrap}" rel="stylesheet">
+      #{theme_script()}
     </head>
-    <body>
+    <body class="p-3">
+    #{nav}
     """
   end
 
-  defp base_html(title, _dark) do
+  # Sets the theme before first paint (no flash): a manual choice stored in
+  # localStorage wins, otherwise the browser's light/dark preference, defaulting
+  # to dark.
+  defp theme_script do
     """
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <title>#{title} — home_elixir</title>
-      <link rel="stylesheet" href="#{@hljs}/styles/github.min.css">
-      <style>
-        body { font-family: ui-monospace, monospace; margin: 1.5rem; color: #222; }
-        a { color: #06c; }
-        table { border-collapse: collapse; margin-top: 1rem; }
-        th, td { border: 1px solid #ccc; padding: .4rem .9rem; text-align: left; }
-        .loaded { color: #0a7a2f; font-weight: bold; }
-        .off { color: #888; }
-        button { cursor: pointer; }
-        #name { width: 11rem; font: 13px ui-monospace, monospace; padding: .15rem .35rem;
-                border: 1px solid #ccc; margin-left: 1rem; }
-        .cm { position: relative; border: 1px solid #ccc; height: 42vh;
-              min-height: 280px; background: #f6f8fa; }
-        .cm pre, .cm textarea { margin: 0; padding: 12px; position: absolute; inset: 0;
-              width: 100%; height: 100%; box-sizing: border-box;
-              font: 13px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-              white-space: pre; overflow: auto; tab-size: 2; letter-spacing: 0; }
-        .cm pre { pointer-events: none; z-index: 1; }
-        .cm pre .hljs { display: block; padding: 0; margin: 0; background: transparent;
-              overflow: visible; font: inherit; }
-        .cm textarea { z-index: 2; background: transparent; color: transparent;
-              caret-color: #222; border: 0; resize: none; outline: none; }
-        #status { margin-left: .8rem; color: #0a7a2f; }
-      </style>
-    </head>
-    <body>
+    <script>
+      (function () {
+        var t = localStorage.getItem("theme");
+        if (!t) t = (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
+        document.documentElement.setAttribute("data-bs-theme", t);
+      })();
+    </script>
+    """
+  end
+
+  # Shared top navbar (all pages) + the light/dark toggle. The toggle persists
+  # to localStorage and fires a `themechange` event pages can listen to.
+  defp navbar_html(active) do
+    a = fn key -> if key == active, do: " active", else: "" end
+
+    """
+    <nav class="navbar navbar-expand-lg bg-body-tertiary rounded-3 mb-3 px-3">
+      <div class="container-fluid">
+        <a class="navbar-brand fw-semibold" href="/">home_elixir</a>
+        <ul class="navbar-nav gap-1 flex-wrap">
+          <li class="nav-item"><a class="nav-link#{a.(:flows)}" href="/">Flows</a></li>
+          <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="/controls">Controls</a></li>
+          <li class="nav-item"><a class="nav-link#{a.(:logs)}" href="/logs">Logs</a></li>
+          <li class="nav-item"><a class="nav-link#{a.(:iex)}" href="/terminal">IEx</a></li>
+          <li class="nav-item"><a class="nav-link#{a.(:edit)}" href="/edit">New flow</a></li>
+        </ul>
+        <button id="theme-toggle" class="btn btn-outline-secondary btn-sm ms-2"></button>
+      </div>
+    </nav>
+    <script>
+      (function () {
+        var btn = document.getElementById("theme-toggle");
+        var mq = window.matchMedia ? matchMedia("(prefers-color-scheme: light)") : null;
+        function theme() { return document.documentElement.getAttribute("data-bs-theme"); }
+        function label() { btn.textContent = theme() === "dark" ? "Light" : "Dark"; }
+        function apply(t) {
+          document.documentElement.setAttribute("data-bs-theme", t);
+          document.dispatchEvent(new CustomEvent("themechange", { detail: t }));
+          label();
+        }
+        btn.addEventListener("click", function () {
+          var next = theme() === "dark" ? "light" : "dark";
+          localStorage.setItem("theme", next);
+          apply(next);
+        });
+        if (mq && mq.addEventListener) mq.addEventListener("change", function (e) {
+          if (!localStorage.getItem("theme")) apply(e.matches ? "light" : "dark");
+        });
+        label();
+      })();
+    </script>
     """
   end
 end

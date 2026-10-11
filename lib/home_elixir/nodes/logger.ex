@@ -9,7 +9,9 @@ defmodule HomeElixir.Nodes.Logger do
 
   @impl true
   def handle(%HomeElixir.Msg{payload: payload, topic: topic, data: data}, _state) do
-    Logger.info("ha-flow #{topic || "-"} payload=#{inspect(payload)} data=#{inspect(data)}")
+    flow = Map.get(data, :flow)
+    rest = Map.delete(data, :flow)
+    Logger.info("[#{flow || "-"}] ha-flow #{topic || "-"} payload=#{inspect(payload)} data=#{inspect(rest)}")
     {[nil], nil}
   end
 end

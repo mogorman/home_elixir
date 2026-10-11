@@ -72,6 +72,23 @@ defmodule HomeElixir.HA.Client do
     GenServer.call(client, {:unsubscribe, ref}, timeout)
   end
 
+  @doc """
+  Register a message-id channel for a long-lived HA feature (e.g. a Node-RED
+  device). A fresh id from the shared monotonically-increasing counter (the same
+  one `call/3` uses, so HA's "ids must increase" rule holds) is injected into
+  `discovery_frame`'s `"id"`; frames arriving with that id are forwarded to `to`
+  as `{:ha_channel, id, frame}`. The frame is sent now if connected and re-sent
+  on every (re)connect, so the entity re-establishes after a dropped connection.
+  """
+  def discover(client, discovery_frame, to) do
+    GenServer.call(client, {:discover, discovery_frame, to})
+  end
+
+  @doc "Remove a channel registered by `discover/4`."
+  def forget_channel(client, id) do
+    GenServer.call(client, {:forget_channel, id})
+  end
+
   @doc "Current connection status: `:connecting`, `:authenticating`, `:connected` or `:disconnected`."
   def status(client), do: GenServer.call(client, :status)
 
@@ -91,7 +108,8 @@ defmodule HomeElixir.HA.Client do
       status: :disconnected,
       next_id: 1,
       pending: %{},
-      subs: %{}
+      subs: %{},
+      channels: %{}
     }
 
     {:ok, ensure_transport(state)}
@@ -131,6 +149,27 @@ defmodule HomeElixir.HA.Client do
     {:reply, :ok, %{state | subs: Map.delete(state.subs, ref)}}
   end
 
+  def handle_call({:discover, discovery_frame, to}, _from, state) do
+    id = state.next_id
+    frame = Map.put(discovery_frame, "id", id)
+
+    # Store the frame WITHOUT its id so it can be re-sent with a fresh id later
+    # (re-discovery on a delayed timer re-binds the entity to the live connection).
+    state = %{
+      state
+      | next_id: id + 1,
+        channels: Map.put(state.channels, id, %{to: to, discovery: discovery_frame})
+    }
+
+    if state.status == :connected, do: send_transport(state, frame)
+
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:forget_channel, id}, _from, state) do
+    {:reply, :ok, %{state | channels: Map.delete(state.channels, id)}}
+  end
+
   @impl true
   def handle_cast({:fire, type, payload}, state) do
     if state.status == :connected do
@@ -161,6 +200,14 @@ defmodule HomeElixir.HA.Client do
 
   def handle_info(:ha_reconnect, state) do
     {:noreply, ensure_transport(state)}
+  end
+
+  def handle_info(:he_rediscover_all, state) do
+    if state.status == :connected do
+      {:noreply, rediscover_all(state)}
+    else
+      {:noreply, state}
+    end
   end
 
   # ---- Internals ----
@@ -197,22 +244,34 @@ defmodule HomeElixir.HA.Client do
   end
 
   defp route(msg, state) do
-    case Map.get(msg, "type") do
-      "auth_ok" -> resubscribe(%{state | status: :connected})
-
-      "auth_invalid" ->
-        Logger.error("Home Assistant rejected the access token (auth_invalid); not reconnecting")
-        # Do not auto-reconnect: the same token will keep failing.
-        %{state | status: :disconnected, transport: stop_transport(state.transport)}
-
-      "result" ->
-        reply_to_pending(msg, state)
-
-      "event" ->
-        deliver_event(msg, state)
-
-      _ ->
+    case Map.get(state.channels, Map.get(msg, "id")) do
+      %{to: to} ->
+        send(to, {:ha_channel, Map.get(msg, "id"), msg})
         state
+
+      nil ->
+        case Map.get(msg, "type") do
+          "auth_ok" ->
+            state = resubscribe(%{state | status: :connected})
+            # Re-discover shortly after connecting (see rediscover_all/1).
+            Process.send_after(self(), :he_rediscover_all, 6_000)
+            Process.send_after(self(), :he_rediscover_all, 15_000)
+            state
+
+          "auth_invalid" ->
+            Logger.error("Home Assistant rejected the access token (auth_invalid); not reconnecting")
+            # Do not auto-reconnect: the same token will keep failing.
+            %{state | status: :disconnected, transport: stop_transport(state.transport)}
+
+          "result" ->
+            reply_to_pending(msg, state)
+
+          "event" ->
+            deliver_event(msg, state)
+
+          _ ->
+            state
+        end
     end
   end
 
@@ -250,7 +309,34 @@ defmodule HomeElixir.HA.Client do
       send_transport(state, %{id: id, type: "subscribe_events", event_type: event_type})
     end
 
-    state
+    channels =
+      state.channels
+      |> Map.reject(fn {_id, %{to: to}} -> not Process.alive?(to) end)
+
+    for {id, %{discovery: discovery}} <- channels do
+      send_transport(state, Map.put(discovery, "id", id))
+    end
+
+    %{state | channels: channels}
+  end
+
+  # Re-send every device discovery with a fresh (higher) id. After a restart HA can
+  # still treat a previously-killed connection as alive; a one-shot startup
+  # discovery can then be undone by that connection's "lost" handler, stranding the
+  # entity unavailable and dropping inbound. A delayed re-discovery re-binds it.
+  defp rediscover_all(state) do
+    Enum.reduce(state.channels, state, fn {old_id, %{to: to, discovery: frame}}, st ->
+      id = st.next_id
+
+      st = %{
+        st
+        | next_id: id + 1,
+          channels: Map.put(Map.delete(st.channels, old_id), id, %{to: to, discovery: frame})
+      }
+
+      if st.status == :connected, do: send_transport(st, Map.put(frame, "id", id))
+      st
+    end)
   end
 
   defp stop_transport(nil), do: nil

@@ -8,8 +8,9 @@ defmodule HomeElixir.Nodes.Service do
     * `data` — optional static `service_data` map; a map `payload` on the
       incoming message is merged in (message wins)
 
-  Fire-and-forget; the Home Assistant ack is not waited on.
-  """
+   The call is sent and its ack awaited, ensuring the service is reliably
+   delivered over the WebSocket (a fire-and-forget cast proved lossy).
+   """
   @behaviour HomeElixir.Node
 
   alias HomeElixir.HA
@@ -33,7 +34,7 @@ defmodule HomeElixir.Nodes.Service do
         :ok
 
       client ->
-        HA.Client.fire(client, "call_service", %{
+        HA.Client.call(client, "call_service", %{
           domain: state.domain,
           service: state.service,
           service_data: service_data

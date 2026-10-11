@@ -73,6 +73,20 @@ defmodule HomeElixir.UITest do
     assert {:error, :not_loaded} = FlowStore.click("ui_flow", "btn")
   end
 
+  test "flow_ui returns a flow's declared ui elements without loading it" do
+    tmp = Path.join(System.tmp_dir!(), "ui_flowui_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(tmp)
+    File.write!(Path.join(tmp, "ui_flow.ex"), @ui_src)
+    Application.put_env(:home_elixir, :flows_dir, tmp)
+    on_exit(fn ->
+      Application.put_env(:home_elixir, :flows_dir, "flows")
+      File.rm_rf!(tmp)
+    end)
+
+    assert [%{name: "ui_flow", node: "btn", type: "button", label: "Go", value: nil}] =
+      FlowStore.flow_ui("ui_flow")
+  end
+
   defp wait_messages(flow, node_id, count, timeout \\ 1_000) do
     deadline = System.monotonic_time(:millisecond) + timeout
 

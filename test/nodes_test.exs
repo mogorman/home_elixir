@@ -21,6 +21,13 @@ defmodule HomeElixir.NodesTest do
     wire("sc", "out")
   end
 
+  defmodule Flows.StampTest do
+    use HomeElixir.Flow
+    node("sc", HomeElixir.Nodes.StateChanged)
+    node("out", HomeElixir.Nodes.Sink)
+    wire("sc", "out")
+  end
+
   # ---- helpers ----
 
   defp start_ha! do
@@ -129,6 +136,26 @@ defmodule HomeElixir.NodesTest do
     assert %Msg{payload: "on", topic: "light.kitchen"} = msg
     assert msg.data.new_state == "on"
     assert msg.data.old_state == "off"
+  end
+
+  test "routed messages are stamped with the flow's short name" do
+    _ = start_ha!()
+    t = HA.Client.transport_pid(HA.client())
+    on_exit(fn -> Registry.unload(Flows.StampTest); stop_ha() end)
+
+    {:ok, _} = Registry.load(Flows.StampTest)
+    sub = sent_until(t, &(&1 =~ "subscribe_events"))
+
+    event = %{
+      "event_type" => "state_changed",
+      "data" => %{
+        "entity_id" => "light.kitchen",
+        "old_state" => %{"state" => "off"},
+        "new_state" => %{"state" => "on"}
+      }
+    }
+    msg = emit_until(t, sub["id"], event, Flows.StampTest, "out")
+    assert msg.data.flow == "stamp_test"
   end
 
   # shared cleanup

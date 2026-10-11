@@ -28,7 +28,8 @@ defmodule HomeElixir.Flow.Node do
       out_targets: out_targets,
       routing: [],
       routed?: false,
-      node_state: node_state
+      node_state: node_state,
+      flow_name: to_string(flow_key) |> String.split(".") |> List.last() |> Macro.underscore()
     }
 
     {:ok, state}
@@ -62,6 +63,7 @@ defmodule HomeElixir.Flow.Node do
 
   @impl true
   def handle_cast({:msg, msg}, %{routed?: true} = state) do
+    msg = with_flow(msg, state.flow_name)
     {outputs, node_state} = state.handler.handle(msg, state.node_state)
     {:noreply, route_outputs(outputs, %{state | node_state: node_state})}
   end
@@ -78,8 +80,13 @@ defmodule HomeElixir.Flow.Node do
     case Enum.at(outputs, 0) do
       nil -> state
       out ->
+        out = with_flow(out, state.flow_name)
         Enum.each(state.routing, fn pid -> GenServer.cast(pid, {:msg, out}) end)
         state
     end
   end
+
+  # Tag a message with its flow's short name so logs/UI can attribute it.
+  defp with_flow(%HomeElixir.Msg{} = msg, name), do: %{msg | data: Map.put(msg.data, :flow, name)}
+  defp with_flow(msg, _name), do: msg
 end

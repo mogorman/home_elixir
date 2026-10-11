@@ -31,6 +31,15 @@ defmodule HomeElixir.FlowStore do
   @doc "Inject a message into a node of a loaded flow (used by web controls)."
   def click(name, node, payload \\ nil), do: call({:click, name, node, payload})
 
+  @doc "Recompile a flow from disk and restart it (or load it if not running)."
+  def reload(name), do: call({:reload, name})
+
+  @doc "Reload every currently-loaded flow from disk."
+  def reload_all, do: call({:reload_all})
+
+  @doc "UI elements for one flow (loaded or not), with live `value` when loaded."
+  def flow_ui(name), do: call({:flow_ui, name})
+
   @doc "Drop the cached module atom for a flow so the next load recompiles it."
   def forget(name), do: call({:forget, name})
 
@@ -80,7 +89,8 @@ defmodule HomeElixir.FlowStore do
           node: node_id,
           type: ui.type,
           label: Map.get(ui, :label),
-          payload: Map.get(ui, :payload)
+          payload: Map.get(ui, :payload),
+          value: if(ui.type == "state", do: node_state_value(mod, node_id), else: nil)
         }
       end
 
@@ -88,20 +98,20 @@ defmodule HomeElixir.FlowStore do
   end
 
   def handle_call({:click, name, node, payload}, _from, cache) do
-    reply =
+    {reply, cache} =
       case resolve(name) do
         {:ok, path} ->
           {mod, cache} = atom_for(path, cache)
 
           if Registry.loaded?(mod) do
             Registry.send_msg(mod, node, HomeElixir.Msg.new(payload || %{}, topic: node))
-            :ok
+            {:ok, cache}
           else
-            {:error, :not_loaded}
+            {{:error, :not_loaded}, cache}
           end
 
         error ->
-          error
+          {error, cache}
       end
 
     {:reply, reply, cache}
@@ -139,11 +149,88 @@ defmodule HomeElixir.FlowStore do
   end
 
   def handle_call({:load, name}, _from, cache) do
+    {reply, cache} = do_load(name, cache)
+    {:reply, reply, cache}
+  end
+
+  def handle_call({:unload, name}, _from, cache) do
+    {reply, cache} = do_unload(name, cache)
+    {:reply, reply, cache}
+  end
+
+  def handle_call({:reload, name}, _from, cache) do
     case resolve(name) do
       {:ok, path} ->
+        {mod, cache} = atom_for(path, cache)
+        cache = if Registry.loaded?(mod), do: elem(do_unload(name, cache), 1), else: cache
+        {reply, cache} = do_load(name, cache)
+        {:reply, reply, cache}
+
+      error ->
+        {:reply, error, cache}
+    end
+  end
+
+  def handle_call({:reload_all}, _from, cache) do
+    cache =
+      all_flow_names()
+      |> Enum.reduce(cache, fn name, cache ->
+        case resolve(name) do
+          {:ok, path} ->
+            {mod, cache} = atom_for(path, cache)
+
+            if Registry.loaded?(mod) do
+              {_, cache} = do_unload(name, cache)
+              {_, cache} = do_load(name, cache)
+              cache
+            else
+              cache
+            end
+
+          _ ->
+            cache
+        end
+      end)
+
+    {:reply, :ok, cache}
+  end
+
+  def handle_call({:flow_ui, name}, _from, cache) do
+    case resolve(name) do
+      {:ok, path} ->
+        {mod, cache} = atom_for(path, cache)
+        loaded = Registry.loaded?(mod)
+
+        elements =
+          for {node_id, {_handler, config}} <- mod.__flow__().nodes,
+              %{type: _t} = ui <- [Map.get(config, :ui)] do
+            %{
+              name: name,
+              node: node_id,
+              type: ui.type,
+              label: Map.get(ui, :label),
+              payload: Map.get(ui, :payload),
+              value: if(ui.type == "state" and loaded, do: node_state_value(mod, node_id), else: nil)
+            }
+          end
+
+        {:reply, elements, cache}
+
+      error ->
+        {:reply, error, cache}
+    end
+  end
+
+  # ---- internals ----
+
+  # Load/unload bodies shared by the `load`/`unload`/`reload`/`reload_all` calls.
+  defp do_load(name, cache) do
+    case resolve(name) do
+      {:ok, path} ->
+        # Recompile from source so an edited flow is picked up on (re)load.
         reply =
           try do
-            {mod, _} = atom_for(path, cache)
+            mod = compile_atom(path)
 
             case Registry.load(mod) do
               {:ok, _pid} ->
@@ -161,29 +248,33 @@ defmodule HomeElixir.FlowStore do
           end
 
         if reply == :ok, do: add_loaded(name)
-
-        {:reply, reply, cache}
+        {reply, cache}
 
       error ->
-        {:reply, error, cache}
+        {error, cache}
     end
   end
 
-  def handle_call({:unload, name}, _from, cache) do
+  defp do_unload(name, cache) do
     case resolve(name) do
       {:ok, path} ->
         {mod, cache} = atom_for(path, cache)
         result = Registry.unload(mod)
         Logger.info("unloaded flow #{name} (#{inspect(result)})")
         if result == :ok, do: remove_loaded(name)
-        {:reply, result, cache}
+        {result, cache}
 
       error ->
-        {:reply, error, cache}
+        {error, cache}
     end
   end
 
-  # ---- internals ----
+  defp node_state_value(mod, node_id) do
+    case Registry.node_state(mod, node_id) do
+      m when is_map(m) -> Map.get(m, :state)
+      _ -> nil
+    end
+  end
 
   # ---- loaded-state persistence (flows/.loaded) ----
 
