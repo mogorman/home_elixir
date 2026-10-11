@@ -35,6 +35,12 @@ defmodule HomeElixir.Web do
   def call(%{method: "GET", request_path: "/api/flows"} = conn, _opts),
     do: json(conn, HomeElixir.FlowStore.list())
 
+  def call(%{method: "GET", request_path: "/controls"} = conn, _opts),
+    do: html(conn, controls_page())
+
+  def call(%{method: "GET", request_path: "/api/ui"} = conn, _opts),
+    do: json(conn, HomeElixir.FlowStore.ui())
+
   def call(%{method: "GET", request_path: "/edit"} = conn, _opts),
     do: html(conn, editor_page(nil, new_flow_template()))
 
@@ -66,6 +72,9 @@ defmodule HomeElixir.Web do
 
       ["", "api", "flows", "check"] ->
         check_endpoint(conn)
+
+      ["", "api", "ui", "click"] ->
+        click_endpoint(conn)
 
       _ ->
         not_found(conn)
@@ -107,6 +116,19 @@ defmodule HomeElixir.Web do
     case HomeElixir.FlowStore.check(body(conn)) do
       {:ok, msg} -> text(conn, 200, msg)
       {:error, msg} -> text(conn, 400, msg)
+    end
+  end
+
+  defp click_endpoint(conn) do
+    case Jason.decode(body(conn)) do
+      {:ok, %{"name" => name, "node" => node} = data} ->
+        reply(conn, HomeElixir.FlowStore.click(name, node, Map.get(data, "payload")))
+
+      {:ok, _} ->
+        conn |> put_status(400) |> json(%{error: "name and node required"})
+
+      _ ->
+        conn |> put_status(400) |> json(%{error: "invalid json body"})
     end
   end
 
@@ -207,7 +229,7 @@ defmodule HomeElixir.Web do
       </style>
     </head>
     <body>
-      <div id="topbar"><a href="/" class="back">&larr; Flows</a></div>
+      <div id="topbar"><a href="/" class="back">&larr; Flows</a> &nbsp;·&nbsp; <a href="/controls">Controls</a></div>
       <div id="terminal"></div>
       <script>
         const term = new Terminal({ cursorBlink: true, fontFamily: "monospace", fontSize: 13, convertEol: true });
@@ -244,7 +266,7 @@ defmodule HomeElixir.Web do
     """
     #{base_html("Flows")}
       <table id="flows"></table>
-      <p><a href="/terminal">IEx</a> &nbsp;·&nbsp; <a href="/logs">Logs</a> &nbsp;·&nbsp; <a href="/edit">New flow</a></p>
+      <p><a href="/controls">Controls</a> &nbsp;·&nbsp; <a href="/terminal">IEx</a> &nbsp;·&nbsp; <a href="/logs">Logs</a> &nbsp;·&nbsp; <a href="/edit">New flow</a></p>
       <script>
         async function refresh() {
           const flows = await (await fetch("/api/flows")).json();
@@ -266,6 +288,42 @@ defmodule HomeElixir.Web do
               refresh();
             };
             table.appendChild(tr);
+          }
+        }
+        refresh();
+        setInterval(refresh, 3000);
+      </script>
+    """
+  end
+
+  defp controls_page do
+    """
+    #{base_html("Controls")}
+      <p><a href="/">&larr; Flows</a></p>
+      <div id="controls"></div>
+      <script>
+        async function refresh() {
+          const els = await (await fetch("/api/ui")).json();
+          const box = document.getElementById("controls");
+          box.innerHTML = "";
+          if (!els.length) {
+            const p = document.createElement("p");
+            p.className = "off";
+            p.textContent = "No controls yet. Add a node with a ui: config (e.g. an Inject with a button) and load its flow.";
+            box.appendChild(p);
+            return;
+          }
+          for (const e of els) {
+            const b = document.createElement("button");
+            b.textContent = e.label || e.node;
+            b.onclick = async () => {
+              await fetch("/api/ui/click", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: e.name, node: e.node, payload: e.payload })
+              });
+            };
+            box.appendChild(b);
           }
         }
         refresh();
@@ -365,7 +423,7 @@ defmodule HomeElixir.Web do
   defp logs_page do
     """
     #{base_html("Logs", dark: true)}
-      <p><a href="/">&larr; Flows</a></p>
+      <p><a href="/">&larr; Flows</a> &nbsp;·&nbsp; <a href="/controls">Controls</a></p>
       <div id="logs"></div>
       <script>
         const box = document.getElementById("logs");

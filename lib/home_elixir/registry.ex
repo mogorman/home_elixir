@@ -57,6 +57,25 @@ defmodule HomeElixir.Registry do
     for {flow_key, _} <- :ets.tab2list(@flow_ets), do: flow_key
   end
 
+  @doc """
+  UI elements declared by loaded flows. Collects nodes whose config has a
+  `ui:` map and returns `[%{module, node_id, ui}]`.
+  """
+  def ui_elements do
+    list()
+    |> Enum.flat_map(fn mod ->
+      mod.__flow__()
+      |> Map.get(:nodes, [])
+      |> Enum.map(fn {node_id, {_handler, config}} ->
+        case Map.get(config, :ui) do
+          %{type: _type} = ui -> %{module: mod, node_id: node_id, ui: ui}
+          _ -> nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+    end)
+  end
+
   @doc "Whether a flow module is loaded."
   def loaded?(flow_key), do: :ets.member(@flow_ets, flow_key)
 

@@ -25,6 +25,12 @@ defmodule HomeElixir.FlowStore do
   def load(name), do: call({:load, name})
   def unload(name), do: call({:unload, name})
 
+  @doc "UI elements declared by loaded flows (name-keyed, for the web UI)."
+  def ui, do: call(:ui)
+
+  @doc "Inject a message into a node of a loaded flow (used by web controls)."
+  def click(name, node, payload \\ nil), do: call({:click, name, node, payload})
+
   @doc "Drop the cached module atom for a flow so the next load recompiles it."
   def forget(name), do: call({:forget, name})
 
@@ -58,24 +64,47 @@ defmodule HomeElixir.FlowStore do
 
   @impl true
   def handle_call(:list, _from, cache) do
-    {flows, cache} =
-      dir()
-      |> Path.join("*.ex")
-      |> Path.wildcard()
-      |> Enum.reduce({[], cache}, fn path, {acc, cache} ->
-        {mod, cache} = atom_for(path, cache)
+    {flows, cache} = list_flows(cache)
+    {:reply, flows, cache}
+  end
 
-        flow = %{
-          name: Path.basename(path, ".ex"),
-          path: path,
-          module: mod,
-          loaded: Registry.loaded?(mod)
+  def handle_call(:ui, _from, cache) do
+    {flows, cache} = list_flows(cache)
+    name_of = Map.new(flows, fn f -> {f.module, f.name} end)
+
+    elements =
+      for %{module: mod, node_id: node_id, ui: ui} <- Registry.ui_elements(),
+          name = Map.get(name_of, mod) do
+        %{
+          name: name,
+          node: node_id,
+          type: ui.type,
+          label: Map.get(ui, :label),
+          payload: Map.get(ui, :payload)
         }
+      end
 
-        {[flow | acc], cache}
-      end)
+    {:reply, elements, cache}
+  end
 
-    {:reply, flows |> Enum.reverse() |> Enum.sort_by(& &1.name), cache}
+  def handle_call({:click, name, node, payload}, _from, cache) do
+    reply =
+      case resolve(name) do
+        {:ok, path} ->
+          {mod, cache} = atom_for(path, cache)
+
+          if Registry.loaded?(mod) do
+            Registry.send_msg(mod, node, HomeElixir.Msg.new(payload || %{}, topic: node))
+            :ok
+          else
+            {:error, :not_loaded}
+          end
+
+        error ->
+          error
+      end
+
+    {:reply, reply, cache}
   end
 
   def handle_call({:forget, name}, _from, cache) do
@@ -178,6 +207,28 @@ defmodule HomeElixir.FlowStore do
 
   defp add_loaded(name), do: write_loaded(read_loaded() ++ [name])
   defp remove_loaded(name), do: write_loaded(read_loaded() -- [name])
+
+  # Discover every flow file and its module atom (cached), sorted by name.
+  defp list_flows(cache) do
+    {flows, cache} =
+      dir()
+      |> Path.join("*.ex")
+      |> Path.wildcard()
+      |> Enum.reduce({[], cache}, fn path, {acc, cache} ->
+        {mod, cache} = atom_for(path, cache)
+
+        flow = %{
+          name: Path.basename(path, ".ex"),
+          path: path,
+          module: mod,
+          loaded: Registry.loaded?(mod)
+        }
+
+        {[flow | acc], cache}
+      end)
+
+    {flows |> Enum.reverse() |> Enum.sort_by(& &1.name), cache}
+  end
 
   # Route through a node-aware server reference so these calls work from both
   # the app node (local pid) and a dev shell attached to it (remote {name,node}).
