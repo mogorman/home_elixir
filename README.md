@@ -48,3 +48,7 @@ not a named node, the browser tab falls back to a self-contained `iex -S mix`.
 Each file in `flows/` is one flow module (`use HomeElixir.Flow`, `node/3`,
 `wire/2`). Create/edit them in the web editor, or just drop a `.ex` file into
 `flows/` and load it from the list page.
+
+## Development
+
+Developed with the help of Qwen 3.8.
