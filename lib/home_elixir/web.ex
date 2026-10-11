@@ -25,8 +25,8 @@ defmodule HomeElixir.Web do
 
   import Plug.Conn
 
-  @hljs "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0"
-  @bootstrap "https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+  @hljs "/static/hljs"
+  @bootstrap "/static/bootstrap/bootstrap.min.css"
 
   def init(_opts), do: []
 
@@ -66,6 +66,9 @@ defmodule HomeElixir.Web do
   def call(%{method: "GET", request_path: "/terminal"} = conn, _opts) do
     if websocket?(conn), do: upgrade_to_terminal(conn), else: html(conn, terminal_page())
   end
+
+  def call(%{method: "GET", request_path: "/static/" <> rest} = conn, _opts),
+    do: static_file(conn, rest)
 
   # ---- POST ----
 
@@ -204,9 +207,41 @@ defmodule HomeElixir.Web do
     end
   end
 
-  defp html(conn, body), do: conn |> put_resp_content_type("text/html") |> send_resp(200, body)
+  defp html(conn, body) do
+    conn
+    |> put_resp_content_type("text/html")
+    |> put_resp_header("cache-control", "no-cache, no-store, must-revalidate")
+    |> send_resp(200, body)
+  end
   defp json(conn, data), do: conn |> put_resp_content_type("application/json") |> send_resp(200, Jason.encode!(data))
   defp text(conn, status, data), do: conn |> put_resp_content_type("text/plain") |> send_resp(status, data)
+
+  # Serves bundled assets under priv/static (currently the highlight.js build).
+  defp static_file(conn, name) do
+    root = Application.app_dir(:home_elixir, "priv/static") |> Path.expand()
+    path = Path.join(root, name) |> Path.expand()
+
+    cond do
+      not String.starts_with?(path, root <> "/") ->
+        not_found(conn)
+
+      File.regular?(path) ->
+        type =
+          case Path.extname(path) do
+            ".js" -> "text/javascript"
+            ".css" -> "text/css"
+            _ -> "application/octet-stream"
+          end
+
+        conn
+        |> put_resp_content_type(type)
+        |> put_resp_header("cache-control", "no-cache")
+        |> send_resp(200, File.read!(path))
+
+      true ->
+        not_found(conn)
+    end
+  end
   defp websocket?(conn) do
     case :lists.keyfind("upgrade", 1, conn.req_headers) do
       {"upgrade", value} -> String.downcase(value) == "websocket"
@@ -226,9 +261,9 @@ defmodule HomeElixir.Web do
       <meta charset="utf-8">
       <title>Home Elixir IEx</title>
       <link href="#{@bootstrap}" rel="stylesheet">
-      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
-      <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
-      <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+      <link rel="stylesheet" href="/static/xterm/xterm.min.css">
+      <script src="/static/xterm/xterm.min.js"></script>
+      <script src="/static/xterm/addon-fit.min.js"></script>
       #{theme_script()}
       <style>
         html, body { height: 100%; margin: 0; }
@@ -403,12 +438,17 @@ defmodule HomeElixir.Web do
               min-height: 280px; background: var(--bs-tertiary-bg); }
         .cm pre, .cm textarea { margin: 0; padding: 12px; position: absolute; inset: 0;
               width: 100%; height: 100%; box-sizing: border-box;
-              font: 13px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-              white-space: pre; overflow: auto; tab-size: 2; letter-spacing: 0; }
+              font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+              font-size: 13px; line-height: 20px;
+              white-space: pre; overflow: auto; tab-size: 2; letter-spacing: 0;
+              text-size-adjust: 100%; -webkit-text-size-adjust: 100%; }
+        @media (max-width: 768px) {
+          .cm pre, .cm textarea { font-size: 16px; line-height: 24px; }
+        }
         .cm pre { pointer-events: none; z-index: 1; }
         .cm pre .hljs { display: block; padding: 0; margin: 0; background: transparent;
               overflow: visible; font: inherit; }
-        .cm textarea { z-index: 2; background: transparent; color: var(--bs-body-color);
+        .cm textarea { z-index: 2; background: transparent; color: transparent;
               caret-color: var(--bs-body-color); border: 0; resize: none; outline: none; }
         .flowlogs { font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.5;
               white-space: pre-wrap; height: 240px; overflow: auto; }
@@ -427,7 +467,7 @@ defmodule HomeElixir.Web do
           </div>
           <div class="cm">
             <pre class="cm-hl" aria-hidden="true"><code id="hl" class="hljs language-elixir"></code></pre>
-            <textarea id="editor" spellcheck="false" autocomplete="off"></textarea>
+            <textarea id="editor" wrap="off" spellcheck="false" autocomplete="off"></textarea>
           </div>
         </div>
       </div>
@@ -479,11 +519,17 @@ defmodule HomeElixir.Web do
         }
         function render() {
           let html;
-          try {
-            html = hljs.highlight(editor.value, { language: "elixir" }).value;
-          } catch (e) {
-            html = editor.value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+          const escaped = editor.value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+          if (typeof hljs === "undefined") {
+            html = escaped;
+          } else {
+            try {
+              html = hljs.highlight(editor.value, { language: "elixir" }).value;
+            } catch (e) {
+              html = escaped;
+            }
           }
+          if (editor.value.endsWith("\\n")) html += " ";
           hl.innerHTML = html;
           pre.scrollTop = editor.scrollTop;
           pre.scrollLeft = editor.scrollLeft;
