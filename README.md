@@ -105,6 +105,27 @@ end
 The build is cached in `~/.cache/home_elixir/deps`, so only the first load of a
 dep set hits the network.
 
+### Handler flows
+
+For a flow that just reacts to Home Assistant state changes, define `handle/1`
+instead of wiring nodes. The Flow macro auto-wires an HA `state_changed` source
+to it and discards the return value — so a handler just matches the input it
+cares about and does work. The catch-all clause is added for you, so write only
+the clauses you need:
+
+```elixir
+defmodule HomeElixir.Flows.DoorWatch do
+  use HomeElixir.Flow
+
+  def handle(%{topic: "sensor.front_door", payload: "open"}) do
+    # do work (fire a service, log, send a message, ...)
+  end
+end
+```
+
+The `topic` is the entity id and the `payload` is the new state; match on them
+(or use guards / `=~`) to pick the changes you care about.
+
 ## Nodes
 
 Built-in nodes live in `HomeElixir.Nodes`. A node is a module implementing
