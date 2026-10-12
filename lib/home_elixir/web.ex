@@ -508,6 +508,7 @@ defmodule HomeElixir.Web do
         const status = document.getElementById("status");
         const nameInput = document.getElementById("name");
         editor.value = FLOW;
+        let savedSource = FLOW;
         function snake(n) {
           return n.replace(/([a-z0-9])([A-Z])/g, "$1_$2")
                   .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2").toLowerCase();
@@ -556,6 +557,9 @@ defmodule HomeElixir.Web do
           render();
         });
         editor.addEventListener("input", render);
+        window.addEventListener("beforeunload", (e) => {
+          if (editor.value !== savedSource) { e.preventDefault(); e.returnValue = ""; }
+        });
         editor.addEventListener("scroll", () => {
           pre.scrollTop = editor.scrollTop;
           pre.scrollLeft = editor.scrollLeft;
@@ -565,6 +569,7 @@ defmodule HomeElixir.Web do
           status.textContent = "saving…";
           const r = await fetch("/api/flows/save", { method: "POST", body: editor.value });
           status.textContent = await r.text();
+          if (r.ok) savedSource = editor.value;
         }
         async function doCheck() {
           status.textContent = "checking…";
