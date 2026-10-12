@@ -14,6 +14,7 @@ defmodule HomeElixir.Web do
     GET  /logs                    live log view
     GET  /terminal                real IEx in the browser (xterm.js over WebSocket)
     GET  /api/flows               list flows (JSON)
+    GET  /api/entity_tree         HA Area > Device > Entity tree (JSON)
     GET  /api/logs?since=N        log lines newer than N (JSON)
     GET  /api/flows/:name/ui      UI elements for one flow (JSON)
     POST /api/flows/:name/load | unload | reload
@@ -37,6 +38,9 @@ defmodule HomeElixir.Web do
 
   def call(%{method: "GET", request_path: "/api/flows"} = conn, _opts),
     do: json(conn, HomeElixir.FlowStore.list())
+
+  def call(%{method: "GET", request_path: "/api/entity_tree"} = conn, _opts),
+    do: json(conn, HomeElixir.EntityBrowser.tree())
 
   def call(%{method: "GET", request_path: "/controls"} = conn, _opts),
     do: html(conn, controls_page())
@@ -432,6 +436,15 @@ defmodule HomeElixir.Web do
               caret-color: var(--bs-body-color); border: 0; resize: none; outline: none; }
         .flowlogs { font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.5;
               white-space: pre-wrap; height: 240px; overflow: auto; }
+        .ent-row { cursor: pointer; border-bottom: 1px solid var(--bs-border-color); }
+        .ent-row:hover { background: var(--bs-tertiary-bg); }
+        #entities-card summary { cursor: pointer; }
+        #ent-overlay { position: fixed; inset: 0; z-index: 1070; display: flex;
+               align-items: center; justify-content: center; background: rgba(0, 0, 0, .45); }
+        #entities-card { width: min(940px, 94vw); height: min(72vh, 680px);
+               display: flex; flex-direction: column; overflow: hidden; }
+        #entities-card .card-header { flex: 0 0 auto; }
+        #entities-card .card-body { flex: 1 1 auto; overflow: auto; }
       </style>
       <div class="card">
         <div class="card-body">
@@ -442,12 +455,28 @@ defmodule HomeElixir.Web do
             </label>
             <button id="check" class="btn btn-sm btn-outline-secondary">Check</button>
             <button id="reload" class="btn btn-sm btn-outline-secondary">Reload</button>
+            <button id="entities-btn" class="btn btn-sm btn-outline-secondary">Entities</button>
             <button id="save" class="btn btn-sm btn-primary">Save</button>
             <span id="status" class="text-success small"></span>
           </div>
           <div class="cm">
             <pre class="cm-hl" aria-hidden="true"><code id="hl" class="hljs language-elixir"></code></pre>
             <textarea id="editor" wrap="off" spellcheck="false" autocomplete="off"></textarea>
+          </div>
+        </div>
+      </div>
+      <div id="ent-overlay" class="d-none">
+        <div id="entities-card" class="card">
+          <div class="card-header d-flex align-items-center gap-2 flex-wrap">
+            <span class="fw-semibold">Entities</span>
+            <input id="ent-search" class="form-control form-control-sm" style="max-width: 22rem"
+                   placeholder="Search name or entity_id…" spellcheck="false">
+            <button id="ent-refresh" class="btn btn-sm btn-outline-secondary">Refresh</button>
+            <span id="ent-status" class="text-secondary small"></span>
+            <button id="ent-close" class="btn btn-sm btn-outline-secondary ms-auto" aria-label="Close">×</button>
+          </div>
+          <div class="card-body p-0">
+            <div id="ent-tree"></div>
           </div>
         </div>
       </div>
@@ -592,6 +621,111 @@ defmodule HomeElixir.Web do
         }
         setHljsTheme(document.documentElement.getAttribute("data-bs-theme"));
         document.addEventListener("themechange", function (e) { setHljsTheme(e.detail); });
+        // ---- entity browser: Area > Device > Entity tree, or flat when searching ----
+        const entOverlay = document.getElementById("ent-overlay");
+        const entTree = document.getElementById("ent-tree");
+        const entSearch = document.getElementById("ent-search");
+        const entStatus = document.getElementById("ent-status");
+        let entData = null;
+        function openEnt() {
+          entOverlay.classList.remove("d-none");
+          entSearch.focus();
+          if (!entData) loadEntities();
+        }
+        function closeEnt() { entOverlay.classList.add("d-none"); }
+        document.getElementById("entities-btn").onclick = () =>
+          entOverlay.classList.contains("d-none") ? openEnt() : closeEnt();
+        document.getElementById("ent-close").onclick = closeEnt;
+        entOverlay.addEventListener("click", (e) => { if (e.target === entOverlay) closeEnt(); });
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "Escape" && !entOverlay.classList.contains("d-none")) closeEnt();
+        });
+        document.getElementById("ent-refresh").onclick = () => loadEntities();
+        entSearch.addEventListener("input", renderEnt);
+        async function loadEntities() {
+          entStatus.textContent = "loading…";
+          try { entData = await (await fetch("/api/entity_tree")).json(); }
+          catch (e) { entData = null; entStatus.textContent = "error"; renderEnt(); return; }
+          entStatus.textContent = entData.connected ? "" : "HA not connected";
+          renderEnt();
+        }
+        function entRow(e, crumb) {
+          const d = document.createElement("div");
+          d.className = "ent-row d-flex align-items-center gap-2 px-3 py-1";
+          if (crumb) {
+            const c = document.createElement("span");
+            c.className = "text-secondary small";
+            c.textContent = crumb;
+            d.appendChild(c);
+          }
+          const code = document.createElement("code");
+          code.textContent = e.id;
+          if (e.cls) code.title = e.cls;
+          const name = document.createElement("span");
+          name.className = "text-secondary small";
+          name.textContent = e.name;
+          const st = document.createElement("span");
+          st.className = "badge bg-secondary ms-auto";
+          st.textContent = (e.state == null ? "-" : e.state) + (e.unit ? " " + e.unit : "");
+          d.appendChild(code);
+          d.appendChild(name);
+          d.appendChild(st);
+          d.onclick = () => insertEntity(e.id);
+          return d;
+        }
+        function renderEnt() {
+          entTree.innerHTML = "";
+          if (!entData) return;
+          if (!entData.connected) {
+            entTree.innerHTML = '<div class="text-secondary small p-3">Home Assistant is not connected.</div>';
+            return;
+          }
+          const q = entSearch.value.trim().toLowerCase();
+          if (q) {
+            const all = [];
+            for (const a of entData.areas) {
+              for (const dv of (a.devices || [])) for (const e of dv.entities) all.push([e, a.name + " / " + dv.name]);
+              for (const e of (a.entities || [])) all.push([e, a.name]);
+            }
+            const matches = all.filter(([e]) => e.id.toLowerCase().includes(q) || (e.name || "").toLowerCase().includes(q));
+            if (!matches.length) {
+              entTree.innerHTML = '<div class="text-secondary small p-3">No matching entities.</div>';
+              return;
+            }
+            for (const [e, crumb] of matches) entTree.appendChild(entRow(e, crumb));
+            return;
+          }
+          for (const a of entData.areas) {
+            const areaCount = (a.devices || []).reduce((n, dv) => n + dv.entities.length, 0) + (a.entities || []).length;
+            const areaDet = document.createElement("details");
+            const aSum = document.createElement("summary");
+            aSum.className = "px-3 py-1 fw-semibold";
+            aSum.textContent = a.name + " (" + areaCount + ")";
+            areaDet.appendChild(aSum);
+            const body = document.createElement("div");
+            for (const dv of (a.devices || [])) {
+              const dDet = document.createElement("details");
+              const dSum = document.createElement("summary");
+              dSum.className = "px-3 py-1 ms-3";
+              dSum.textContent = dv.name + " (" + dv.entities.length + ")";
+              dDet.appendChild(dSum);
+              const dBod = document.createElement("div");
+              for (const e of dv.entities) dBod.appendChild(entRow(e));
+              dDet.appendChild(dBod);
+              body.appendChild(dDet);
+            }
+            for (const e of (a.entities || [])) body.appendChild(entRow(e));
+            areaDet.appendChild(body);
+            entTree.appendChild(areaDet);
+          }
+        }
+        function insertEntity(id) {
+          const s = editor.selectionStart, e = editor.selectionEnd;
+          editor.value = editor.value.slice(0, s) + id + editor.value.slice(e);
+          editor.selectionStart = editor.selectionEnd = s + id.length;
+          render();
+          closeEnt();
+        }
       </script>
     """
   end
