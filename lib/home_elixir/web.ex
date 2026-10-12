@@ -373,6 +373,7 @@ defmodule HomeElixir.Web do
     #{base_html("Controls", :controls)}
       <div id="controls" class="d-flex flex-column gap-3"></div>
       <script>
+        #{control_js()}
         async function refresh() {
           const els = await (await fetch("/api/ui")).json();
           const box = document.getElementById("controls");
@@ -394,28 +395,7 @@ defmodule HomeElixir.Web do
             head.textContent = flow;
             const body = document.createElement("div");
             body.className = "card-body d-flex flex-wrap gap-2";
-            for (const e of items) {
-              if (e.type === "state") {
-                const badge = document.createElement("span");
-                const on = e.value === true || e.value === "on";
-                const off = e.value === false || e.value === "off";
-                badge.className = "badge " + (on ? "bg-success" : off ? "bg-secondary" : "bg-info text-dark");
-                badge.textContent = (e.label || e.node) + ": " + (e.value === null || e.value === undefined ? "-" : e.value);
-                body.appendChild(badge);
-              } else {
-                const b = document.createElement("button");
-                b.className = "btn btn-primary";
-                b.textContent = e.label || e.node;
-                b.onclick = async () => {
-                  await fetch("/api/ui/click", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name: e.name, node: e.node, payload: e.payload })
-                  });
-                };
-                body.appendChild(b);
-              }
-            }
+            for (const e of items) body.appendChild(renderControl(e, "btn-primary"));
             card.appendChild(head);
             card.appendChild(body);
             box.appendChild(card);
@@ -489,6 +469,7 @@ defmodule HomeElixir.Web do
       <script src="#{@hljs}/highlight.min.js"></script>
       <script src="#{@hljs}/languages/elixir.min.js"></script>
       <script>
+        #{control_js()}
         const FLOW = #{source_json};
         const FLOWNAME = #{name_json};
         const editor = document.getElementById("editor");
@@ -578,25 +559,7 @@ defmodule HomeElixir.Web do
           const box = document.getElementById("ctrl");
           box.innerHTML = "";
           if (!els.length) { box.innerHTML = '<span class="text-secondary small">no ui elements</span>'; return; }
-          for (const e of els) {
-            if (e.type === "state") {
-              const b = document.createElement("span");
-              const on = e.value === true || e.value === "on";
-              const off = e.value === false || e.value === "off";
-              b.className = "badge " + (on ? "bg-success" : off ? "bg-secondary" : "bg-info text-dark");
-              b.textContent = (e.label || e.node) + ": " + (e.value === null || e.value === undefined ? "-" : e.value);
-              box.appendChild(b);
-            } else {
-              const b = document.createElement("button");
-              b.className = "btn btn-sm btn-primary";
-              b.textContent = e.label || e.node;
-              b.onclick = async () => {
-                await fetch("/api/ui/click", { method: "POST", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ name: e.name, node: e.node, payload: e.payload }) });
-              };
-              box.appendChild(b);
-            }
-          }
+          for (const e of els) box.appendChild(renderControl(e, "btn-sm btn-primary"));
         }
         let logSince = 0;
         async function refreshLogs() {
@@ -660,6 +623,31 @@ defmodule HomeElixir.Web do
         poll();
         setInterval(poll, 1500);
       </script>
+    """
+  end
+
+  # Shared control renderer (state badge or clickable button) for the /controls
+  # page and the editor's live-controls panel.
+  defp control_js do
+    """
+    function renderControl(e, btnClass) {
+      if (e.type === "state") {
+        const b = document.createElement("span");
+        const on = e.value === true || e.value === "on";
+        const off = e.value === false || e.value === "off";
+        b.className = "badge " + (on ? "bg-success" : off ? "bg-secondary" : "bg-info text-dark");
+        b.textContent = (e.label || e.node) + ": " + (e.value === null || e.value === undefined ? "-" : e.value);
+        return b;
+      }
+      const b = document.createElement("button");
+      b.className = "btn " + (btnClass || "btn-primary");
+      b.textContent = e.label || e.node;
+      b.onclick = async () => {
+        await fetch("/api/ui/click", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: e.name, node: e.node, payload: e.payload }) });
+      };
+      return b;
+    }
     """
   end
 

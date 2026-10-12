@@ -50,9 +50,6 @@ defmodule HomeElixir.FlowStore do
   @doc "UI elements for one flow (loaded or not), with live `value` when loaded."
   def flow_ui(name), do: call({:flow_ui, name})
 
-  @doc "Drop the cached module atom for a flow so the next load recompiles it."
-  def forget(name), do: call({:forget, name})
-
   @doc "Whether a flow is currently loaded (without compiling it)."
   def loaded?(name), do: call({:loaded?, name})
 
@@ -125,10 +122,6 @@ defmodule HomeElixir.FlowStore do
       end
 
     {:reply, reply, cache}
-  end
-
-  def handle_call({:forget, name}, _from, cache) do
-    {:reply, :ok, Map.delete(cache, name)}
   end
 
   def handle_call({:loaded?, name}, _from, cache) do

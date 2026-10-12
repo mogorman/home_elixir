@@ -84,11 +84,6 @@ defmodule HomeElixir.HA.Client do
     GenServer.call(client, {:discover, discovery_frame, to})
   end
 
-  @doc "Remove a channel registered by `discover/4`."
-  def forget_channel(client, id) do
-    GenServer.call(client, {:forget_channel, id})
-  end
-
   @doc "Current connection status: `:connecting`, `:authenticating`, `:connected` or `:disconnected`."
   def status(client), do: GenServer.call(client, :status)
 
@@ -164,10 +159,6 @@ defmodule HomeElixir.HA.Client do
     if state.status == :connected, do: send_transport(state, frame)
 
     {:reply, :ok, state}
-  end
-
-  def handle_call({:forget_channel, id}, _from, state) do
-    {:reply, :ok, %{state | channels: Map.delete(state.channels, id)}}
   end
 
   @impl true
