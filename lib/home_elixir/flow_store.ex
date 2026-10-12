@@ -26,8 +26,13 @@ defmodule HomeElixir.FlowStore do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
+  @doc "All flow files in the flows dir, each with its name, path, module, and loaded state."
   def list, do: call(:list)
+
+  @doc "Compile a flow from disk and start it (runs its `setup/0`, if any)."
   def load(name), do: call({:load, name}, @install_timeout)
+
+  @doc "Stop a loaded flow."
   def unload(name), do: call({:unload, name})
 
   @doc "UI elements declared by loaded flows (name-keyed, for the web UI)."
