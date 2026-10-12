@@ -17,12 +17,17 @@ defmodule HomeElixir.FlowStore do
 
   alias HomeElixir.Registry
 
+  # A load may trigger a one-time external dep build (HomeElixir.Dep.install),
+  # which can take well over the default 5s GenServer.call timeout on a cold
+  # cache. Subsequent loads are fast (cached), so this only matters the first time.
+  @install_timeout 180_000
+
   def start_link(_opts \\ []) do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
   def list, do: call(:list)
-  def load(name), do: call({:load, name})
+  def load(name), do: call({:load, name}, @install_timeout)
   def unload(name), do: call({:unload, name})
 
   @doc "UI elements declared by loaded flows (name-keyed, for the web UI)."
@@ -32,10 +37,10 @@ defmodule HomeElixir.FlowStore do
   def click(name, node, payload \\ nil), do: call({:click, name, node, payload})
 
   @doc "Recompile a flow from disk and restart it (or load it if not running)."
-  def reload(name), do: call({:reload, name})
+  def reload(name), do: call({:reload, name}, @install_timeout)
 
   @doc "Reload every currently-loaded flow from disk."
-  def reload_all, do: call({:reload_all})
+  def reload_all, do: call({:reload_all}, @install_timeout)
 
   @doc "UI elements for one flow (loaded or not), with live `value` when loaded."
   def flow_ui(name), do: call({:flow_ui, name})
@@ -324,6 +329,7 @@ defmodule HomeElixir.FlowStore do
   # Route through a node-aware server reference so these calls work from both
   # the app node (local pid) and a dev shell attached to it (remote {name,node}).
   defp call(msg), do: GenServer.call(server(), msg)
+  defp call(msg, timeout), do: GenServer.call(server(), msg, timeout)
 
   defp server do
     case GenServer.whereis(__MODULE__) do

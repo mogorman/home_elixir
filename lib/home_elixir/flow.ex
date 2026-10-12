@@ -17,6 +17,12 @@ defmodule HomeElixir.Flow do
   `__flow__` returns the declared nodes and wires; `HomeElixir.Registry` turns
   that into a supervised process tree. Node config must be data (or a remote
   function like `&Mod.fun/1`); transforms are plain functions on the flow.
+
+  A flow may also define `setup/0`. It runs once when the flow is loaded,
+  before any node starts — use it to install external deps at load time
+  (Livebook-style), without editing `mix.exs`:
+
+      def setup, do: HomeElixir.Dep.install([{:timex, "~> 3.7"}])
   """
 
   defmacro __using__(_opts) do

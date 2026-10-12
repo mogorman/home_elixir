@@ -19,6 +19,7 @@ defmodule HomeElixir.Registry do
     if loaded?(flow_key) do
       {:error, :already_loaded}
     else
+      run_setup(flow_key)
       flow = flow_key.__flow__()
 
       spec = %{
@@ -95,6 +96,14 @@ defmodule HomeElixir.Registry do
       [{pid, _}] -> GenServer.call(pid, :__state__)
       _ -> nil
     end
+  end
+
+  # Run the flow's optional `setup/0` once, before any node starts. Flows use it
+  # to install external deps at load time (Livebook-style), e.g.
+  # `def setup, do: Mix.install([{:timex, "~> 3.7"}])`.
+  defp run_setup(flow_key) do
+    if function_exported?(flow_key, :setup, 0), do: flow_key.setup()
+    :ok
   end
 
   defp route_flow(flow_key, flow) do
