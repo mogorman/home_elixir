@@ -1,4 +1,4 @@
-defmodule HomeElixir.Flows.Counter do
+defmodule HomeElixir.Flows.Example.Counter do
   @moduledoc """
   Example flow that tours every `HomeElixir.FlowState` operation with a live,
   in-sync display on the /controls page.

@@ -1,4 +1,4 @@
-defmodule HomeElixir.Flows.ToggleLights do
+defmodule HomeElixir.Flows.Example.ToggleLights do
   @moduledoc """
   Example flow with a web control: a button on the /controls page toggles the
   living room lights.

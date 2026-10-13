@@ -284,7 +284,7 @@ defmodule HomeElixir.FlowStore do
   defp loaded_file, do: Path.join(dir(), ".loaded")
 
   defp all_flow_names do
-    dir() |> Path.join("*.ex") |> Path.wildcard() |> Enum.map(&Path.basename(&1, ".ex"))
+    dir() |> Path.join("**/*.ex") |> Path.wildcard() |> Enum.map(&rel_name/1)
   end
 
   defp read_loaded do
@@ -302,17 +302,18 @@ defmodule HomeElixir.FlowStore do
   defp add_loaded(name), do: write_loaded(read_loaded() ++ [name])
   defp remove_loaded(name), do: write_loaded(read_loaded() -- [name])
 
-  # Discover every flow file and its module atom (cached), sorted by name.
+  # Discover every flow file (recursively; subfolders become path-style names)
+  # and its module atom (cached), sorted by name.
   defp list_flows(cache) do
     {flows, cache} =
       dir()
-      |> Path.join("*.ex")
+      |> Path.join("**/*.ex")
       |> Path.wildcard()
       |> Enum.reduce({[], cache}, fn path, {acc, cache} ->
         {mod, cache} = atom_for(path, cache)
 
         flow = %{
-          name: Path.basename(path, ".ex"),
+          name: rel_name(path),
           path: path,
           module: mod,
           loaded: Registry.loaded?(mod)
@@ -351,7 +352,7 @@ defmodule HomeElixir.FlowStore do
   end
 
   defp atom_for(path, cache) do
-    key = Path.basename(path, ".ex")
+    key = rel_name(path)
 
     case Map.fetch(cache, key) do
       {:ok, mod} ->
@@ -362,6 +363,11 @@ defmodule HomeElixir.FlowStore do
         {mod, Map.put(cache, key, mod)}
     end
   end
+
+  # A flow file's name relative to the flows dir, without the extension —
+  # subfolders become path-style names ("LivingRoom/counter"), unique across
+  # folders, and existing flat names are unchanged.
+  defp rel_name(path), do: path |> Path.relative_to(dir()) |> Path.rootname()
 
   defp compile_atom(path) do
     case Code.compile_file(path) do

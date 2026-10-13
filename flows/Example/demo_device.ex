@@ -1,4 +1,4 @@
-defmodule HomeElixir.Flows.DemoDevice do
+defmodule HomeElixir.Flows.Example.DemoDevice do
   @moduledoc """
   Example: a switch presented to Home Assistant and owned by the flow
   (Node-RED-companion style).

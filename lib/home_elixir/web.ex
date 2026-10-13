@@ -54,9 +54,14 @@ defmodule HomeElixir.Web do
   end
 
   def call(%{method: "GET", request_path: "/api/flows/" <> rest} = conn, _opts) do
-    case String.split(rest, "/") do
-      [name, "ui"] -> json(conn, HomeElixir.FlowStore.flow_ui(name))
-      _ -> not_found(conn)
+    # Flow names may be path-style ("LivingRoom/counter"), so only the last
+    # segment is the sub-route.
+    parts = String.split(rest, "/")
+
+    if length(parts) >= 2 and List.last(parts) == "ui" do
+      json(conn, HomeElixir.FlowStore.flow_ui(Enum.join(Enum.drop(parts, -1), "/")))
+    else
+      not_found(conn)
     end
   end
 
@@ -83,29 +88,28 @@ defmodule HomeElixir.Web do
 
   def call(%{method: "POST"} = conn, _opts) do
     case conn.request_path |> String.split("/") do
-      ["", "api", "flows", name, "load"] ->
-        reply(conn, HomeElixir.FlowStore.load(name))
-
-      ["", "api", "flows", name, "unload"] ->
-        reply(conn, HomeElixir.FlowStore.unload(name))
-
-      ["", "api", "flows", name, "reload"] ->
-        reply(conn, HomeElixir.FlowStore.reload(name))
-
-      ["", "api", "flows", "save"] ->
-        save_endpoint(conn)
-
-      ["", "api", "flows", "check"] ->
-        check_endpoint(conn)
-
-      ["", "api", "flows", "reload"] ->
-        reply(conn, HomeElixir.FlowStore.reload_all())
+      # Flow names may be path-style ("LivingRoom/counter"), so the name is
+      # everything between "flows" and the trailing action segment.
+      ["", "api", "flows" | tail] when length(tail) >= 1 ->
+        flow_api(conn, Enum.join(Enum.drop(tail, -1), "/"), List.last(tail))
 
       ["", "api", "ui", "click"] ->
         click_endpoint(conn)
 
       _ ->
         not_found(conn)
+    end
+  end
+
+  defp flow_api(conn, name, action) do
+    case {name, action} do
+      {"", "save"} -> save_endpoint(conn)
+      {"", "check"} -> check_endpoint(conn)
+      {"", "reload"} -> reply(conn, HomeElixir.FlowStore.reload_all())
+      {name, "load"} -> reply(conn, HomeElixir.FlowStore.load(name))
+      {name, "unload"} -> reply(conn, HomeElixir.FlowStore.unload(name))
+      {name, "reload"} -> reply(conn, HomeElixir.FlowStore.reload(name))
+      _ -> not_found(conn)
     end
   end
 
@@ -132,11 +136,18 @@ defmodule HomeElixir.Web do
   end
 
   # Derive the flow file name from the module name in the source (single source
-  # of truth, so the name and module can't drift apart).
+  # of truth, so the name and module can't drift apart). A
+  # `HomeElixir.Flows.LivingRoom.Counter` module maps to "LivingRoom/counter".
   defp name_from_source(source) do
     case Regex.run(~r/defmodule\s+([A-Za-z0-9_.]+)/, source) do
-      [_, mod] -> mod |> String.split(".") |> List.last() |> Macro.underscore()
-      _ -> nil
+      [_, mod] ->
+        case String.split(mod, ".") do
+          ["HomeElixir", "Flows" | rest] -> rest |> Enum.map(&Macro.underscore/1) |> Enum.join("/")
+          parts -> parts |> List.last() |> Macro.underscore()
+        end
+
+      _ ->
+        nil
     end
   end
 
@@ -179,7 +190,9 @@ defmodule HomeElixir.Web do
   # ---- flow file ops ----
 
   defp save_flow(name, source) do
-    File.write!(flow_path(name), source)
+    path = flow_path(name)
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, source)
     :ok
   end
 
@@ -350,32 +363,74 @@ defmodule HomeElixir.Web do
           b.onclick = fn;
           parent.appendChild(b);
         }
+        // Folder tree: flow names may be path-style ("LivingRoom/counter").
+        // Expanded folders live in this Set; folders start collapsed.
+        const expanded = new Set();
+        function buildTree(flows) {
+          const root = { path: "", folders: {}, flows: [] };
+          for (const f of flows) {
+            const parts = f.name.split("/");
+            let node = root;
+            for (let i = 0; i < parts.length - 1; i++) {
+              const p = parts[i];
+              if (!node.folders[p]) node.folders[p] = { path: node.path ? node.path + "/" + p : p, folders: {}, flows: [] };
+              node = node.folders[p];
+            }
+            node.flows.push(f);
+          }
+          return root;
+        }
+        function folderCount(node) {
+          let n = node.flows.length;
+          for (const f of Object.values(node.folders)) n += folderCount(f);
+          return n;
+        }
+        function flowRow(f, depth) {
+          const tr = document.createElement("tr");
+          const actions = document.createElement("div");
+          actions.className = "d-flex gap-1 justify-content-end";
+          if (f.loaded) {
+            addBtn(actions, "Reload", "btn-outline-secondary", () => act(f.name, "reload"));
+            addBtn(actions, "Unload", "btn-outline-secondary", () => act(f.name, "unload"));
+          } else {
+            addBtn(actions, "Load", "btn-primary", () => act(f.name, "load"));
+          }
+          const edit = document.createElement("a");
+          edit.className = "btn btn-sm btn-outline-secondary";
+          edit.href = "/edit/" + f.name;
+          edit.textContent = "Edit";
+          actions.appendChild(edit);
+          tr.innerHTML =
+            `<td class="fw-semibold" style="padding-left:${12 + depth * 20}px">${f.name.split("/").pop()}</td>` +
+            `<td class="text-secondary">${f.module}</td>` +
+            `<td><span class="badge ${f.loaded ? "bg-success" : "bg-secondary"}">${f.loaded ? "loaded" : "not loaded"}</span></td>`;
+          tr.appendChild(actions);
+          return tr;
+        }
+        function folderRow(folder, depth) {
+          const open = expanded.has(folder.path);
+          const tr = document.createElement("tr");
+          const td = document.createElement("td");
+          td.colSpan = 4;
+          td.style.cursor = "pointer";
+          td.innerHTML = `<span class="fw-semibold" style="padding-left:${12 + depth * 20}px">${open ? "▾" : "▸"} ${folder.path.split("/").pop()} <span class="text-secondary fw-normal">(${folderCount(folder)})</span></span>`;
+          td.onclick = () => { open ? expanded.delete(folder.path) : expanded.add(folder.path); refresh(); };
+          tr.appendChild(td);
+          return tr;
+        }
+        function renderNode(node, depth, tbody) {
+          for (const name of Object.keys(node.folders).sort()) {
+            const folder = node.folders[name];
+            tbody.appendChild(folderRow(folder, depth));
+            if (expanded.has(folder.path)) renderNode(folder, depth + 1, tbody);
+          }
+          for (const f of node.flows) tbody.appendChild(flowRow(f, depth));
+        }
         async function refresh() {
           const flows = await (await fetch("/api/flows")).json();
           const tbody = document.getElementById("flows");
           tbody.innerHTML = "";
-          for (const f of flows) {
-            const tr = document.createElement("tr");
-            const actions = document.createElement("div");
-            actions.className = "d-flex gap-1 justify-content-end";
-            if (f.loaded) {
-              addBtn(actions, "Reload", "btn-outline-secondary", () => act(f.name, "reload"));
-              addBtn(actions, "Unload", "btn-outline-secondary", () => act(f.name, "unload"));
-            } else {
-              addBtn(actions, "Load", "btn-primary", () => act(f.name, "load"));
-            }
-            const edit = document.createElement("a");
-            edit.className = "btn btn-sm btn-outline-secondary";
-            edit.href = "/edit/" + f.name;
-            edit.textContent = "Edit";
-            actions.appendChild(edit);
-            tr.innerHTML =
-              `<td class="fw-semibold">${f.name}</td>` +
-              `<td class="text-secondary">${f.module}</td>` +
-              `<td><span class="badge ${f.loaded ? "bg-success" : "bg-secondary"}">${f.loaded ? "loaded" : "not loaded"}</span></td>`;
-            tr.appendChild(actions);
-            tbody.appendChild(tr);
-          }
+          renderNode(buildTree(flows), 0, tbody);
         }
         document.getElementById("reload-all").onclick = reloadAll;
         refresh();

@@ -31,16 +31,32 @@ defmodule HomeElixir.FlowStoreTest do
   end
   """
 
+  @nested_mod HomeElixir.Flows.Rooms.TestFlow
+
+  @nested_src """
+  defmodule HomeElixir.Flows.Rooms.TestFlow do
+    use HomeElixir.Flow
+
+    node("in", HomeElixir.Nodes.Function, fun: &__MODULE__.id/1)
+    node("out", HomeElixir.Nodes.Sink)
+    wire("in", "out")
+
+    def id(m), do: m
+  end
+  """
+
   setup do
     tmp = Path.join(System.tmp_dir!(), "flow_store_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(tmp)
+    File.mkdir_p!(Path.join(tmp, "rooms"))
     File.write!(Path.join(tmp, "store_test.ex"), @flow_src)
     File.write!(Path.join(tmp, "alt_flow.ex"), @alt_src)
+    File.write!(Path.join(tmp, "rooms/test_flow.ex"), @nested_src)
     Application.put_env(:home_elixir, :flows_dir, tmp)
 
     on_exit(fn ->
       Registry.unload(@mod)
       Registry.unload(@alt_mod)
+      Registry.unload(@nested_mod)
       Application.put_env(:home_elixir, :flows_dir, "flows")
       File.rm_rf!(tmp)
     end)
@@ -66,6 +82,16 @@ defmodule HomeElixir.FlowStoreTest do
 
   test "errors on an unknown flow" do
     assert {:error, :not_found} = FlowStore.load("nope")
+  end
+
+  test "discovers flows in subfolders with path-style names" do
+    flow = Enum.find(FlowStore.list(), &(&1.name == "rooms/test_flow"))
+    assert flow.module == @nested_mod
+
+    assert :ok = FlowStore.load("rooms/test_flow")
+    assert Registry.loaded?(@nested_mod)
+    assert :ok = FlowStore.unload("rooms/test_flow")
+    refute Registry.loaded?(@nested_mod)
   end
 
   test "check reports valid and broken source" do

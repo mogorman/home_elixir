@@ -1,4 +1,4 @@
-defmodule HomeElixir.Flows.DemoSwitch do
+defmodule HomeElixir.Flows.Example.DemoSwitch do
   @moduledoc """
   Example: presents a switch to Home Assistant, toggled from the web UI.
 

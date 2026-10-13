@@ -1,4 +1,4 @@
-defmodule HomeElixir.Flows.NowClock do
+defmodule HomeElixir.Flows.Example.NowClock do
   @moduledoc """
   Example: a flow that uses an external Hex library (`timex`), installed at load
   time via `setup/0` (Livebook-style) — without editing `mix.exs`.

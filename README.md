@@ -58,6 +58,10 @@ Each file in `flows/` is one flow module (`use HomeElixir.Flow`, `node/3`,
 `flows/` and load it from the list page. The set of loaded flows is persisted
 (`flows/.loaded`) and restored on start.
 
+Subfolders group flows in the list (e.g. `flows/living_room/counter.ex` shows
+under a collapsible `living_room` folder, matching a
+`HomeElixir.Flows.LivingRoom.Counter` module).
+
 ### Writing a flow
 
 Nodes are declared with `node(id, module, config)` and connected with
