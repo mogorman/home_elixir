@@ -4,10 +4,6 @@ import Config
 # HA_URL / HA_TOKEN environment variables.
 config :home_elixir, ha_url: nil, ha_token: nil
 
-# The entity HomeElixir.hello/0 speaks on (the engineering clock). Override
-# here or with the HA_HELLO_ENTITY environment variable.
-config :home_elixir, hello_entity_id: "media_player.engineering_clock"
-
 # Distributed-node identity for the dev shell. The server should be started as
 # the named node :node_name (see README); the browser IEx tab and a CLI
 # `iex --remsh home_elixir` attach to it. node_cookie is shared for auth.

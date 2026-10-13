@@ -192,7 +192,6 @@ reachable from the web UI or the dev shell).
 | `HomeElixir.HA.Client.fire(client, type, payload)` | Fire-and-forget HA request |
 | `HomeElixir.HA.Client.subscribe_events(client, type, to)` | Subscribe to HA events |
 | `HomeElixir.Nodered.remove(server_id, node_id)` | Force-delete a Node-RED device |
-| `HomeElixir.hello/0` | Make the engineering clock say "hello world" |
 
 ## Development
 
