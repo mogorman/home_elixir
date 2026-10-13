@@ -263,7 +263,7 @@ defmodule HomeElixir.Web do
     |> put_resp_header("cache-control", "no-cache, no-store, must-revalidate")
     |> send_resp(200, body)
   end
-  defp json(conn, data), do: conn |> put_resp_content_type("application/json") |> send_resp(200, Jason.encode!(data))
+  defp json(conn, data), do: conn |> put_resp_content_type("application/json") |> send_resp(conn.status || 200, Jason.encode!(data))
   defp text(conn, status, data), do: conn |> put_resp_content_type("text/plain") |> send_resp(status, data)
 
   # Serves bundled assets under priv/static (currently the highlight.js build).
@@ -380,14 +380,27 @@ defmodule HomeElixir.Web do
           <tbody id="flows"></tbody>
         </table>
       </div>
+      <dialog id="error-dlg" class="border rounded-3" style="max-width:640px">
+        <h6 class="fw-semibold mb-2">Operation failed</h6>
+        <pre class="mb-0" style="white-space:pre-wrap;max-height:400px;overflow:auto"></pre>
+        <form method="dialog" class="mt-3 text-end"><button class="btn btn-sm btn-secondary">Close</button></form>
+      </dialog>
       <script>
         #{control_js()}
+        const errDlg = document.getElementById("error-dlg");
+        async function fail(what, r) {
+          const e = await r.json().catch(() => ({}));
+          errDlg.querySelector("pre").textContent = what + "\\n" + (e.error || r.statusText);
+          errDlg.showModal();
+        }
         async function act(name, action) {
-          await fetch(`/api/flows/${name}/${action}`, { method: "POST" });
+          const r = await fetch(`/api/flows/${name}/${action}`, { method: "POST" });
+          if (!r.ok) fail(name + " " + action, r);
           refresh();
         }
         async function reloadAll() {
-          await fetch("/api/flows/reload", { method: "POST" });
+          const r = await fetch("/api/flows/reload", { method: "POST" });
+          if (!r.ok) fail("reload all", r);
           refresh();
         }
         function addBtn(parent, label, cls, fn) {
