@@ -27,6 +27,8 @@ defmodule HomeElixir.Flows.Examples.Counter do
   """
   use HomeElixir.Flow
 
+  require Logger
+
   @behaviour HomeElixir.Node
 
   alias HomeElixir.FlowState
@@ -46,7 +48,10 @@ defmodule HomeElixir.Flows.Examples.Counter do
   def init(_), do: %{state: FlowState.get(:count)}
 
   @impl true
-  def handle(_msg, _), do: {[nil], %{state: FlowState.get(:count)}}
+  def handle(msg, data) do
+    Logger.info("counter badge: msg=#{inspect(msg)} data=#{inspect(data)}")
+    {[nil], %{state: FlowState.get(:count)}}
+  end
 
   # Web buttons (Inject re-emits the click payload into the handler).
   node("inc", HomeElixir.Nodes.Inject,
