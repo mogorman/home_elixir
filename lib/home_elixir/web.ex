@@ -1019,7 +1019,7 @@ defmodule HomeElixir.Web do
     """
     <nav class="navbar navbar-expand-lg bg-body-tertiary rounded-3 mb-3 px-3">
       <div class="container-fluid">
-        <a class="navbar-brand fw-semibold" href="/">home_elixir</a>
+        <a class="navbar-brand fw-semibold d-flex align-items-center gap-2" href="/"><img src="/static/favicon.ico" width="24" height="24" alt="">home_elixir</a>
         <ul class="navbar-nav gap-1 flex-wrap">
           <li class="nav-item"><a class="nav-link#{a.(:flows)}" href="/">Flows</a></li>
           <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="/controls">Controls</a></li>
