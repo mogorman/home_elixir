@@ -374,8 +374,9 @@ defmodule HomeElixir.Web do
         // Column sorting: sortOrder[0] is primary, [1] the subsort. Clicking a
         // new column makes it primary and demotes the old primary to subsort;
         // clicking the primary toggles asc/desc, and a third click clears the
-        // sort (back to the folder tree). A sort shows the whole table flat,
-        // globally ordered — top-level flows can rank above/below folders.
+        // sort back to the default order. The tree is always shown; a sort
+        // orders folders and flows together at each level (a folder compares
+        // by name, and counts as loaded only if everything inside is loaded).
         const sortOrder = [];
         const sortDir = {};
         function sortBy(key) {
@@ -395,14 +396,23 @@ defmodule HomeElixir.Web do
           }
           refresh();
         }
-        function cmpFlows(a, b) {
+        function folderAllLoaded(folder) {
+          for (const f of folder.flows) if (!f.loaded) return false;
+          for (const sub of Object.values(folder.folders)) if (!folderAllLoaded(sub)) return false;
+          return true;
+        }
+        // Sort value of a tree entry (folder or flow) for a column key.
+        function entryVal(e, key) {
+          if (e.kind === "flow") return key === "loaded" ? (e.f.loaded ? 1 : 0) : e.f[key];
+          return key === "loaded" ? (folderAllLoaded(e.folder) ? 1 : 0) : e.name;
+        }
+        function cmpEntries(a, b) {
           for (const key of sortOrder.filter(Boolean)) {
-            const d = key === "loaded"
-              ? (a.loaded ? 1 : 0) - (b.loaded ? 1 : 0)
-              : a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0;
+            const va = entryVal(a, key), vb = entryVal(b, key);
+            const d = typeof va === "number" ? va - vb : va < vb ? -1 : va > vb ? 1 : 0;
             if (d) return sortDir[key] === "desc" ? -d : d;
           }
-          return 0;
+          return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
         }
         function updateSortHeaders() {
           for (const th of document.querySelectorAll("th.sortable")) {
@@ -466,22 +476,29 @@ defmodule HomeElixir.Web do
           return tr;
         }
         function renderNode(node, depth, tbody) {
-          for (const name of Object.keys(node.folders).sort()) {
-            const folder = node.folders[name];
-            tbody.appendChild(folderRow(folder, depth));
-            if (expanded.has(folder.path)) renderNode(folder, depth + 1, tbody);
+          const entries = [];
+          for (const name of Object.keys(node.folders)) entries.push({ kind: "folder", name, folder: node.folders[name] });
+          for (const f of node.flows) entries.push({ kind: "flow", name: f.name.split("/").pop(), f });
+          if (sortOrder.length) {
+            entries.sort(cmpEntries);
+          } else {
+            // Default: folders (alphabetical) first, then flows.
+            entries.sort((a, b) => (a.kind === b.kind ? (a.name < b.name ? -1 : 1) : a.kind === "folder" ? -1 : 1));
           }
-          for (const f of node.flows) tbody.appendChild(flowRow(f, depth, f.name.split("/").pop()));
+          for (const e of entries) {
+            if (e.kind === "folder") {
+              tbody.appendChild(folderRow(e.folder, depth));
+              if (expanded.has(e.folder.path)) renderNode(e.folder, depth + 1, tbody);
+            } else {
+              tbody.appendChild(flowRow(e.f, depth, e.name));
+            }
+          }
         }
         async function refresh() {
           const flows = await (await fetch("/api/flows")).json();
           const tbody = document.getElementById("flows");
           tbody.innerHTML = "";
-          if (sortOrder.length) {
-            for (const f of [...flows].sort(cmpFlows)) tbody.appendChild(flowRow(f, 0, f.name));
-          } else {
-            renderNode(buildTree(flows), 0, tbody);
-          }
+          renderNode(buildTree(flows), 0, tbody);
           updateSortHeaders();
         }
         document.getElementById("reload-all").onclick = reloadAll;
