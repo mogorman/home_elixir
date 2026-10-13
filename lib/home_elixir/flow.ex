@@ -68,13 +68,21 @@ defmodule HomeElixir.Flow do
         def handle(_), do: :ok
 
         @doc false
-        def __flow__, do: %{
-          nodes: @fe_nodes ++ [
-            {"__he_in__", {HomeElixir.Nodes.StateChanged, %{}}},
-            {"__he_handle__", {HomeElixir.Nodes.Function, %{fun: unquote(handler_fun)}}}
-          ],
-          wires: @fe_wires ++ [{"__he_in__", "__he_handle__"}]
-        }
+        def __flow__ do
+          # Button nodes with no outgoing wire feed the handler automatically.
+          auto =
+            for {id, {HomeElixir.Nodes.Inject, _}} <- @fe_nodes,
+                not Enum.any?(@fe_wires, fn {f, _} -> f == id end),
+                do: {id, "__he_handle__"}
+
+          %{
+            nodes: @fe_nodes ++ [
+              {"__he_in__", {HomeElixir.Nodes.StateChanged, %{}}},
+              {"__he_handle__", {HomeElixir.Nodes.Function, %{fun: unquote(handler_fun)}}}
+            ],
+            wires: @fe_wires ++ auto ++ [{"__he_in__", "__he_handle__"}]
+          }
+        end
       end
     else
       quote do

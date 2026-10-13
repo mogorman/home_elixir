@@ -3,7 +3,7 @@ defmodule HomeElixir.FlowHandlerTest do
 
   use ExUnit.Case, async: false
 
-  alias HomeElixir.{Registry, HA}
+  alias HomeElixir.{Msg, Registry, HA}
   alias HomeElixir.HA.FakeTransport
 
   defmodule Flows.HandlerTest do
@@ -14,6 +14,53 @@ defmodule HomeElixir.FlowHandlerTest do
     end
 
     # No catch-all clause — the Flow macro adds it.
+  end
+
+  # "btn" has no outgoing wire (auto-wired into the handler); "explicit" is
+  # wired elsewhere (must not be auto-wired).
+  defmodule Flows.AutoWire do
+    use HomeElixir.Flow
+
+    def handle(%{payload: "go"}),
+      do: Application.put_env(:home_elixir, :auto_fired, System.monotonic_time())
+
+    node("btn", HomeElixir.Nodes.Inject)
+    node("explicit", HomeElixir.Nodes.Inject)
+    node("sink", HomeElixir.Nodes.Sink)
+    wire("explicit", "sink")
+  end
+
+  # Grouped wire syntax in a plain (non-handler) flow.
+  defmodule Flows.GroupWire do
+    use HomeElixir.Flow
+
+    node("a", HomeElixir.Nodes.Sink)
+    node("b", HomeElixir.Nodes.Sink)
+    node("c", HomeElixir.Nodes.Sink)
+    wire(["a", "b"], "c")
+  end
+
+  test "unconnected Inject nodes are auto-wired into the handler; explicit wires win" do
+    wires = Flows.AutoWire.__flow__().wires
+    assert {"btn", "__he_handle__"} in wires
+    refute {"explicit", "__he_handle__"} in wires
+    assert {"explicit", "sink"} in wires
+  end
+
+  test "group wire syntax expands to one pair per source" do
+    wires = Flows.GroupWire.__flow__().wires
+    assert {"a", "c"} in wires
+    assert {"b", "c"} in wires
+  end
+
+  test "clicking an auto-wired button fires the handler" do
+    on_exit(fn -> Registry.unload(Flows.AutoWire) end)
+    Application.delete_env(:home_elixir, :auto_fired)
+    {:ok, _} = Registry.load(Flows.AutoWire)
+
+    Registry.send_msg(Flows.AutoWire, "btn", Msg.new("go", topic: "btn"))
+    poll(fn -> not is_nil(Application.get_env(:home_elixir, :auto_fired)) end)
+    assert Application.get_env(:home_elixir, :auto_fired)
   end
 
   # ---- helpers (mirrors nodes_test) ----
