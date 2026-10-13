@@ -141,13 +141,17 @@ defmodule HomeElixir.Web do
   # Derive the flow file name from the module name in the source (single source
   # of truth, so the name and module can't drift apart). A
   # `HomeElixir.Flows.LivingRoom.Counter` module maps to "LivingRoom/counter".
-  defp name_from_source(source) do
+  def name_from_source(source) do
     case Regex.run(~r/defmodule\s+([A-Za-z0-9_.]+)/, source) do
       [_, mod] ->
-        case String.split(mod, ".") do
-          ["HomeElixir", "Flows" | rest] -> rest |> Enum.map(&Macro.underscore/1) |> Enum.join("/")
-          parts -> parts |> List.last() |> Macro.underscore()
-        end
+      case String.split(mod, ".") do
+        ["HomeElixir", "Flows" | rest] ->
+          {dirs, [leaf]} = Enum.split(rest, length(rest) - 1)
+          Enum.join(dirs ++ [Macro.underscore(leaf)], "/")
+
+        parts ->
+          parts |> List.last() |> Macro.underscore()
+      end
 
       _ ->
         nil

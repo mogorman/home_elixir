@@ -189,6 +189,16 @@ defmodule HomeElixir.FlowStoreTest do
     refute Registry.loaded?(@alt_mod)
   end
 
+  test "name_from_source preserves directory case, snake_cases only the file" do
+    assert HomeElixir.Web.name_from_source("defmodule HomeElixir.Flows.Examples.NowClock do") ==
+             "Examples/now_clock"
+
+    assert HomeElixir.Web.name_from_source("defmodule HomeElixir.Flows.Counter do") == "counter"
+
+    assert HomeElixir.Web.name_from_source("defmodule HomeElixir.Flows.A.B.DeepFlow do") ==
+             "A/B/deep_flow"
+  end
+
   defp poll(fun, timeout \\ 1_000) do
     deadline = System.monotonic_time(:millisecond) + timeout
 
