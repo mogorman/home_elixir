@@ -60,12 +60,22 @@ defmodule HomeElixir.FlowStore do
   def check(source), do: call({:check, source})
 
   @doc """
-  Load the flows that were loaded last run (persisted in `.loaded`). On the very
-  first run (no state file) this loads every flow file, establishing the set.
-  Flows that fail to load are logged and skipped.
+  Load the flows that were loaded last run (persisted in the Mnesia flow-state
+  DB). On the very first run (nothing saved yet) this imports the legacy
+  `flows/.loaded` file if present, else loads every flow file, establishing the
+  set. Flows that fail to load are logged and skipped.
   """
   def restore do
-    names = if File.exists?(loaded_file()), do: read_loaded(), else: all_flow_names()
+    names =
+      case HomeElixir.FlowState.loaded_names() do
+        nil -> first_run_names()
+        names -> names
+      end
+
+    # Persist the resolved set first: add_loaded during the loop rebuilds from
+    # `loaded_names()`, so an unsaved first-run set would be lost to the first
+    # successful load (dropping any flow that fails to load).
+    HomeElixir.FlowState.save_loaded_names(names)
 
     Enum.each(names, fn name ->
       case load(name) do
@@ -305,28 +315,36 @@ defmodule HomeElixir.FlowStore do
     end
   end
 
-  # ---- loaded-state persistence (flows/.loaded) ----
+  # ---- loaded-state persistence (Mnesia; see HomeElixir.FlowState) ----
 
-  defp loaded_file, do: Path.join(dir(), ".loaded")
+  # One-time migration: import the legacy flows/.loaded set, then drop the file.
+  defp first_run_names do
+    case read_loaded_file() do
+      names when names != [] ->
+        File.rm(loaded_file())
+        names
+
+      _ ->
+        all_flow_names()
+    end
+  end
 
   defp all_flow_names do
     dir() |> Path.join("**/*.ex") |> Path.wildcard() |> Enum.map(&rel_name/1)
   end
 
-  defp read_loaded do
+  defp loaded_file, do: Path.join(dir(), ".loaded")
+
+  defp read_loaded_file do
     case File.read(loaded_file()) do
       {:ok, content} -> String.split(content, ~r/\s+/, trim: true)
       _ -> []
     end
   end
 
-  defp write_loaded(names) do
-    File.mkdir_p!(dir())
-    File.write!(loaded_file(), Enum.join(Enum.uniq(names), "\n"))
-  end
-
-  defp add_loaded(name), do: write_loaded(read_loaded() ++ [name])
-  defp remove_loaded(name), do: write_loaded(read_loaded() -- [name])
+  defp add_loaded(name), do: save_loaded((HomeElixir.FlowState.loaded_names() || []) ++ [name])
+  defp remove_loaded(name), do: save_loaded((HomeElixir.FlowState.loaded_names() || []) -- [name])
+  defp save_loaded(names), do: HomeElixir.FlowState.save_loaded_names(Enum.uniq(names))
 
   # Discover every flow file (recursively; subfolders become path-style names)
   # and its module atom (cached), sorted by name. Files that fail to compile

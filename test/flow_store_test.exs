@@ -60,6 +60,7 @@ defmodule HomeElixir.FlowStoreTest do
   """
 
   setup do
+    HomeElixir.FlowState.start()
     tmp = Path.join(System.tmp_dir!(), "flow_store_#{System.unique_integer([:positive])}")
     File.mkdir_p!(Path.join(tmp, "rooms/kitchen"))
     File.write!(Path.join(tmp, "store_test.ex"), @flow_src)

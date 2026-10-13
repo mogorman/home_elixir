@@ -25,9 +25,6 @@ home_elixir-*.tar
 # OpenChamber tooling (screenshots, etc.)
 /.openchamber/
 
-# Per-machine loaded-flow state (restored on restart)
-/flows/.loaded
-
 # Local HA credentials (loaded from config/config.exs when present)
 /config/secret.exs
 

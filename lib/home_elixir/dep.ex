@@ -64,7 +64,20 @@ defmodule HomeElixir.Dep do
   end
 
   defp mix!(dir, args) do
-    {out, status} = System.cmd("mix", args, cd: dir)
+    # Strip node flags: the subprocess BEAM must not inherit the app's node
+    # name (ERL_AFLAGS), or it exits on a node-name collision before doing
+    # anything.
+    # Blank out (can't unset — System.cmd's env only overrides, never removes)
+    # the node flags so the subprocess BEAM doesn't collide with the app's
+    # node name.
+    env =
+      System.get_env()
+      |> Map.put("ERL_AFLAGS", "")
+      |> Map.put("ERL_ARGS", "")
+
+    # stderr_to_stdout: mix/BEAM write failures to stderr; without this the
+    # error message below is empty.
+    {out, status} = System.cmd("mix", args, cd: dir, env: env, stderr_to_stdout: true)
 
     if status == 0 do
       :ok

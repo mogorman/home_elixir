@@ -40,4 +40,21 @@ defmodule HomeElixir.FlowStateTest do
   test "calling outside a flow scope raises" do
     assert_raise RuntimeError, ~r/outside a flow/, fn -> FlowState.get(:x) end
   end
+
+  test "loaded_names/save_loaded_names round-trip, dedupes, keeps empty set" do
+    prev = FlowState.loaded_names()
+
+    try do
+      FlowState.save_loaded_names(["a", "b"])
+      assert FlowState.loaded_names() == ["a", "b"]
+
+      FlowState.save_loaded_names([])
+      assert FlowState.loaded_names() == []
+
+      FlowState.save_loaded_names(["x", "x", "y"])
+      assert FlowState.loaded_names() == ["x", "y"]
+    after
+      if is_list(prev), do: FlowState.save_loaded_names(prev)
+    end
+  end
 end

@@ -142,6 +142,21 @@ defmodule HomeElixir.FlowState do
     tx(fn -> :mnesia.write({@table, flow, Map.delete(read_data(flow), key)}) end)
   end
 
+  # ---- app metadata (not namespaced to a flow) ----
+
+  # The loaded-flow set lives under a reserved key that can't be a flow module.
+  # `loaded_names/0` returns nil when nothing has ever been saved (so an empty
+  # set is distinguishable from "first run").
+  @meta_flow :__home_elixir_meta__
+
+  def loaded_names do
+    tx(fn -> Map.get(read_data(@meta_flow), :loaded) end)
+  end
+
+  def save_loaded_names(names) do
+    tx(fn -> :mnesia.write({@table, @meta_flow, %{loaded: Enum.uniq(names)}}) end)
+  end
+
   # Run `fun` in a Mnesia transaction; unwrap {atomic, result}, re-raise on abort.
   defp tx(fun) do
     case :mnesia.transaction(fun) do

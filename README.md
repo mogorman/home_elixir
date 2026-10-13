@@ -56,7 +56,7 @@ not a named node, the browser tab falls back to a self-contained `iex -S mix`.
 Each file in `flows/` is one flow module (`use HomeElixir.Flow`, `node/3`,
 `wire/2`). Create/edit them in the web editor, or drop a `.ex` file into
 `flows/` and load it from the list page. The set of loaded flows is persisted
-(`flows/.loaded`) and restored on start.
+(in the Mnesia flow-state DB) and restored on start.
 
 Subfolders group flows in the list (e.g. `flows/living_room/counter.ex` shows
 under a collapsible `living_room` folder, matching a
@@ -172,7 +172,7 @@ reachable from the web UI or the dev shell).
 | `ui/0` / `flow_ui(name)` | UI elements, live-valued when loaded |
 | `check(source)` | Compile-check a source string without loading |
 | `forget(name)` | Drop the cached module atom (force recompile) |
-| `restore/0` | Reload the persisted set (`flows/.loaded`) |
+| `restore/0` | Reload the persisted set (Mnesia flow-state DB) |
 
 ### `HomeElixir.Registry` — the supervised node tree
 
