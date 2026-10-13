@@ -18,8 +18,10 @@ defmodule HomeElixir.Log do
 
   def handle_cast({:line, level, text}, state) do
     id = state.counter + 1
-    entry = {id, "#{level}  #{text}"}
-    lines = push(state.lines, entry)
+    line = "#{level}  #{text}"
+    lines = push(state.lines, {id, line})
+    # Push live to the web UI over the shared web socket (no client-side polling).
+    HomeElixir.UI.Hub.push(:log, %{id: id, line: line})
     {:noreply, %{state | counter: id, lines: lines}}
   end
 

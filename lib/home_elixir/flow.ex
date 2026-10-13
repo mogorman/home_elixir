@@ -35,8 +35,15 @@ defmodule HomeElixir.Flow do
         end
       end
 
-  The catch-all clause is added for you; write only the clauses you need.
-  """
+   The catch-all clause is added for you; write only the clauses you need.
+
+   Flows may also persist state between runs via `HomeElixir.FlowState` (Mnesia;
+   survives reloads and restarts). The flow's own module is the implicit key, so
+   flows can't collide:
+
+       def handle(%{topic: "sensor.front_door", payload: "open"}),
+         do: HomeElixir.FlowState.update(:count, &(&1 + 1))
+   """
 
   defmacro __using__(_opts) do
     quote do

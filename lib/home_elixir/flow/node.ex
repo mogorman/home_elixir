@@ -15,6 +15,7 @@ defmodule HomeElixir.Flow.Node do
 
   @impl true
   def init({flow_key, node_id, handler, config, out_targets}) do
+    HomeElixir.FlowState.set_flow(flow_key)
     {:ok, _} = Registry.register(HomeElixir.NodeLookup, {flow_key, node_id}, nil)
     Code.ensure_loaded(handler)
 
@@ -29,6 +30,7 @@ defmodule HomeElixir.Flow.Node do
       routing: [],
       routed?: false,
       node_state: node_state,
+      state_ui?: ui_state?(config),
       flow_name: to_string(flow_key) |> String.split(".") |> List.last() |> Macro.underscore()
     }
 
@@ -53,7 +55,9 @@ defmodule HomeElixir.Flow.Node do
   def handle_info(event, %{routed?: true} = state) do
     if function_exported?(state.handler, :trigger, 2) do
       {outputs, node_state} = state.handler.trigger(event, state.node_state)
-      {:noreply, route_outputs(outputs, %{state | node_state: node_state})}
+      state = %{state | node_state: node_state}
+      push_ui(state)
+      {:noreply, route_outputs(outputs, state)}
     else
       {:noreply, state}
     end
@@ -65,7 +69,9 @@ defmodule HomeElixir.Flow.Node do
   def handle_cast({:msg, msg}, %{routed?: true} = state) do
     msg = with_flow(msg, state.flow_name)
     {outputs, node_state} = state.handler.handle(msg, state.node_state)
-    {:noreply, route_outputs(outputs, %{state | node_state: node_state})}
+    state = %{state | node_state: node_state}
+    push_ui(state)
+    {:noreply, route_outputs(outputs, state)}
   end
 
   def handle_cast({:msg, _msg}, state) do
@@ -89,4 +95,15 @@ defmodule HomeElixir.Flow.Node do
   # Tag a message with its flow's short name so logs/UI can attribute it.
   defp with_flow(%HomeElixir.Msg{} = msg, name), do: %{msg | data: Map.put(msg.data, :flow, name)}
   defp with_flow(msg, _name), do: msg
+
+  # True when this node backs a `ui: %{type: "state"}` badge.
+  defp ui_state?(config), do: match?(%{type: "state"}, config[:ui])
+
+  # Push this node's display value to the web UI when it changes (state badges only).
+  defp push_ui(%{state_ui?: true, flow_name: flow, node_id: node_id, node_state: ns}) do
+    value = if is_map(ns), do: Map.get(ns, :state), else: nil
+    HomeElixir.UI.Hub.push(:state, %{flow: flow, node: node_id, value: value})
+  end
+
+  defp push_ui(_), do: :ok
 end

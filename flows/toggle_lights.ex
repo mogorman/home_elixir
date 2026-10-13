@@ -6,7 +6,7 @@ defmodule HomeElixir.Flows.ToggleLights do
   use HomeElixir.Flow
 
   node("trigger", HomeElixir.Nodes.Inject,
-       ui: %{type: "button", label: "Toggle Living Room Lights"})
+       ui: %{type: "button", label: "Toggle Bedroom Lights"})
 
   node("action", HomeElixir.Nodes.Service,
        domain: "light",

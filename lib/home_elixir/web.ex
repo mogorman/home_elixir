@@ -48,6 +48,11 @@ defmodule HomeElixir.Web do
   def call(%{method: "GET", request_path: "/api/ui"} = conn, _opts),
     do: json(conn, HomeElixir.FlowStore.ui())
 
+  # Live UI updates over a web socket (pushes state-badge changes to the browser).
+  def call(%{method: "GET", request_path: "/api/ui/ws"} = conn, _opts) do
+    if websocket?(conn), do: upgrade_to_ui_ws(conn), else: text(conn, 400, "web socket only")
+  end
+
   def call(%{method: "GET", request_path: "/api/flows/" <> rest} = conn, _opts) do
     case String.split(rest, "/") do
       [name, "ui"] -> json(conn, HomeElixir.FlowStore.flow_ui(name))
@@ -257,6 +262,10 @@ defmodule HomeElixir.Web do
     Plug.Conn.upgrade_adapter(conn, :websocket, {HomeElixir.Terminal, %{}, %{}})
   end
 
+  defp upgrade_to_ui_ws(conn) do
+    Plug.Conn.upgrade_adapter(conn, :websocket, {HomeElixir.WebUI, %{}, %{}})
+  end
+
   defp terminal_page do
     """
     <!DOCTYPE html>
@@ -315,7 +324,10 @@ defmodule HomeElixir.Web do
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
           <span class="fw-semibold">Flows</span>
-          <button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>
+          <div class="d-flex gap-1">
+            <a href="/edit" class="btn btn-sm btn-primary">New flow</a>
+            <button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>
+          </div>
         </div>
         <table class="table table-hover align-middle mb-0">
           <thead><tr><th>name</th><th>module</th><th>status</th><th class="text-end">actions</th></tr></thead>
@@ -406,7 +418,8 @@ defmodule HomeElixir.Web do
           }
         }
         refresh();
-        setInterval(refresh, 3000);
+        // Push-based: refresh on (re)connect to resync, then update badges live.
+        connectUI({ state: updateBadge }, refresh);
       </script>
     """
   end
@@ -595,31 +608,44 @@ defmodule HomeElixir.Web do
           if (!els.length) { box.innerHTML = '<span class="text-secondary small">no ui elements</span>'; return; }
           for (const e of els) box.appendChild(renderControl(e, "btn-sm btn-primary"));
         }
-        let logSince = 0;
-        async function refreshLogs() {
-          if (!FLOWNAME) return;
+        const flowlogBox = document.getElementById("flowlogs");
+        let flowLastId = 0, flowSyncing = false;
+        function flowLogDiv(line) {
+          const d = document.createElement("div");
+          d.textContent = line;
+          if (line.startsWith("error")) d.className = "text-danger";
+          else if (line.startsWith("warning")) d.className = "text-warning-emphasis";
+          return d;
+        }
+        function appendFlowLine(line) {
+          flowlogBox.appendChild(flowLogDiv(line));
+          while (flowlogBox.children.length > 300) flowlogBox.removeChild(flowlogBox.firstChild);
+          flowlogBox.scrollTop = flowlogBox.scrollHeight;
+        }
+        function onFlowLog(msg) {
+          if (flowSyncing) return;
+          if (msg.id > flowLastId) {
+            if (msg.line.includes("[" + FLOWNAME + "]")) appendFlowLine(msg.line);
+            flowLastId = msg.id;
+          }
+        }
+        async function resyncFlowLogs() {
+          flowSyncing = true;
           try {
-            const items = await (await fetch("/api/logs?since=" + logSince)).json();
-            const box = document.getElementById("flowlogs");
+            const items = await (await fetch("/api/logs?since=" + flowLastId)).json();
             for (const it of items) {
-              if (it.line.includes("[" + FLOWNAME + "]")) {
-                const d = document.createElement("div");
-                d.textContent = it.line;
-                if (it.line.startsWith("error")) d.className = "text-danger";
-                else if (it.line.startsWith("warning")) d.className = "text-warning-emphasis";
-                box.appendChild(d);
-              }
-              logSince = it.id;
+              if (it.line.includes("[" + FLOWNAME + "]")) appendFlowLine(it.line);
+              flowLastId = it.id;
             }
-            while (box.children.length > 300) box.removeChild(box.firstChild);
-            box.scrollTop = box.scrollHeight;
           } catch (e) {}
+          flowSyncing = false;
         }
         if (FLOWNAME) {
           document.getElementById("panels").classList.remove("d-none");
           refreshControls();
-          setInterval(refreshControls, 3000);
-          setInterval(refreshLogs, 1500);
+          // Push-based: resync on (re)connect, then update badges + flow logs live.
+          connectUI({ state: updateBadge, log: onFlowLog },
+            () => { refreshControls(); resyncFlowLogs(); });
         }
         function setHljsTheme(t) {
           document.getElementById("hljs-theme").href = "#{@hljs}/styles/" + (t === "dark" ? "github-dark.min.css" : "github.min.css");
@@ -742,31 +768,41 @@ defmodule HomeElixir.Web do
            style="font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.5;
                   white-space: pre-wrap; height: 78vh; overflow: auto;"></div>
       <script>
+        #{control_js()}
         const box = document.getElementById("logs");
-        let since = 0;
-        async function poll() {
-          try {
-            const items = await (await fetch("/api/logs?since=" + since)).json();
-            for (const it of items) {
-              const div = document.createElement("div");
-              div.textContent = it.line;
-              if (it.line.startsWith("error")) div.className = "text-danger";
-              else if (it.line.startsWith("warning")) div.className = "text-warning-emphasis";
-              box.appendChild(div);
-              since = it.id;
-            }
-            while (box.children.length > 800) box.removeChild(box.firstChild);
-            box.scrollTop = box.scrollHeight;
-          } catch (e) {}
+        let lastId = 0, syncing = false;
+        function logDiv(line) {
+          const d = document.createElement("div");
+          d.textContent = line;
+          if (line.startsWith("error")) d.className = "text-danger";
+          else if (line.startsWith("warning")) d.className = "text-warning-emphasis";
+          return d;
         }
-        poll();
-        setInterval(poll, 1500);
+        function appendLine(line) {
+          box.appendChild(logDiv(line));
+          while (box.children.length > 800) box.removeChild(box.firstChild);
+          box.scrollTop = box.scrollHeight;
+        }
+        function onLog(msg) {
+          if (syncing) return;
+          if (msg.id > lastId) { appendLine(msg.line); lastId = msg.id; }
+        }
+        async function resync() {
+          syncing = true;
+          try {
+            const items = await (await fetch("/api/logs?since=" + lastId)).json();
+            for (const it of items) { appendLine(it.line); lastId = it.id; }
+          } catch (e) {}
+          syncing = false;
+        }
+        connectUI({ log: onLog }, resync);
       </script>
     """
   end
 
   # Shared control renderer (state badge or clickable button) for the /controls
-  # page and the editor's live-controls panel.
+  # page and the editor's live-controls panel, plus the live-update web socket
+  # helpers both pages use.
   defp control_js do
     """
     function renderControl(e, btnClass) {
@@ -776,6 +812,9 @@ defmodule HomeElixir.Web do
         const off = e.value === false || e.value === "off";
         b.className = "badge " + (on ? "bg-success" : off ? "bg-secondary" : "bg-info text-dark");
         b.textContent = (e.label || e.node) + ": " + (e.value === null || e.value === undefined ? "-" : e.value);
+        b.dataset.flow = e.name;
+        b.dataset.node = e.node;
+        b.dataset.label = e.label || e.node;
         return b;
       }
       const b = document.createElement("button");
@@ -786,6 +825,22 @@ defmodule HomeElixir.Web do
           body: JSON.stringify({ name: e.name, node: e.node, payload: e.payload }) });
       };
       return b;
+    }
+    // Reconnect-with-backoff web socket. `handlers` maps a push `type` to a fn(msg).
+    function connectUI(handlers, onOpen, retryMs) {
+      const proto = location.protocol === "https:" ? "wss://" : "ws://";
+      const ws = new WebSocket(proto + location.host + "/api/ui/ws");
+      if (onOpen) ws.onopen = () => onOpen();
+      ws.onmessage = (e) => {
+        try { const m = JSON.parse(e.data); if (handlers[m.type]) handlers[m.type](m); } catch (_) {}
+      };
+      ws.onclose = () => setTimeout(() => connectUI(handlers, onOpen, retryMs), retryMs || 2000);
+      return ws;
+    }
+    // Update one badge from a pushed {flow, node, value} update.
+    function updateBadge(u) {
+      const el = document.querySelector('[data-flow="' + u.flow + '"][data-node="' + u.node + '"]');
+      if (el) el.textContent = el.dataset.label + ": " + (u.value === null || u.value === undefined ? "-" : u.value);
     }
     """
   end
@@ -837,7 +892,6 @@ defmodule HomeElixir.Web do
           <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="/controls">Controls</a></li>
           <li class="nav-item"><a class="nav-link#{a.(:logs)}" href="/logs">Logs</a></li>
           <li class="nav-item"><a class="nav-link#{a.(:iex)}" href="/terminal">IEx</a></li>
-          <li class="nav-item"><a class="nav-link#{a.(:edit)}" href="/edit">New flow</a></li>
         </ul>
         <button id="theme-toggle" class="btn btn-outline-secondary btn-sm ms-2"></button>
       </div>

@@ -4,8 +4,13 @@ defmodule HomeElixir.Application do
 
   @impl true
   def start(_type, _args) do
+    # Start Mnesia + the flow-state table before any flow loads, so flows can
+    # persist state from their first event.
+    HomeElixir.FlowState.start()
+
     children =
       [
+        {HomeElixir.UI.Hub, []},
         {Registry, keys: :unique, name: HomeElixir.NodeLookup},
         {HomeElixir.Registry, []},
         {HomeElixir.FlowStore, []},

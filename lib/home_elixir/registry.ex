@@ -100,9 +100,13 @@ defmodule HomeElixir.Registry do
 
   # Run the flow's optional `setup/0` once, before any node starts. Flows use it
   # to install external deps at load time (Livebook-style), e.g.
-  # `def setup, do: Mix.install([{:timex, "~> 3.7"}])`.
+  # `def setup, do: Mix.install([{:timex, "~> 3.7"}])`. Scopes the ambient flow so
+  # a `setup/0` that reads/writes `HomeElixir.FlowState` targets this flow.
   defp run_setup(flow_key) do
-    if function_exported?(flow_key, :setup, 0), do: flow_key.setup()
+    if function_exported?(flow_key, :setup, 0) do
+      HomeElixir.FlowState.as(flow_key, fn -> flow_key.setup() end)
+    end
+
     :ok
   end
 

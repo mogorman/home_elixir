@@ -23,6 +23,12 @@ config :home_elixir, start_web: config_env() != :test
 # the first run loads every flow. Off in tests.
 config :home_elixir, restore_flows: config_env() != :test
 
+# FlowState is in-memory by default. Set :flow_state_disc to true to persist to
+# disk, but only when the app runs as a named node — nonode@nohost (mix's default)
+# can't hold disc_copies tables, so disk silently falls back to RAM there. The
+# Mnesia schema/dir for disk mode is :flow_state_dir.
+config :home_elixir, flow_state_disc: false, flow_state_dir: "priv/mnesia"
+
 # Local HA credentials. config/secret.exs is gitignored; create it to enable HA
 # without exporting env vars. HA_URL/HA_TOKEN env vars take precedence (see
 # Application.ha_client_child/0). Skipped when the file is absent.
