@@ -49,7 +49,7 @@ defmodule HomeElixir.Flows.Examples.Counter do
 
   @impl true
   def handle(msg, data) do
-    Logger.info("counter badge: msg=#{inspect(msg)} data=#{inspect(data)}")
+    Logger.info("[#{msg.data.flow}] badge: msg=#{inspect(msg)} data=#{inspect(data)}")
     {[nil], %{state: FlowState.get(:count)}}
   end
 
