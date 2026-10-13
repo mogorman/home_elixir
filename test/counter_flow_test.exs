@@ -4,10 +4,12 @@ defmodule HomeElixir.Nodes.CounterFlowTest do
   alias HomeElixir.{FlowState, Msg, Registry}
 
   # A flow that mirrors HomeElixir.Flows.Examples.Counter: handle/1 does the
-  # counting via FlowState; the buttons wire into the handler; a display mirror
-  # node keeps the badge live.
+  # counting via FlowState; the buttons wire into the handler; the flow module
+  # doubles as its own display node (handle/2 keeps the badge live).
   defmodule Flows.CounterUI do
     use HomeElixir.Flow
+
+    @behaviour HomeElixir.Node
 
     alias HomeElixir.FlowState
 
@@ -16,17 +18,13 @@ defmodule HomeElixir.Nodes.CounterFlowTest do
     def handle(%{payload: "set"}), do: FlowState.put(:count, 0)
     def handle(%{payload: "clear"}), do: FlowState.delete(:count)
 
-    defmodule Badge do
-      @behaviour HomeElixir.Node
+    @impl true
+    def init(_), do: %{state: FlowState.get(:count)}
 
-      @impl true
-      def init(_), do: %{state: HomeElixir.FlowState.get(:count)}
+    @impl true
+    def handle(_msg, _), do: {[nil], %{state: FlowState.get(:count)}}
 
-      @impl true
-      def handle(_msg, _), do: {[nil], %{state: HomeElixir.FlowState.get(:count)}}
-    end
-
-    node("count", __MODULE__.Badge, ui: %{type: "state", label: "Count"})
+    node("count", __MODULE__, ui: %{type: "state", label: "Count"})
 
     node("inc", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "+1", payload: "inc"})
     node("dec", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "-1", payload: "dec"})

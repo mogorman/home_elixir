@@ -3,7 +3,9 @@ defmodule HomeElixir.Flows.Examples.Counter do
   Example flow that tours every `HomeElixir.FlowState` operation with a live,
   in-sync display on the /controls page, using the **handle pattern**: all the
   counting logic lives in `handle/1` clauses, fed by web buttons and a door
-  event.
+  event. One module plays both roles: the flow (its `handle/1`) and its own
+  display node (its `handle/2`, a `HomeElixir.Node` callback — the arities
+  don't clash).
 
   `use HomeElixir.Flow` wires an HA `state_changed` source into `&handle/1`
   (the `__he_handle__` node); the button nodes below are auto-wired into it
@@ -18,12 +20,11 @@ defmodule HomeElixir.Flows.Examples.Counter do
     | "Clear" button              | delete  | badge shows "-"                       |
     | badge                       | read    | live value from Mnesia                |
 
-  The only node is `Counter.Badge` (below), a display mirror so the
-  state-badge machinery has something to push; it holds no counting logic.
-
   Point `sensor.front_door` at the event you want to count.
   """
   use HomeElixir.Flow
+
+  @behaviour HomeElixir.Node
 
   alias HomeElixir.FlowState
 
@@ -35,6 +36,14 @@ defmodule HomeElixir.Flows.Examples.Counter do
   def handle(%{payload: "set"}), do: FlowState.put(:count, 0)
   def handle(%{payload: "clear"}), do: FlowState.delete(:count)
   def handle(%{topic: "sensor.front_door"}), do: FlowState.update(:count, &(&1 + 1), 0)
+
+  # Node callbacks: this flow doubles as its own display mirror, keeping the
+  # "Count" badge in sync (state badges are node-based, so a node is needed).
+  @impl true
+  def init(_), do: %{state: FlowState.get(:count)}
+
+  @impl true
+  def handle(_msg, _), do: {[nil], %{state: FlowState.get(:count)}}
 
   # Web buttons (Inject re-emits the click payload into the handler).
   node("inc", HomeElixir.Nodes.Inject,
@@ -49,23 +58,9 @@ defmodule HomeElixir.Flows.Examples.Counter do
   node("clear", HomeElixir.Nodes.Inject,
        ui: %{type: "button", label: "Clear", payload: "clear"})
 
-  # Display mirror: keeps the "Count" badge in sync (state badges are
-  # node-based, so this is the one node left). The buttons need no wires —
-  # unconnected Inject nodes feed the handler automatically.
-  node("count", __MODULE__.Badge, ui: %{type: "state", label: "Count"})
+  # Display mirror (this module). The buttons need no wires — unconnected
+  # Inject nodes feed the handler automatically.
+  node("count", __MODULE__, ui: %{type: "state", label: "Count"})
 
   wire("__he_handle__", "count")
-end
-
-# Flow-local display node: mirrors FlowState's :count into node state on every
-# message so the state badge updates live. No counting logic.
-defmodule HomeElixir.Flows.Examples.Counter.Badge do
-  @moduledoc false
-  @behaviour HomeElixir.Node
-
-  @impl true
-  def init(_), do: %{state: HomeElixir.FlowState.get(:count)}
-
-  @impl true
-  def handle(_msg, _), do: {[nil], %{state: HomeElixir.FlowState.get(:count)}}
 end
