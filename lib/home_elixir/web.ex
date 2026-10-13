@@ -343,7 +343,12 @@ defmodule HomeElixir.Web do
           </div>
         </div>
         <table class="table table-hover align-middle mb-0">
-          <thead><tr><th>name</th><th>module</th><th>status</th><th class="text-end">actions</th></tr></thead>
+          <thead><tr>
+            <th class="sortable" data-label="name" data-sort="name" style="cursor:pointer">name</th>
+            <th class="sortable" data-label="module" data-sort="module" style="cursor:pointer">module</th>
+            <th class="sortable" data-label="status" data-sort="loaded" style="cursor:pointer">status</th>
+            <th class="text-end">actions</th>
+          </tr></thead>
           <tbody id="flows"></tbody>
         </table>
       </div>
@@ -366,6 +371,42 @@ defmodule HomeElixir.Web do
         // Folder tree: flow names may be path-style ("LivingRoom/counter").
         // Expanded folders live in this Set; folders start collapsed.
         const expanded = new Set();
+        // Column sorting: sortOrder[0] is primary, [1] the subsort. Clicking a
+        // new column makes it primary and demotes the old primary to subsort;
+        // clicking the primary toggles its direction.
+        const sortOrder = [];
+        const sortDir = {};
+        function sortBy(key) {
+          if (sortOrder[0] === key) {
+            sortDir[key] = sortDir[key] === "asc" ? "desc" : "asc";
+          } else if (sortOrder[1] === key) {
+            sortOrder[0] = key;
+            sortOrder[1] = null;
+          } else {
+            sortDir[key] = "asc";
+            sortOrder[1] = sortOrder[0] || null;
+            sortOrder[0] = key;
+          }
+          refresh();
+        }
+        function cmpFlows(a, b) {
+          for (const key of sortOrder.filter(Boolean)) {
+            const d = key === "loaded"
+              ? (a.loaded ? 1 : 0) - (b.loaded ? 1 : 0)
+              : a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0;
+            if (d) return sortDir[key] === "desc" ? -d : d;
+          }
+          return 0;
+        }
+        function updateSortHeaders() {
+          for (const th of document.querySelectorAll("th.sortable")) {
+            const i = sortOrder.indexOf(th.dataset.sort);
+            const arrow = i === 0 ? (sortDir[th.dataset.sort] === "desc" ? " ▼" : " ▲")
+              : i === 1 ? (sortDir[th.dataset.sort] === "desc" ? " ↓" : " ↑")
+              : "";
+            th.textContent = th.dataset.label + arrow;
+          }
+        }
         function buildTree(flows) {
           const root = { path: "", folders: {}, flows: [] };
           for (const f of flows) {
@@ -424,15 +465,17 @@ defmodule HomeElixir.Web do
             tbody.appendChild(folderRow(folder, depth));
             if (expanded.has(folder.path)) renderNode(folder, depth + 1, tbody);
           }
-          for (const f of node.flows) tbody.appendChild(flowRow(f, depth));
+          for (const f of [...node.flows].sort(cmpFlows)) tbody.appendChild(flowRow(f, depth));
         }
         async function refresh() {
           const flows = await (await fetch("/api/flows")).json();
           const tbody = document.getElementById("flows");
           tbody.innerHTML = "";
           renderNode(buildTree(flows), 0, tbody);
+          updateSortHeaders();
         }
         document.getElementById("reload-all").onclick = reloadAll;
+        for (const th of document.querySelectorAll("th.sortable")) th.onclick = () => sortBy(th.dataset.sort);
         refresh();
         setInterval(refresh, 3000);
       </script>

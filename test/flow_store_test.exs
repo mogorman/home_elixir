@@ -45,18 +45,34 @@ defmodule HomeElixir.FlowStoreTest do
   end
   """
 
+  @deep_mod HomeElixir.Flows.Rooms.Kitchen.DeepFlow
+
+  @deep_src """
+  defmodule HomeElixir.Flows.Rooms.Kitchen.DeepFlow do
+    use HomeElixir.Flow
+
+    node("in", HomeElixir.Nodes.Function, fun: &__MODULE__.id/1)
+    node("out", HomeElixir.Nodes.Sink)
+    wire("in", "out")
+
+    def id(m), do: m
+  end
+  """
+
   setup do
     tmp = Path.join(System.tmp_dir!(), "flow_store_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(Path.join(tmp, "rooms"))
+    File.mkdir_p!(Path.join(tmp, "rooms/kitchen"))
     File.write!(Path.join(tmp, "store_test.ex"), @flow_src)
     File.write!(Path.join(tmp, "alt_flow.ex"), @alt_src)
     File.write!(Path.join(tmp, "rooms/test_flow.ex"), @nested_src)
+    File.write!(Path.join(tmp, "rooms/kitchen/deep_flow.ex"), @deep_src)
     Application.put_env(:home_elixir, :flows_dir, tmp)
 
     on_exit(fn ->
       Registry.unload(@mod)
       Registry.unload(@alt_mod)
       Registry.unload(@nested_mod)
+      Registry.unload(@deep_mod)
       Application.put_env(:home_elixir, :flows_dir, "flows")
       File.rm_rf!(tmp)
     end)
@@ -92,6 +108,25 @@ defmodule HomeElixir.FlowStoreTest do
     assert Registry.loaded?(@nested_mod)
     assert :ok = FlowStore.unload("rooms/test_flow")
     refute Registry.loaded?(@nested_mod)
+  end
+
+  test "supports arbitrary folder depth" do
+    flow = Enum.find(FlowStore.list(), &(&1.name == "rooms/kitchen/deep_flow"))
+    assert flow.module == @deep_mod
+
+    assert :ok = FlowStore.load("rooms/kitchen/deep_flow")
+    assert Registry.loaded?(@deep_mod)
+    assert :ok = FlowStore.unload("rooms/kitchen/deep_flow")
+    refute Registry.loaded?(@deep_mod)
+  end
+
+  test "a flow file that fails to compile is skipped, not fatal" do
+    tmp = Application.get_env(:home_elixir, :flows_dir)
+    File.write!(Path.join(tmp, "broken.ex"), "defmodule HomeElixir.Flows.BrokenX do use Nope")
+
+    list = FlowStore.list()
+    refute Enum.any?(list, &(&1.name == "broken"))
+    assert Enum.any?(list, &(&1.name == "store_test"))
   end
 
   test "check reports valid and broken source" do

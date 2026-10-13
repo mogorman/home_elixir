@@ -110,11 +110,11 @@ defmodule HomeElixir.FlowStore do
         {:ok, path} ->
           {mod, cache} = atom_for(path, cache)
 
-          if Registry.loaded?(mod) do
+          if is_nil(mod) or not Registry.loaded?(mod) do
+            {{:error, :not_loaded}, cache}
+          else
             Registry.send_msg(mod, node, HomeElixir.Msg.new(payload || %{}, topic: node))
             {:ok, cache}
-          else
-            {{:error, :not_loaded}, cache}
           end
 
         error ->
@@ -165,9 +165,14 @@ defmodule HomeElixir.FlowStore do
     case resolve(name) do
       {:ok, path} ->
         {mod, cache} = atom_for(path, cache)
-        cache = if Registry.loaded?(mod), do: elem(do_unload(name, cache), 1), else: cache
-        {reply, cache} = do_load(name, cache)
-        {:reply, reply, cache}
+
+        if mod do
+          cache = if Registry.loaded?(mod), do: elem(do_unload(name, cache), 1), else: cache
+          {reply, cache} = do_load(name, cache)
+          {:reply, reply, cache}
+        else
+          {:reply, {:error, :compile_error}, cache}
+        end
 
       error ->
         {:reply, error, cache}
@@ -202,22 +207,27 @@ defmodule HomeElixir.FlowStore do
     case resolve(name) do
       {:ok, path} ->
         {mod, cache} = atom_for(path, cache)
-        loaded = Registry.loaded?(mod)
 
-        elements =
-          for {node_id, {_handler, config}} <- mod.__flow__().nodes,
-              %{type: _t} = ui <- [Map.get(config, :ui)] do
-            %{
-              name: name,
-              node: node_id,
-              type: ui.type,
-              label: Map.get(ui, :label),
-              payload: Map.get(ui, :payload),
-              value: if(ui.type == "state" and loaded, do: node_state_value(mod, node_id), else: nil)
-            }
-          end
+        if mod do
+          loaded = Registry.loaded?(mod)
 
-        {:reply, elements, cache}
+          elements =
+            for {node_id, {_handler, config}} <- mod.__flow__().nodes,
+                %{type: _t} = ui <- [Map.get(config, :ui)] do
+              %{
+                name: name,
+                node: node_id,
+                type: ui.type,
+                label: Map.get(ui, :label),
+                payload: Map.get(ui, :payload),
+                value: if(ui.type == "state" and loaded, do: node_state_value(mod, node_id), else: nil)
+              }
+            end
+
+          {:reply, elements, cache}
+        else
+          {:reply, {:error, :compile_error}, cache}
+        end
 
       error ->
         {:reply, error, cache}
@@ -262,10 +272,15 @@ defmodule HomeElixir.FlowStore do
     case resolve(name) do
       {:ok, path} ->
         {mod, cache} = atom_for(path, cache)
-        result = Registry.unload(mod)
-        Logger.info("unloaded flow #{name} (#{inspect(result)})")
-        if result == :ok, do: remove_loaded(name)
-        {result, cache}
+
+        if mod do
+          result = Registry.unload(mod)
+          Logger.info("unloaded flow #{name} (#{inspect(result)})")
+          if result == :ok, do: remove_loaded(name)
+          {result, cache}
+        else
+          {{:error, :compile_error}, cache}
+        end
 
       error ->
         {error, cache}
@@ -303,7 +318,8 @@ defmodule HomeElixir.FlowStore do
   defp remove_loaded(name), do: write_loaded(read_loaded() -- [name])
 
   # Discover every flow file (recursively; subfolders become path-style names)
-  # and its module atom (cached), sorted by name.
+  # and its module atom (cached), sorted by name. Files that fail to compile
+  # are skipped (and logged), never fatal.
   defp list_flows(cache) do
     {flows, cache} =
       dir()
@@ -312,14 +328,18 @@ defmodule HomeElixir.FlowStore do
       |> Enum.reduce({[], cache}, fn path, {acc, cache} ->
         {mod, cache} = atom_for(path, cache)
 
-        flow = %{
-          name: rel_name(path),
-          path: path,
-          module: mod,
-          loaded: Registry.loaded?(mod)
-        }
+        if mod do
+          flow = %{
+            name: rel_name(path),
+            path: path,
+            module: mod,
+            loaded: Registry.loaded?(mod)
+          }
 
-        {[flow | acc], cache}
+          {[flow | acc], cache}
+        else
+          {acc, cache}
+        end
       end)
 
     {flows |> Enum.reverse() |> Enum.sort_by(& &1.name), cache}
@@ -351,6 +371,9 @@ defmodule HomeElixir.FlowStore do
     |> hd()
   end
 
+  # Module atom for a flow file (cached). Returns nil — and logs — when the
+  # file fails to compile, so one broken file can never crash the store.
+  # Failures are not cached, so a fixed file is picked up on the next list.
   defp atom_for(path, cache) do
     key = rel_name(path)
 
@@ -359,8 +382,22 @@ defmodule HomeElixir.FlowStore do
         {mod, cache}
 
       :error ->
-        mod = compile_atom(path)
-        {mod, Map.put(cache, key, mod)}
+        case compile_atom_safe(path) do
+          {:ok, mod} ->
+            {mod, Map.put(cache, key, mod)}
+
+          {:error, msg} ->
+            Logger.warning("skipping flow #{key}: #{msg}")
+            {nil, cache}
+        end
+    end
+  end
+
+  defp compile_atom_safe(path) do
+    try do
+      {:ok, compile_atom(path)}
+    rescue
+      e -> {:error, Exception.message(e)}
     end
   end
 
