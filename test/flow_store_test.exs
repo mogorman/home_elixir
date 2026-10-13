@@ -129,6 +129,30 @@ defmodule HomeElixir.FlowStoreTest do
     assert Enum.any?(list, &(&1.name == "store_test"))
   end
 
+  test "load and unload push a flow_changed update to web clients" do
+    HomeElixir.UI.Hub.subscribe(self())
+
+    assert :ok = FlowStore.load("store_test")
+    expect_flow_changed()
+
+    assert :ok = FlowStore.unload("store_test")
+    expect_flow_changed()
+  end
+
+  # Load/unload also log, and log lines are pushed too — skip those.
+  defp expect_flow_changed do
+    receive do
+      {:ui_push, json} ->
+        if Jason.decode!(json)["type"] == "flow_changed" do
+          :ok
+        else
+          expect_flow_changed()
+        end
+    after
+      500 -> flunk("timed out waiting for a flow_changed push")
+    end
+  end
+
   test "check reports valid and broken source" do
     assert {:ok, "OK — compiles cleanly"} =
       FlowStore.check("defmodule HomeElixir.Flows.CheckValid do end")

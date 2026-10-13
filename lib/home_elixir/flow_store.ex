@@ -260,7 +260,10 @@ defmodule HomeElixir.FlowStore do
             e -> {:error, Exception.message(e)}
           end
 
-        if reply == :ok, do: add_loaded(name)
+        if reply == :ok do
+          add_loaded(name)
+          flow_changed()
+        end
         {reply, cache}
 
       error ->
@@ -276,7 +279,12 @@ defmodule HomeElixir.FlowStore do
         if mod do
           result = Registry.unload(mod)
           Logger.info("unloaded flow #{name} (#{inspect(result)})")
-          if result == :ok, do: remove_loaded(name)
+
+          if result == :ok do
+            remove_loaded(name)
+            flow_changed()
+          end
+
           {result, cache}
         else
           {{:error, :compile_error}, cache}
@@ -286,6 +294,9 @@ defmodule HomeElixir.FlowStore do
         {error, cache}
     end
   end
+
+  # Tell web clients the flow set changed so list pages refresh without polling.
+  defp flow_changed, do: HomeElixir.UI.Hub.push(:flow_changed, %{})
 
   defp node_state_value(mod, node_id) do
     case Registry.node_state(mod, node_id) do

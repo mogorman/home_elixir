@@ -356,6 +356,7 @@ defmodule HomeElixir.Web do
         </table>
       </div>
       <script>
+        #{control_js()}
         async function act(name, action) {
           await fetch(`/api/flows/${name}/${action}`, { method: "POST" });
           refresh();
@@ -507,7 +508,10 @@ defmodule HomeElixir.Web do
         document.getElementById("reload-all").onclick = reloadAll;
         for (const th of document.querySelectorAll("th.sortable")) th.onclick = () => sortBy(th.dataset.sort);
         refresh();
-        setInterval(refresh, 3000);
+        // Push: refresh when the flow set changes elsewhere (editor, IEx, ...).
+        connectUI({ flow_changed: refresh });
+        // Slow safety net for files added or edited on disk without loading.
+        setInterval(refresh, 30000);
       </script>
     """
   end
