@@ -87,12 +87,27 @@ defmodule HomeElixir.Dep do
   end
 
   # Load every compiled dep into the VM and start its OTP app (if it has one).
+  # Two passes: all ebin paths first, then all apps — an app's declared
+  # dependencies may sort after it, so its .app file must be on the code path
+  # before we start it. App names come from the .app file, not the (versioned)
+  # lib dir name.
   defp add_paths!(dir) do
-    for dep_dir <- Path.wildcard(Path.join(dir, "_build/#{env()}/lib") <> "/*"),
-        ebin = Path.join(dep_dir, "ebin"),
-        File.dir?(ebin) do
-      Code.append_path(ebin)
-      Application.ensure_all_started(Path.basename(dep_dir) |> String.to_atom())
+    ebins =
+      for dep_dir <- Path.wildcard(Path.join(dir, "_build/#{env()}/lib") <> "/*"),
+          ebin = Path.join(dep_dir, "ebin"),
+          File.dir?(ebin),
+          do: ebin
+
+    Enum.each(ebins, &Code.append_path/1)
+
+    for ebin <- ebins do
+      case Path.wildcard(Path.join(ebin, "*.app")) do
+        [app_file] ->
+          Application.ensure_all_started(Path.basename(app_file, ".app") |> String.to_atom())
+
+        _ ->
+          :ok
+      end
     end
 
     :ok
