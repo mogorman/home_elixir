@@ -373,12 +373,18 @@ defmodule HomeElixir.Web do
         const expanded = new Set();
         // Column sorting: sortOrder[0] is primary, [1] the subsort. Clicking a
         // new column makes it primary and demotes the old primary to subsort;
-        // clicking the primary toggles its direction.
+        // clicking the primary toggles asc/desc, and a third click clears the
+        // sort (back to the folder tree). A sort shows the whole table flat,
+        // globally ordered — top-level flows can rank above/below folders.
         const sortOrder = [];
         const sortDir = {};
         function sortBy(key) {
           if (sortOrder[0] === key) {
-            sortDir[key] = sortDir[key] === "asc" ? "desc" : "asc";
+            if (sortDir[key] === "asc") {
+              sortDir[key] = "desc";
+            } else {
+              sortOrder.length = 0;
+            }
           } else if (sortOrder[1] === key) {
             sortOrder[0] = key;
             sortOrder[1] = null;
@@ -426,7 +432,7 @@ defmodule HomeElixir.Web do
           for (const f of Object.values(node.folders)) n += folderCount(f);
           return n;
         }
-        function flowRow(f, depth) {
+        function flowRow(f, depth, label) {
           const tr = document.createElement("tr");
           const actions = document.createElement("div");
           actions.className = "d-flex gap-1 justify-content-end";
@@ -442,7 +448,7 @@ defmodule HomeElixir.Web do
           edit.textContent = "Edit";
           actions.appendChild(edit);
           tr.innerHTML =
-            `<td class="fw-semibold" style="padding-left:${12 + depth * 20}px">${f.name.split("/").pop()}</td>` +
+            `<td class="fw-semibold" style="padding-left:${12 + depth * 20}px">${label}</td>` +
             `<td class="text-secondary">${f.module}</td>` +
             `<td><span class="badge ${f.loaded ? "bg-success" : "bg-secondary"}">${f.loaded ? "loaded" : "not loaded"}</span></td>`;
           tr.appendChild(actions);
@@ -465,13 +471,17 @@ defmodule HomeElixir.Web do
             tbody.appendChild(folderRow(folder, depth));
             if (expanded.has(folder.path)) renderNode(folder, depth + 1, tbody);
           }
-          for (const f of [...node.flows].sort(cmpFlows)) tbody.appendChild(flowRow(f, depth));
+          for (const f of node.flows) tbody.appendChild(flowRow(f, depth, f.name.split("/").pop()));
         }
         async function refresh() {
           const flows = await (await fetch("/api/flows")).json();
           const tbody = document.getElementById("flows");
           tbody.innerHTML = "";
-          renderNode(buildTree(flows), 0, tbody);
+          if (sortOrder.length) {
+            for (const f of [...flows].sort(cmpFlows)) tbody.appendChild(flowRow(f, 0, f.name));
+          } else {
+            renderNode(buildTree(flows), 0, tbody);
+          }
           updateSortHeaders();
         }
         document.getElementById("reload-all").onclick = reloadAll;
