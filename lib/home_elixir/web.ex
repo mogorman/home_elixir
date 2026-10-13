@@ -446,8 +446,78 @@ defmodule HomeElixir.Web do
           for (const f of Object.values(node.folders)) n += folderCount(f);
           return n;
         }
+        // Detail panel expanded under a flow row: its UI elements + recent logs.
+        // Logs survive table re-renders in panel.logs; pushes append live.
+        const panel = { name: null, logs: [], sinceId: 0 };
+        function logTag(name) { return name.split("/").pop(); }
+        function logDiv(line) {
+          const d = document.createElement("div");
+          d.textContent = line;
+          if (line.startsWith("error")) d.className = "text-danger";
+          else if (line.startsWith("warning")) d.className = "text-warning-emphasis";
+          return d;
+        }
+        async function togglePanel(name) {
+          if (panel.name === name) {
+            panel.name = null;
+          } else {
+            panel.name = name;
+            panel.logs = [];
+            try {
+              const items = await (await fetch("/api/logs?since=0")).json();
+              for (const it of items) {
+                if (it.id > panel.sinceId) panel.sinceId = it.id;
+                if (panel.name === name && it.line.includes("[" + logTag(name) + "]")) panel.logs.push(it.line);
+              }
+              panel.logs = panel.logs.slice(-300);
+            } catch (_) {}
+          }
+          refresh();
+        }
+        function onLog(msg) {
+          if (!panel.name || msg.id <= panel.sinceId) return;
+          panel.sinceId = msg.id;
+          if (!msg.line.includes("[" + logTag(panel.name) + "]")) return;
+          panel.logs.push(msg.line);
+          panel.logs = panel.logs.slice(-300);
+          const box = document.getElementById("panel-logs");
+          if (box) {
+            box.appendChild(logDiv(msg.line));
+            while (box.children.length > 300) box.removeChild(box.firstChild);
+            box.scrollTop = box.scrollHeight;
+          }
+        }
+        function panelRow(f) {
+          const tr = document.createElement("tr");
+          const td = document.createElement("td");
+          td.colSpan = 4;
+          td.innerHTML =
+            '<div class="d-flex gap-3 p-2 flex-column flex-md-row">' +
+            '<div class="border rounded p-2 flex-grow-1"><div class="fw-semibold small mb-2">controls</div>' +
+            '<div id="panel-ui" class="d-flex flex-wrap gap-2 align-items-center">loading…</div></div>' +
+            '<div class="border rounded p-2 flex-grow-1"><div class="fw-semibold small mb-2">logs</div>' +
+            '<div id="panel-logs" style="font-family:ui-monospace,monospace;font-size:12px;white-space:pre-wrap;height:220px;overflow:auto"></div></div>' +
+            '</div>';
+          tr.appendChild(td);
+          const logs = td.querySelector("#panel-logs");
+          for (const line of panel.logs) logs.appendChild(logDiv(line));
+          logs.scrollTop = logs.scrollHeight;
+          fetch(`/api/flows/${f.name}/ui`).then((r) => r.json()).then((els) => {
+            const box = document.getElementById("panel-ui");
+            if (!box) return;
+            box.innerHTML = "";
+            if (!els.length) {
+              box.innerHTML = '<span class="text-secondary small">no ui elements</span>';
+              return;
+            }
+            for (const e of els) box.appendChild(renderControl(e, "btn-sm btn-primary"));
+          });
+          return tr;
+        }
         function flowRow(f, depth, label) {
           const tr = document.createElement("tr");
+          tr.style.cursor = "pointer";
+          tr.onclick = (ev) => { if (!ev.target.closest("button, a")) togglePanel(f.name); };
           const actions = document.createElement("div");
           actions.className = "d-flex gap-1 justify-content-end";
           if (f.loaded) {
@@ -495,6 +565,7 @@ defmodule HomeElixir.Web do
               if (expanded.has(e.folder.path)) renderNode(e.folder, depth + 1, tbody);
             } else {
               tbody.appendChild(flowRow(e.f, depth, e.name));
+              if (e.f.name === panel.name) tbody.appendChild(panelRow(e.f));
             }
           }
         }
@@ -509,7 +580,7 @@ defmodule HomeElixir.Web do
         for (const th of document.querySelectorAll("th.sortable")) th.onclick = () => sortBy(th.dataset.sort);
         refresh();
         // Push: refresh when the flow set changes elsewhere (editor, IEx, ...).
-        connectUI({ flow_changed: refresh });
+        connectUI({ flow_changed: refresh, state: updateBadge, log: onLog });
         // Slow safety net for files added or edited on disk without loading.
         setInterval(refresh, 30000);
       </script>
@@ -646,6 +717,8 @@ defmodule HomeElixir.Web do
         #{control_js()}
         const FLOW = #{source_json};
         const FLOWNAME = #{name_json};
+        // Log lines are tagged with the flow's short name (last path segment).
+        const FLOWLOG = FLOWNAME ? FLOWNAME.split("/").pop() : "";
         const editor = document.getElementById("editor");
         const hl = document.getElementById("hl");
         const pre = document.querySelector(".cm pre");
@@ -757,7 +830,7 @@ defmodule HomeElixir.Web do
         function onFlowLog(msg) {
           if (flowSyncing) return;
           if (msg.id > flowLastId) {
-            if (msg.line.includes("[" + FLOWNAME + "]")) appendFlowLine(msg.line);
+            if (msg.line.includes("[" + FLOWLOG + "]")) appendFlowLine(msg.line);
             flowLastId = msg.id;
           }
         }
@@ -766,7 +839,7 @@ defmodule HomeElixir.Web do
           try {
             const items = await (await fetch("/api/logs?since=" + flowLastId)).json();
             for (const it of items) {
-              if (it.line.includes("[" + FLOWNAME + "]")) appendFlowLine(it.line);
+              if (it.line.includes("[" + FLOWLOG + "]")) appendFlowLine(it.line);
               flowLastId = it.id;
             }
           } catch (e) {}
@@ -969,9 +1042,11 @@ defmodule HomeElixir.Web do
       ws.onclose = () => setTimeout(() => connectUI(handlers, onOpen, retryMs), retryMs || 2000);
       return ws;
     }
-    // Update one badge from a pushed {flow, node, value} update.
+    // Update one badge from a pushed {flow, node, value} update. Pushes carry
+    // the flow's short name, so also match the last segment of path-style names.
     function updateBadge(u) {
-      const el = document.querySelector('[data-flow="' + u.flow + '"][data-node="' + u.node + '"]');
+      const el = [...document.querySelectorAll('[data-node="' + u.node + '"]')].find(
+        (b) => b.dataset.flow === u.flow || b.dataset.flow.split("/").pop() === u.flow);
       if (el) el.textContent = el.dataset.label + ": " + (u.value === null || u.value === undefined ? "-" : u.value);
     }
     """
