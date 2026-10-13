@@ -67,9 +67,10 @@ under a collapsible `living_room` folder, matching a
 Nodes are declared with `node(id, module, config)` and connected with
 `wire(from, to)`; several sources can share a target with
 `wire(["a", "b"], "c")`. In handler flows, `Inject` nodes with no outgoing
-wire are connected to `handle/1` automatically. A `HomeElixir.Msg` flows from
-a source node along the wires; a node's output 0 is forwarded to the next
-node(s).
+wire are connected to `handle/1`, and state-badge nodes (`ui: %{type: "state"}`)
+with no input are fed by its output — both explicit wires override. A
+`HomeElixir.Msg` flows from a source node along the wires; a node's output 0 is
+forwarded to the next node(s).
 
 ```elixir
 defmodule HomeElixir.Flows.Kitchen do

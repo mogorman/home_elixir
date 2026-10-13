@@ -30,6 +30,20 @@ defmodule HomeElixir.FlowHandlerTest do
     wire("explicit", "sink")
   end
 
+  # "badge" has state UI and no incoming wire (auto-fed by the handler);
+  # "wired" has state UI but an explicit input (must not be auto-fed).
+  defmodule Flows.AutoFeed do
+    use HomeElixir.Flow
+
+    def handle(%{payload: "go"}),
+      do: Application.put_env(:home_elixir, :feed_fired, System.monotonic_time())
+
+    node("src", HomeElixir.Nodes.Sink)
+    node("wired", HomeElixir.Nodes.Sink, ui: %{type: "state", label: "W"})
+    node("badge", HomeElixir.Nodes.Sink, ui: %{type: "state", label: "B"})
+    wire("src", "wired")
+  end
+
   # Grouped wire syntax in a plain (non-handler) flow.
   defmodule Flows.GroupWire do
     use HomeElixir.Flow
@@ -45,6 +59,13 @@ defmodule HomeElixir.FlowHandlerTest do
     assert {"btn", "__he_handle__"} in wires
     refute {"explicit", "__he_handle__"} in wires
     assert {"explicit", "sink"} in wires
+  end
+
+  test "state-badge nodes with no input are auto-fed by the handler; explicit input wins" do
+    wires = Flows.AutoFeed.__flow__().wires
+    assert {"__he_handle__", "badge"} in wires
+    refute {"__he_handle__", "wired"} in wires
+    assert {"src", "wired"} in wires
   end
 
   test "group wire syntax expands to one pair per source" do

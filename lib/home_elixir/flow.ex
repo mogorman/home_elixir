@@ -70,17 +70,25 @@ defmodule HomeElixir.Flow do
         @doc false
         def __flow__ do
           # Button nodes with no outgoing wire feed the handler automatically.
-          auto =
+          auto_in =
             for {id, {HomeElixir.Nodes.Inject, _}} <- @fe_nodes,
                 not Enum.any?(@fe_wires, fn {f, _} -> f == id end),
                 do: {id, "__he_handle__"}
+
+          # State-badge nodes with no incoming wire are fed by the handler,
+          # so a display mirror needs no wiring.
+          auto_out =
+            for {id, {_mod, config}} <- @fe_nodes,
+                is_map(config) and config[:ui][:type] == "state",
+                not Enum.any?(@fe_wires, fn {_, t} -> t == id end),
+                do: {"__he_handle__", id}
 
           %{
             nodes: @fe_nodes ++ [
               {"__he_in__", {HomeElixir.Nodes.StateChanged, %{}}},
               {"__he_handle__", {HomeElixir.Nodes.Function, %{fun: unquote(handler_fun)}}}
             ],
-            wires: @fe_wires ++ auto ++ [{"__he_in__", "__he_handle__"}]
+            wires: @fe_wires ++ auto_in ++ auto_out ++ [{"__he_in__", "__he_handle__"}]
           }
         end
       end

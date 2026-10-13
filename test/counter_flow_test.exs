@@ -31,8 +31,8 @@ defmodule HomeElixir.Nodes.CounterFlowTest do
     node("set", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "Reset", payload: "set"})
     node("clear", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "Clear", payload: "clear"})
 
-    # The buttons are auto-wired into the handler (no outgoing wire of their own).
-    wire("__he_handle__", "count")
+    # No wires at all: the buttons auto-feed the handler, and the state node is
+    # fed by the handler's output.
   end
 
   setup_all do

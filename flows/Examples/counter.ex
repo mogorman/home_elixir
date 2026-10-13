@@ -9,8 +9,9 @@ defmodule HomeElixir.Flows.Examples.Counter do
 
   `use HomeElixir.Flow` wires an HA `state_changed` source into `&handle/1`
   (the `__he_handle__` node); the button nodes below are auto-wired into it
-  (Inject nodes with no outgoing wire), and the one explicit wire feeds its
-  output to the display node so the badge stays live.
+  (Inject nodes with no outgoing wire), and its output feeds the display node
+  automatically (state-badge nodes with no input), so this flow has no wires
+  at all.
 
     | trigger                     | op      | shown by                              |
     |-----------------------------|---------|---------------------------------------|
@@ -58,9 +59,7 @@ defmodule HomeElixir.Flows.Examples.Counter do
   node("clear", HomeElixir.Nodes.Inject,
        ui: %{type: "button", label: "Clear", payload: "clear"})
 
-  # Display mirror (this module). The buttons need no wires — unconnected
-  # Inject nodes feed the handler automatically.
+  # Display mirror (this module). No wires needed at all — unconnected Inject
+  # nodes feed the handler, and state-badge nodes are fed by its output.
   node("count", __MODULE__, ui: %{type: "state", label: "Count"})
-
-  wire("__he_handle__", "count")
 end
