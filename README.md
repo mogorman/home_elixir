@@ -68,7 +68,9 @@ Nodes are declared with `node(id, module, config)` and connected with
 `wire(from, to)`; several sources can share a target with
 `wire(["a", "b"], "c")`. In handler flows, `Inject` nodes with no outgoing
 wire are connected to `handle/1`, and state-badge nodes (`ui: %{type: "state"}`)
-with no input are fed by its output — both explicit wires override. A
+with no input are fed by its output — both explicit wires override. A handler
+returns a value to wake its output nodes (state-changing clauses return the
+FlowState op's result); unmatched input returns nil and is dropped. A
 `HomeElixir.Msg` flows from a source node along the wires; a node's output 0 is
 forwarded to the next node(s).
 

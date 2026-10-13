@@ -25,8 +25,11 @@ defmodule HomeElixir.Flow do
       def setup, do: HomeElixir.Dep.install([{:timex, "~> 3.7"}])
 
   A flow may instead define `handle/1` (a "handler flow"). It is wired to a
-  Home Assistant `state_changed` source automatically, and the return value is
-  discarded — so a handler just matches the input it cares about and does work:
+  Home Assistant `state_changed` source automatically. Its return value is
+  forwarded to the nodes wired after `__he_handle__` — so state-changing
+  clauses return a value (the FlowState op's result does) to wake display
+  nodes, and unmatched input falls through the catch-all, which returns nil
+  and is dropped:
 
       defmodule Flows.DoorWatch do
         use HomeElixir.Flow
@@ -65,7 +68,9 @@ defmodule HomeElixir.Flow do
       handler_fun = quote do: &unquote(context.module).handle/1
 
       quote do
-        def handle(_), do: :ok
+        # nil (not :ok): the handler's return feeds its output nodes, and nil
+        # is dropped — so unmatched input wakes no display node.
+        def handle(_), do: nil
 
         @doc false
         def __flow__ do

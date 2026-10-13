@@ -11,7 +11,9 @@ defmodule HomeElixir.Flows.Examples.Counter do
   (the `__he_handle__` node); the button nodes below are auto-wired into it
   (Inject nodes with no outgoing wire), and its output feeds the display node
   automatically (state-badge nodes with no input), so this flow has no wires
-  at all.
+  at all. State-changing clauses return the FlowState op's result, which
+  wakes the display node; unmatched events hit the catch-all, return nil and
+  are dropped — so the display only runs when the state actually changes.
 
     | trigger                     | op      | shown by                              |
     |-----------------------------|---------|---------------------------------------|

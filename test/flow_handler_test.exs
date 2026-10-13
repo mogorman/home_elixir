@@ -44,6 +44,27 @@ defmodule HomeElixir.FlowHandlerTest do
     wire("src", "wired")
   end
 
+  # "probe" counts how often it is actually hit: only when the handler returns
+  # a non-nil value.
+  defmodule Flows.HitCounter do
+    use HomeElixir.Flow
+
+    def handle(%{payload: "inc"}), do: 1
+
+    defmodule Probe do
+      @behaviour HomeElixir.Node
+
+      @impl true
+      def init(_), do: 0
+
+      @impl true
+      def handle(_msg, n), do: {[nil], n + 1}
+    end
+
+    node("probe", __MODULE__.Probe)
+    wire("__he_handle__", "probe")
+  end
+
   # Grouped wire syntax in a plain (non-handler) flow.
   defmodule Flows.GroupWire do
     use HomeElixir.Flow
@@ -66,6 +87,19 @@ defmodule HomeElixir.FlowHandlerTest do
     assert {"__he_handle__", "badge"} in wires
     refute {"__he_handle__", "wired"} in wires
     assert {"src", "wired"} in wires
+  end
+
+  test "handler output reaches downstream nodes only when non-nil" do
+    on_exit(fn -> Registry.unload(Flows.HitCounter) end)
+    {:ok, _} = Registry.load(Flows.HitCounter)
+
+    Registry.send_msg(Flows.HitCounter, "__he_handle__", Msg.new("inc"))
+    poll(fn -> Registry.node_state(Flows.HitCounter, "probe") == 1 end)
+
+    # Unmatched payload: catch-all returns nil -> dropped, probe stays at 1.
+    Registry.send_msg(Flows.HitCounter, "__he_handle__", Msg.new("zzz"))
+    Process.sleep(50)
+    assert Registry.node_state(Flows.HitCounter, "probe") == 1
   end
 
   test "group wire syntax expands to one pair per source" do
