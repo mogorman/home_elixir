@@ -19,7 +19,10 @@ defmodule HomeElixir.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger, :mnesia],
+      # :mnesia is NOT in extra_applications: FlowState.start/0 must run before
+      # Mnesia starts (a running RAM-schema Mnesia blocks create_schema on a
+      # fresh install).
+      extra_applications: [:logger],
       mod: {HomeElixir.Application, []}
     ]
   end

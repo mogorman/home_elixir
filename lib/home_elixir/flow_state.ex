@@ -11,9 +11,10 @@ defmodule HomeElixir.FlowState do
        HomeElixir.FlowState.get(:last_entity)
        HomeElixir.FlowState.delete(:last_entity)
 
-   Backed by a Mnesia table — in-memory by default, or on disk when
-   `:flow_state_disc` is true (disk needs the app to run as a named node) — so
-   state survives flow reloads. Started by `HomeElixir.Application`.
+    Backed by a Mnesia table — on disk by default (survives restarts; needs the
+    app to run as a named node), in-memory when `:flow_state_disc` is false or
+    the node is nonode@nohost — so state survives flow reloads and restarts.
+    Started by `HomeElixir.Application`.
 
   From outside a node (tests, scripts), target a flow explicitly with `as/2`:
 
@@ -29,17 +30,28 @@ defmodule HomeElixir.FlowState do
   @flow_pid_key :home_elixir_flow
 
   # Start Mnesia and ensure the table exists. Idempotent — safe at boot and in tests.
-  # ram_copies is Mnesia's default, so for RAM we omit the option. disc_copies needs
-  # a *named* node; nonode@nohost (mix's default) rejects it, so disk only works when
-  # the app runs as a named node.
+  # Mnesia must not be running when this runs: a running (RAM-schema) Mnesia
+  # blocks create_schema, which only writes a fallback file that the following
+  # start() recovers as a proper disc schema. On a fresh install (OTP 28.5+ no
+  # longer creates the schema on disc at startup) we create it first. The schema
+  # dir defaults to priv/mnesia (override with `config :mnesia, dir: <charlist>`).
+  # disc_copies need a *named* node, so disk silently falls back to RAM on
+  # nonode@nohost (mix's default, tests).
   def start do
-    # Point the Mnesia schema at a known dir before starting (disk mode only).
+    ensure_mnesia_code()
+
+    # Only in disc mode — pointing the dir at a real location makes Mnesia try
+    # a disc schema even on nonode@nohost, which leaves it half-started.
+    # Charlist, not binary: Mnesia's lists:concat rejects binaries.
     if disc?() do
-      Application.put_env(
-        :mnesia,
-        :dir,
-        Application.get_env(:home_elixir, :flow_state_dir, "priv/mnesia")
-      )
+      Application.put_env(:mnesia, :dir, mnesia_dir())
+    end
+
+    if disc?() and not schema_on_disc?() do
+      case :mnesia.create_schema([node()]) do
+        :ok -> :ok
+        {:error, reason} -> raise "FlowState: mnesia create_schema failed: #{inspect(reason)}"
+      end
     end
 
     :mnesia.start()
@@ -56,6 +68,35 @@ defmodule HomeElixir.FlowState do
       {:aborted, {:already_exists, _}} -> :ok
       {:aborted, reason} -> raise "FlowState: mnesia create_table failed: #{inspect(reason)}"
     end
+  end
+
+  # Mnesia is not a managed app (it must not auto-start before this runs), so
+  # its ebin isn't on the code path yet — locate it under the ERTS root and add
+  # it.
+  defp ensure_mnesia_code do
+    if Code.ensure_loaded(:mnesia) == {:module, :mnesia} do
+      :ok
+    else
+      ebin =
+        Path.wildcard(Path.join(to_string(:code.root_dir()), "lib/mnesia-*/ebin"))
+        |> List.first()
+
+      ebin || raise("FlowState: cannot locate mnesia ebin under #{:code.root_dir()}")
+      Code.prepend_path(ebin)
+      Code.ensure_loaded!(:mnesia)
+    end
+  end
+
+  # A disc schema leaves a disc log for the schema table in the Mnesia dir.
+  defp schema_on_disc? do
+    File.exists?(Path.join(mnesia_dir(), "LATEST.LOG"))
+  end
+
+  defp mnesia_dir do
+    (Application.get_env(:mnesia, :dir) || Path.expand("priv/mnesia"))
+    |> to_string()
+    |> Path.expand()
+    |> String.to_charlist()
   end
 
   # Set the ambient flow for this process (used by the node engine on init).

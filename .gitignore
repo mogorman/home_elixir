@@ -31,3 +31,6 @@ home_elixir-*.tar
 # Local HA credentials (loaded from config/config.exs when present)
 /config/secret.exs
 
+# FlowState Mnesia schema/tables (disk persistence)
+/priv/mnesia/
+
