@@ -3,30 +3,41 @@ defmodule HomeElixir.Nodes.CounterFlowTest do
 
   alias HomeElixir.{FlowState, Msg, Registry}
 
-  # A flow that mirrors HomeElixir.Flows.Counter: a stateful Counter node fed by
-  # button Injects and a door source.
+  # A flow that mirrors HomeElixir.Flows.Examples.Counter: handle/1 does the
+  # counting via FlowState; the buttons wire into the handler; a display mirror
+  # node keeps the badge live.
   defmodule Flows.CounterUI do
     use HomeElixir.Flow
 
-    def door_inc(_msg), do: "inc"
+    alias HomeElixir.FlowState
 
-    node("count", HomeElixir.Nodes.Counter, key: :count, default: 0,
-         ui: %{type: "state", label: "Count"})
+    def handle(%{payload: "inc"}), do: FlowState.update(:count, &(&1 + 1), 0)
+    def handle(%{payload: "dec"}), do: FlowState.update(:count, &(&1 - 1), 0)
+    def handle(%{payload: "set"}), do: FlowState.put(:count, 0)
+    def handle(%{payload: "clear"}), do: FlowState.delete(:count)
+
+    defmodule Badge do
+      @behaviour HomeElixir.Node
+
+      @impl true
+      def init(_), do: %{state: HomeElixir.FlowState.get(:count)}
+
+      @impl true
+      def handle(_msg, _), do: {[nil], %{state: HomeElixir.FlowState.get(:count)}}
+    end
+
+    node("count", __MODULE__.Badge, ui: %{type: "state", label: "Count"})
 
     node("inc", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "+1", payload: "inc"})
     node("dec", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "-1", payload: "dec"})
     node("set", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "Reset", payload: "set"})
     node("clear", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "Clear", payload: "clear"})
 
-    node("door", HomeElixir.Nodes.StateChanged, entity_id: "sensor.door")
-    node("door_bump", HomeElixir.Nodes.Function, fun: &__MODULE__.door_inc/1)
-
-    wire("door", "door_bump")
-    wire("door_bump", "count")
-    wire("inc", "count")
-    wire("dec", "count")
-    wire("set", "count")
-    wire("clear", "count")
+    wire("inc", "__he_handle__")
+    wire("dec", "__he_handle__")
+    wire("set", "__he_handle__")
+    wire("clear", "__he_handle__")
+    wire("__he_handle__", "count")
   end
 
   setup_all do

@@ -42,7 +42,7 @@ defmodule HomeElixir.Flow do
    flows can't collide:
 
        def handle(%{topic: "sensor.front_door", payload: "open"}),
-         do: HomeElixir.FlowState.update(:count, &(&1 + 1))
+         do: HomeElixir.FlowState.update(:count, &(&1 + 1), 0)
    """
 
   defmacro __using__(_opts) do
