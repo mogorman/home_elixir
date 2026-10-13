@@ -81,6 +81,9 @@ defmodule HomeElixir.Web do
     if websocket?(conn), do: upgrade_to_terminal(conn), else: html(conn, terminal_page())
   end
 
+  def call(%{method: "GET", request_path: "/favicon.ico"} = conn, _opts),
+    do: static_file(conn, "favicon.ico")
+
   def call(%{method: "GET", request_path: "/static/" <> rest} = conn, _opts),
     do: static_file(conn, rest)
 
@@ -979,6 +982,7 @@ defmodule HomeElixir.Web do
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
+      <link rel="icon" href="/static/favicon.ico">
       <title>#{title} — home_elixir</title>
       <link href="#{@bootstrap}" rel="stylesheet">
       #{theme_script()}
