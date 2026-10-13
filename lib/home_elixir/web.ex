@@ -19,7 +19,7 @@ defmodule HomeElixir.Web do
     GET  /api/flows/:name/ui      UI elements for one flow (JSON)
     POST /api/flows/:name/load | unload | reload
     POST /api/flows/reload        reload all loaded flows
-    POST /api/flows/save | check
+    POST /api/flows/save | check   (save reuses the editor's path via the X-Flow-Name header; new files derive it from the module)
   """
 
   @behaviour Plug
@@ -123,11 +123,8 @@ defmodule HomeElixir.Web do
   defp save_endpoint(conn) do
     source = body(conn)
 
-    case name_from_source(source) do
-      nil ->
-        text(conn, 400, "could not find a `defmodule` in the source")
-
-      name ->
+    case save_name(List.first(get_req_header(conn, "x-flow-name")), source) do
+      {:ok, name} ->
         try do
           save_flow(name, source)
           text(conn, 200, "saved " <> name <> ".ex (reload to apply)")
@@ -135,8 +132,32 @@ defmodule HomeElixir.Web do
           e ->
             text(conn, 400, "saved " <> name <> ".ex, but save failed:\n" <> Exception.message(e))
         end
+
+      {:error, msg} ->
+        text(conn, 400, msg)
     end
   end
+
+  # The editor sends the path it was opened on (X-Flow-Name) and that wins, so
+  # editing never moves a file. Only new flows (no header) derive their path
+  # from the module name.
+  def save_name(header_name, source) do
+    case header_name do
+      nil -> derive_name(source)
+      "" -> derive_name(source)
+      name ->
+        if flow_name_valid?(name), do: {:ok, name}, else: {:error, "invalid flow name: #{name}"}
+    end
+  end
+
+  defp derive_name(source) do
+    case name_from_source(source) do
+      nil -> {:error, "could not find a `defmodule` in the source"}
+      name -> {:ok, name}
+    end
+  end
+
+  defp flow_name_valid?(name), do: Regex.match?(~r/^[A-Za-z0-9_]+(?:\/[A-Za-z0-9_]+)*$/, name)
 
   # Derive the flow file name from the module name in the source (single source
   # of truth, so the name and module can't drift apart). A
@@ -789,7 +810,8 @@ defmodule HomeElixir.Web do
         render();
         async function doSave() {
           status.textContent = "saving…";
-          const r = await fetch("/api/flows/save", { method: "POST", body: editor.value });
+          const headers = FLOWNAME ? { "X-Flow-Name": FLOWNAME } : {};
+          const r = await fetch("/api/flows/save", { method: "POST", headers, body: editor.value });
           status.textContent = await r.text();
           if (r.ok) savedSource = editor.value;
         }

@@ -199,6 +199,19 @@ defmodule HomeElixir.FlowStoreTest do
              "A/B/deep_flow"
   end
 
+  test "save_name: editor path wins, traversal rejected, module fallback" do
+    src = "defmodule HomeElixir.Flows.Examples.NowClock do"
+
+    assert HomeElixir.Web.save_name("Examples/now_clock", src) == {:ok, "Examples/now_clock"}
+
+    assert {:error, _} = HomeElixir.Web.save_name("../evil", src)
+    assert {:error, _} = HomeElixir.Web.save_name("a/b/c.ex", src)
+
+    assert HomeElixir.Web.save_name(nil, src) == {:ok, "Examples/now_clock"}
+    assert HomeElixir.Web.save_name("", src) == {:ok, "Examples/now_clock"}
+    assert {:error, _} = HomeElixir.Web.save_name(nil, "no module here")
+  end
+
   defp poll(fun, timeout \\ 1_000) do
     deadline = System.monotonic_time(:millisecond) + timeout
 
