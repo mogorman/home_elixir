@@ -72,7 +72,8 @@ defmodule HomeElixir.FlowState do
 
   # Mnesia is not a managed app (it must not auto-start before this runs), so
   # its ebin isn't on the code path yet — locate it under the ERTS root and add
-  # it.
+  # it. Releases ship it under the release root's lib/ (see MixProject's
+  # copy_mnesia_ebin/1); dev finds it under the OTP install.
   defp ensure_mnesia_code do
     if Code.ensure_loaded(:mnesia) == {:module, :mnesia} do
       :ok
@@ -83,7 +84,26 @@ defmodule HomeElixir.FlowState do
 
       ebin || raise("FlowState: cannot locate mnesia ebin under #{:code.root_dir()}")
       Code.prepend_path(ebin)
-      Code.ensure_loaded!(:mnesia)
+
+      # Releases boot the VM in embedded mode, where :code.ensure_loaded/1
+      # refuses to load new modules ({error, :embedded}) — so mnesia's own
+      # dependency modules (mnesia_lib, ...) would never load and mnesia:start/0
+      # would hit undefined functions. ensure_modules_loaded/1 loads even in
+      # embedded mode. application.load reads the .app (module list) without
+      # starting mnesia, preserving the must-start-our-own ordering above.
+      :application.load(:mnesia)
+
+      case :application.get_key(:mnesia, :modules) do
+        {:ok, modules} ->
+          case :code.ensure_modules_loaded(modules) do
+            :ok -> :ok
+            {:error, errors} ->
+              raise "FlowState: cannot load mnesia modules from #{ebin}: #{inspect(errors)}"
+          end
+
+        other ->
+          raise "FlowState: no module list in mnesia.app (#{inspect(other)})"
+      end
     end
   end
 
