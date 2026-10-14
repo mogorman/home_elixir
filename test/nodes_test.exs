@@ -90,8 +90,12 @@ defmodule HomeElixir.NodesTest do
       )
 
       case Registry.node_state(flow, sink_id) do
-        [first | _] -> {:halt, first}
-        _ -> Process.sleep(20); {:cont, nil}
+        [first | _] ->
+          {:halt, first}
+
+        _ ->
+          Process.sleep(20)
+          {:cont, nil}
       end
     end)
   end
@@ -101,7 +105,11 @@ defmodule HomeElixir.NodesTest do
   test "Service node fires call_service with config + message data" do
     _ = start_ha!()
     t = HA.Client.transport_pid(HA.client())
-    on_exit(fn -> Registry.unload(Flows.ServiceTest); stop_ha() end)
+
+    on_exit(fn ->
+      Registry.unload(Flows.ServiceTest)
+      stop_ha()
+    end)
 
     {:ok, _} = Registry.load(Flows.ServiceTest)
     Registry.send_msg(Flows.ServiceTest, "svc", Msg.new(%{"brightness" => 200}))
@@ -115,7 +123,11 @@ defmodule HomeElixir.NodesTest do
   test "StateChanged node emits a message on a matching state event" do
     _ = start_ha!()
     t = HA.Client.transport_pid(HA.client())
-    on_exit(fn -> Registry.unload(Flows.StateChangedTest); stop_ha() end)
+
+    on_exit(fn ->
+      Registry.unload(Flows.StateChangedTest)
+      stop_ha()
+    end)
 
     {:ok, _} = Registry.load(Flows.StateChangedTest)
 
@@ -131,6 +143,7 @@ defmodule HomeElixir.NodesTest do
         "new_state" => %{"state" => "on"}
       }
     }
+
     msg = emit_until(t, sub["id"], event, Flows.StateChangedTest, "out")
 
     assert %Msg{payload: "on", topic: "light.kitchen"} = msg
@@ -141,7 +154,11 @@ defmodule HomeElixir.NodesTest do
   test "routed messages are stamped with the flow's short name" do
     _ = start_ha!()
     t = HA.Client.transport_pid(HA.client())
-    on_exit(fn -> Registry.unload(Flows.StampTest); stop_ha() end)
+
+    on_exit(fn ->
+      Registry.unload(Flows.StampTest)
+      stop_ha()
+    end)
 
     {:ok, _} = Registry.load(Flows.StampTest)
     sub = sent_until(t, &(&1 =~ "subscribe_events"))
@@ -154,8 +171,42 @@ defmodule HomeElixir.NodesTest do
         "new_state" => %{"state" => "on"}
       }
     }
+
     msg = emit_until(t, sub["id"], event, Flows.StampTest, "out")
     assert msg.data.flow == "stamp_test"
+  end
+
+  # ---- Schedule node (cron source) ----
+
+  test "Schedule: missing/invalid cron is a load-time error" do
+    assert_raise RuntimeError, ~r/Schedule node requires/, fn ->
+      HomeElixir.Nodes.Schedule.init(%{})
+    end
+
+    assert_raise RuntimeError, ~r/Can't parse/, fn ->
+      HomeElixir.Nodes.Schedule.init(%{cron: "not a cron"})
+    end
+  end
+
+  test "Schedule: a tick emits the configured payload and re-arms; other events are swallowed" do
+    expr = Crontab.CronExpression.Parser.parse!("*/2 * * * *")
+    state = %{expr: expr, cron: "*/2 * * * *", payload: "inc", topic: "schedule"}
+
+    {[msg], state2} = HomeElixir.Nodes.Schedule.trigger(:cron_tick, state)
+    assert %Msg{payload: "inc", topic: "schedule"} = msg
+    assert state2 == state
+
+    assert {[nil], ^state2} = HomeElixir.Nodes.Schedule.trigger(:unrelated, state2)
+  end
+
+  test "Schedule: next_future_ms is strictly in the future at a cron boundary" do
+    expr = Crontab.CronExpression.Parser.parse!("*/2 * * * *")
+    boundary = ~N[2026-01-01 10:38:00]
+    boundary_ms = HomeElixir.Nodes.Schedule.naive_to_system_ms(boundary)
+
+    ms = HomeElixir.Nodes.Schedule.next_future_ms(expr, boundary, boundary_ms)
+    assert ms > boundary_ms
+    assert ms == HomeElixir.Nodes.Schedule.naive_to_system_ms(~N[2026-01-01 10:40:00])
   end
 
   # shared cleanup

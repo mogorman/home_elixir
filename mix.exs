@@ -33,7 +33,9 @@ defmodule HomeElixir.MixProject do
       {:mint_web_socket, "~> 1.0"},
       {:jason, "~> 1.4"},
       {:plug, "~> 1.18"},
-      {:plug_cowboy, "~> 2.7"}
+      {:plug_cowboy, "~> 2.7"},
+      {:crontab, "~> 1.1"},
+      {:ecto, "~> 3.13"}
     ]
   end
 end

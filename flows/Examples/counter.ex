@@ -2,8 +2,8 @@ defmodule HomeElixir.Flows.Examples.Counter do
   @moduledoc """
   Example flow that tours every `HomeElixir.FlowState` operation with a live,
   in-sync display on the /controls page, using the **handle pattern**: all the
-  counting logic lives in `handle/1` clauses, fed by web buttons and a door
-  event. One module plays both roles: the flow (its `handle/1`) and its own
+  counting logic lives in `handle/1` clauses, fed by web buttons, a 2-minute
+  cron tick, and a door event. One module plays both roles: the flow (its `handle/1`) and its own
   display node (its `handle/2`, a `HomeElixir.Node` callback — the arities
   don't clash).
 
@@ -18,6 +18,7 @@ defmodule HomeElixir.Flows.Examples.Counter do
     | trigger                     | op      | shown by                              |
     |-----------------------------|---------|---------------------------------------|
     | "+1" button / door event    | update  | count +1                              |
+    | 2-minute cron tick          | update  | count +1                              |
     | "-1" button                 | update  | count -1                              |
     | "Reset" button              | write   | sets to 0                             |
     | "Clear" button              | delete  | badge shows "-"                       |
@@ -61,6 +62,11 @@ defmodule HomeElixir.Flows.Examples.Counter do
   node("set", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "Reset", payload: "set"})
 
   node("clear", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "Clear", payload: "clear"})
+
+  # Cron trigger: fires every 2 minutes (wall clock), payload "inc" -> the
+  # handle(%{payload: "inc"}) clause above. Auto-wired into the handler, so no
+  # explicit wire. (Use "0 15 * * 1" for e.g. Monday at 3pm.)
+  node("tick", HomeElixir.Nodes.Schedule, cron: "*/2 * * * *", payload: "inc")
 
   # Display mirror (this module). No wires needed at all — unconnected Inject
   # nodes feed the handler, and state-badge nodes are fed by its output.
