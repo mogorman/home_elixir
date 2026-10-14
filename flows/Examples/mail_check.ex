@@ -46,12 +46,12 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
     case ask_llm() do
       {:ok, text} ->
         present? = text =~ ~r/\btrue\b/i
-        Logger.info("[mail_check] answer=#{inspect(text)}")
+        Logger.info("answer=#{inspect(text)}")
         if present?, do: FlowState.put(:mail_date, to_string(local_today()))
         FlowState.put(:last_check, if(present?, do: "true", else: "false"))
 
       {:error, reason} ->
-        Logger.warning("[mail_check] check failed: #{inspect(reason)}")
+        Logger.warning("check failed: #{inspect(reason)}")
         FlowState.put(:last_check, "error")
     end
   end

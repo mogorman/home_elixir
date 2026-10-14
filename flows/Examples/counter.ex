@@ -49,22 +49,18 @@ defmodule HomeElixir.Flows.Examples.Counter do
 
   @impl true
   def handle(msg, data) do
-    Logger.info("[#{msg.data.flow}] badge: msg=#{inspect(msg)} data=#{inspect(data)}")
+    Logger.info("badge: msg=#{inspect(msg)} data=#{inspect(data)}")
     {[nil], %{state: FlowState.get(:count)}}
   end
 
   # Web buttons (Inject re-emits the click payload into the handler).
-  node("inc", HomeElixir.Nodes.Inject,
-       ui: %{type: "button", label: "+1", payload: "inc"})
+  node("inc", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "+1", payload: "inc"})
 
-  node("dec", HomeElixir.Nodes.Inject,
-       ui: %{type: "button", label: "-1", payload: "dec"})
+  node("dec", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "-1", payload: "dec"})
 
-  node("set", HomeElixir.Nodes.Inject,
-       ui: %{type: "button", label: "Reset", payload: "set"})
+  node("set", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "Reset", payload: "set"})
 
-  node("clear", HomeElixir.Nodes.Inject,
-       ui: %{type: "button", label: "Clear", payload: "clear"})
+  node("clear", HomeElixir.Nodes.Inject, ui: %{type: "button", label: "Clear", payload: "clear"})
 
   # Display mirror (this module). No wires needed at all — unconnected Inject
   # nodes feed the handler, and state-badge nodes are fed by its output.

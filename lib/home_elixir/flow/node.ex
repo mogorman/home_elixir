@@ -34,6 +34,13 @@ defmodule HomeElixir.Flow.Node do
       flow_name: to_string(flow_key) |> String.split(".") |> List.last() |> Macro.underscore()
     }
 
+    # Tag every log line from this process with the flow's name; the web flow
+    # log filters lines on the "[name]" text (see HomeElixir.LogHandler).
+    # ponytail: derived from the module name, which matches the flow file's
+    # last path segment for the standard naming; a flow whose file name diverges
+    # from its module name would tag under the module name.
+    :logger.set_process_metadata(%{flow: state.flow_name})
+
     {:ok, state}
   end
 
@@ -84,7 +91,9 @@ defmodule HomeElixir.Flow.Node do
 
   defp route_outputs(outputs, state) do
     case Enum.at(outputs, 0) do
-      nil -> state
+      nil ->
+        state
+
       out ->
         out = with_flow(out, state.flow_name)
         Enum.each(state.routing, fn pid -> GenServer.cast(pid, {:msg, out}) end)
