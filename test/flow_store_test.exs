@@ -121,12 +121,16 @@ defmodule HomeElixir.FlowStoreTest do
     refute Registry.loaded?(@deep_mod)
   end
 
-  test "a flow file that fails to compile is skipped, not fatal" do
+  test "a flow file that fails to compile is still listed (broken), not fatal" do
     tmp = Application.get_env(:home_elixir, :flows_dir)
     File.write!(Path.join(tmp, "broken.ex"), "defmodule HomeElixir.Flows.BrokenX do use Nope")
 
     list = FlowStore.list()
-    refute Enum.any?(list, &(&1.name == "broken"))
+    broken = Enum.find(list, &(&1.name == "broken"))
+    assert broken.status == :broken
+    assert broken.module == nil
+    refute broken.loaded
+    # and the store still lists the healthy flows
     assert Enum.any?(list, &(&1.name == "store_test"))
   end
 

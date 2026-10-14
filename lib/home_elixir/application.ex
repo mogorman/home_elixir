@@ -38,8 +38,8 @@ defmodule HomeElixir.Application do
   # enabled). Without HA_URL/HA_TOKEN the app runs flows that don't need HA.
   defp ha_client_child do
     auto = Application.get_env(:home_elixir, :auto_start_ha, true)
-    url = System.get_env("HA_URL") || Application.get_env(:home_elixir, :ha_url)
-    token = System.get_env("HA_TOKEN") || Application.get_env(:home_elixir, :ha_token)
+    url = HomeElixir.HA.config_url()
+    token = HomeElixir.HA.token()
 
     if auto && url && token do
       [

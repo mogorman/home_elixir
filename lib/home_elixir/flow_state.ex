@@ -154,7 +154,44 @@ defmodule HomeElixir.FlowState do
   end
 
   def save_loaded_names(names) do
-    tx(fn -> :mnesia.write({@table, @meta_flow, %{loaded: Enum.uniq(names)}}) end)
+    tx(fn ->
+      data = read_data(@meta_flow)
+      :mnesia.write({@table, @meta_flow, Map.put(data, :loaded, Enum.uniq(names))})
+    end)
+  end
+
+  # Every flow that has ever loaded successfully (never pruned) — the baseline
+  # for distinguishing "unloaded" (red) from "never loaded" (grey) in the UI.
+  def ever_loaded_names do
+    tx(fn -> Map.get(read_data(@meta_flow), :ever_loaded) || [] end)
+  end
+
+  # File checksum captured at each flow's last successful load (name => hex).
+  def loaded_checksums do
+    tx(fn -> Map.get(read_data(@meta_flow), :checksums) || %{} end)
+  end
+
+  # Record a successful load: mark the flow ever-loaded and store its current
+  # file checksum + source, so the UI can tell if the file drifted (needs reload)
+  # and the editor can revert to this last-loaded version.
+  def record_load(name, checksum, source) do
+    tx(fn ->
+      data = read_data(@meta_flow)
+      ever = (Map.get(data, :ever_loaded) || []) ++ [name]
+      sums = Map.put(Map.get(data, :checksums) || %{}, name, checksum)
+      srcs = Map.put(Map.get(data, :sources) || %{}, name, source)
+
+      :mnesia.write(
+        {@table, @meta_flow,
+         Map.merge(data, %{ever_loaded: Enum.uniq(ever), checksums: sums, sources: srcs})}
+      )
+    end)
+  end
+
+  # The source as it was at the flow's last successful load (for "revert to
+  # last loaded"); nil if the flow has never loaded.
+  def loaded_source(name) do
+    tx(fn -> (Map.get(read_data(@meta_flow), :sources) || %{}) |> Map.get(name) end)
   end
 
   # Run `fun` in a Mnesia transaction; unwrap {atomic, result}, re-raise on abort.

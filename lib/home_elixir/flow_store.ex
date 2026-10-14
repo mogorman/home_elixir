@@ -53,6 +53,14 @@ defmodule HomeElixir.FlowStore do
   @doc "Whether a flow is currently loaded (without compiling it)."
   def loaded?(name), do: call({:loaded?, name})
 
+  @doc "The source at the flow's last successful load (for editor revert); `:error` if never loaded."
+  def loaded_source(name) do
+    case HomeElixir.FlowState.loaded_source(name) do
+      src when is_binary(src) -> {:ok, src}
+      _ -> :error
+    end
+  end
+
   @doc """
   Compile a source string and report the result, without loading it into the
   flow set. Runs in this GenServer (a stable process), not the request process.
@@ -107,7 +115,7 @@ defmodule HomeElixir.FlowStore do
           type: ui.type,
           label: Map.get(ui, :label),
           payload: Map.get(ui, :payload),
-          value: if(ui.type == "state", do: node_state_value(mod, node_id), else: nil)
+          value: if(ui.type in ["state", "image"], do: node_state_value(mod, node_id), else: nil)
         }
       end
 
@@ -230,7 +238,11 @@ defmodule HomeElixir.FlowStore do
                 type: ui.type,
                 label: Map.get(ui, :label),
                 payload: Map.get(ui, :payload),
-                value: if(ui.type == "state" and loaded, do: node_state_value(mod, node_id), else: nil)
+                value:
+                  if(ui.type in ["state", "image"] and loaded,
+                    do: node_state_value(mod, node_id),
+                    else: nil
+                  )
               }
             end
 
@@ -272,8 +284,10 @@ defmodule HomeElixir.FlowStore do
 
         if reply == :ok do
           add_loaded(name)
+          record_loaded!(name, path)
           flow_changed()
         end
+
         {reply, cache}
 
       error ->
@@ -350,6 +364,9 @@ defmodule HomeElixir.FlowStore do
   # and its module atom (cached), sorted by name. Files that fail to compile
   # are skipped (and logged), never fatal.
   defp list_flows(cache) do
+    ever = MapSet.new(HomeElixir.FlowState.ever_loaded_names())
+    sums = HomeElixir.FlowState.loaded_checksums()
+
     {flows, cache} =
       dir()
       |> Path.join("**/*.ex")
@@ -358,20 +375,69 @@ defmodule HomeElixir.FlowStore do
         {mod, cache} = atom_for(path, cache)
 
         if mod do
+          name = rel_name(path)
+          loaded = Registry.loaded?(mod)
+
           flow = %{
-            name: rel_name(path),
+            name: name,
             path: path,
             module: mod,
-            loaded: Registry.loaded?(mod)
+            loaded: loaded,
+            status: flow_status(loaded, MapSet.member?(ever, name), path, Map.get(sums, name))
           }
 
           {[flow | acc], cache}
         else
-          {acc, cache}
+          # Broken (won't compile): still list it so a flow broken between
+          # restarts stays visible and can be opened in the editor to fix.
+          flow = %{
+            name: rel_name(path),
+            path: path,
+            module: nil,
+            loaded: false,
+            status: :broken
+          }
+
+          {[flow | acc], cache}
         end
       end)
 
     {flows |> Enum.reverse() |> Enum.sort_by(& &1.name), cache}
+  end
+
+  # green: loaded and current. yellow: file changed since last load (not applied).
+  # red: was loaded, now stopped. grey: never loaded.
+  defp flow_status(loaded?, ever?, path, loaded_sum) do
+    changed? = is_binary(loaded_sum) and file_checksum(path) != loaded_sum
+
+    cond do
+      loaded? and not changed? -> :green
+      changed? -> :yellow
+      ever? -> :red
+      true -> :grey
+    end
+  end
+
+  defp file_checksum(path) do
+    case File.read(path) do
+      {:ok, bytes} -> :crypto.hash(:md5, bytes) |> Base.encode16(case: :lower)
+      _ -> nil
+    end
+  end
+
+  # Store the flow's source + checksum at load time (for status diff + revert).
+  defp record_loaded!(name, path) do
+    case File.read(path) do
+      {:ok, src} ->
+        HomeElixir.FlowState.record_load(
+          name,
+          :crypto.hash(:md5, src) |> Base.encode16(case: :lower),
+          src
+        )
+
+      _ ->
+        :ok
+    end
   end
 
   # Route through a node-aware server reference so these calls work from both
@@ -402,22 +468,28 @@ defmodule HomeElixir.FlowStore do
 
   # Module atom for a flow file (cached). Returns nil — and logs — when the
   # file fails to compile, so one broken file can never crash the store.
-  # Failures are not cached, so a fixed file is picked up on the next list.
+  # Successful compiles are cached permanently; failures are cached with the
+  # file's checksum, so a broken flow is recompiled (and re-warned) only when
+  # the file actually changes — not on every list refresh.
   defp atom_for(path, cache) do
     key = rel_name(path)
+    sum = file_checksum(path)
 
     case Map.fetch(cache, key) do
-      {:ok, mod} ->
+      {:ok, {:ok, mod}} ->
         {mod, cache}
 
-      :error ->
+      {:ok, {:err, cached_sum}} when sum == cached_sum ->
+        {nil, cache}
+
+      _ ->
         case compile_atom_safe(path) do
           {:ok, mod} ->
-            {mod, Map.put(cache, key, mod)}
+            {mod, Map.put(cache, key, {:ok, mod})}
 
           {:error, msg} ->
             Logger.warning("skipping flow #{key}: #{msg}")
-            {nil, cache}
+            {nil, Map.put(cache, key, {:err, sum})}
         end
     end
   end

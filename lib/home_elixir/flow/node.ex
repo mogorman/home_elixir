@@ -105,8 +105,10 @@ defmodule HomeElixir.Flow.Node do
   defp with_flow(%HomeElixir.Msg{} = msg, name), do: %{msg | data: Map.put(msg.data, :flow, name)}
   defp with_flow(msg, _name), do: msg
 
-  # True when this node backs a `ui: %{type: "state"}` badge.
-  defp ui_state?(config), do: match?(%{type: "state"}, config[:ui])
+  # True when this node backs a `ui: %{type: "state"}` badge or an `"image"`.
+  defp ui_state?(config) do
+    match?(%{type: "state"}, config[:ui]) or match?(%{type: "image"}, config[:ui])
+  end
 
   # Push this node's display value to the web UI when it changes (state badges only).
   defp push_ui(%{state_ui?: true, flow_name: flow, node_id: node_id, node_state: ns}) do

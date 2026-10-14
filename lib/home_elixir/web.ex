@@ -57,9 +57,22 @@ defmodule HomeElixir.Web do
     # Flow names may be path-style ("LivingRoom/counter"), so only the last
     # segment is the sub-route.
     parts = String.split(rest, "/")
+    name = Enum.join(Enum.drop(parts, -1), "/")
 
-    if length(parts) >= 2 and List.last(parts) == "ui" do
-      json(conn, HomeElixir.FlowStore.flow_ui(Enum.join(Enum.drop(parts, -1), "/")))
+    if length(parts) >= 2 do
+      case List.last(parts) do
+        "ui" ->
+          json(conn, HomeElixir.FlowStore.flow_ui(name))
+
+        "loaded_source" ->
+          case HomeElixir.FlowStore.loaded_source(name) do
+            {:ok, src} -> json(conn, %{source: src})
+            :error -> not_found(conn)
+          end
+
+        _ ->
+          not_found(conn)
+      end
     else
       not_found(conn)
     end
@@ -127,6 +140,7 @@ defmodule HomeElixir.Web do
       {:ok, name} ->
         try do
           save_flow(name, source)
+          HomeElixir.UI.Hub.push(:flow_changed, %{})
           text(conn, 200, "saved " <> name <> ".ex (reload to apply)")
         rescue
           e ->
@@ -143,8 +157,12 @@ defmodule HomeElixir.Web do
   # from the module name.
   def save_name(header_name, source) do
     case header_name do
-      nil -> derive_name(source)
-      "" -> derive_name(source)
+      nil ->
+        derive_name(source)
+
+      "" ->
+        derive_name(source)
+
       name ->
         if flow_name_valid?(name), do: {:ok, name}, else: {:error, "invalid flow name: #{name}"}
     end
@@ -165,14 +183,14 @@ defmodule HomeElixir.Web do
   def name_from_source(source) do
     case Regex.run(~r/defmodule\s+([A-Za-z0-9_.]+)/, source) do
       [_, mod] ->
-      case String.split(mod, ".") do
-        ["HomeElixir", "Flows" | rest] ->
-          {dirs, [leaf]} = Enum.split(rest, length(rest) - 1)
-          Enum.join(dirs ++ [Macro.underscore(leaf)], "/")
+        case String.split(mod, ".") do
+          ["HomeElixir", "Flows" | rest] ->
+            {dirs, [leaf]} = Enum.split(rest, length(rest) - 1)
+            Enum.join(dirs ++ [Macro.underscore(leaf)], "/")
 
-        parts ->
-          parts |> List.last() |> Macro.underscore()
-      end
+          parts ->
+            parts |> List.last() |> Macro.underscore()
+        end
 
       _ ->
         nil
@@ -206,7 +224,9 @@ defmodule HomeElixir.Web do
 
   defp parse_since(query) do
     case URI.decode_query(query || "") |> Map.get("since") do
-      nil -> 0
+      nil ->
+        0
+
       s ->
         case Integer.parse(s) do
           {n, _} -> n
@@ -263,8 +283,15 @@ defmodule HomeElixir.Web do
     |> put_resp_header("cache-control", "no-cache, no-store, must-revalidate")
     |> send_resp(200, body)
   end
-  defp json(conn, data), do: conn |> put_resp_content_type("application/json") |> send_resp(conn.status || 200, Jason.encode!(data))
-  defp text(conn, status, data), do: conn |> put_resp_content_type("text/plain") |> send_resp(status, data)
+
+  defp json(conn, data),
+    do:
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(conn.status || 200, Jason.encode!(data))
+
+  defp text(conn, status, data),
+    do: conn |> put_resp_content_type("text/plain") |> send_resp(status, data)
 
   # Serves bundled assets under priv/static (currently the highlight.js build).
   defp static_file(conn, name) do
@@ -292,6 +319,7 @@ defmodule HomeElixir.Web do
         not_found(conn)
     end
   end
+
   defp websocket?(conn) do
     case :lists.keyfind("upgrade", 1, conn.req_headers) do
       {"upgrade", value} -> String.downcase(value) == "websocket"
@@ -350,7 +378,9 @@ defmodule HomeElixir.Web do
   end
 
   defp not_found(conn) do
-    conn |> put_resp_content_type("application/json") |> send_resp(404, Jason.encode!(%{error: "not found"}))
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(404, Jason.encode!(%{error: "not found"}))
   end
 
   defp reply(conn, :ok), do: json(conn, %{ok: true})
@@ -362,6 +392,25 @@ defmodule HomeElixir.Web do
   defp list_page do
     """
     #{base_html("Flows")}
+      <style>
+        /* Header row: distinguish from the flow rows below (uppercase, small,
+           muted, subtle bg) so the column labels don't read as a flow. */
+        .flows-table thead th {
+          text-transform: uppercase;
+          font-size: .72rem;
+          letter-spacing: .03em;
+          font-weight: 600;
+          color: var(--bs-secondary-color);
+          background: var(--bs-tertiary-bg);
+        }
+        .status-dot { display: inline-block; width: .7rem; height: .7rem;
+          border-radius: 50%; background: var(--bs-secondary-color); vertical-align: middle; }
+        .status-dot.is-green { background: var(--bs-success); }
+        .status-dot.is-yellow { background: var(--bs-warning); }
+        .status-dot.is-red { background: var(--bs-danger); }
+        /* broken (won't compile): hollow red ring, distinct from solid red "unloaded" */
+        .status-dot.is-broken { background: transparent; border: 2px solid var(--bs-danger); box-sizing: border-box; }
+      </style>
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
           <span class="fw-semibold">Flows</span>
@@ -370,7 +419,7 @@ defmodule HomeElixir.Web do
             <button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>
           </div>
         </div>
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0 flows-table">
           <thead><tr>
             <th class="sortable" data-label="name" data-sort="name" style="cursor:pointer">name</th>
             <th class="sortable" data-label="module" data-sort="module" style="cursor:pointer">module</th>
@@ -571,8 +620,8 @@ defmodule HomeElixir.Web do
           actions.appendChild(edit);
           tr.innerHTML =
             `<td class="fw-semibold" style="padding-left:${12 + depth * 20}px">${label}</td>` +
-            `<td class="text-secondary">${f.module}</td>` +
-            `<td><span class="badge ${f.loaded ? "bg-success" : "bg-secondary"}">${f.loaded ? "loaded" : "not loaded"}</span></td>`;
+            `<td class="text-secondary">${f.module ? f.module.replace(/^Elixir\./, "") : '<span class="text-warning-emphasis">broken</span>'}</td>` +
+            `<td><span class="status-dot ${f.status === "grey" ? "" : "is-" + f.status}" title="${f.status}"></span></td>`;
           tr.appendChild(actions);
           return tr;
         }
@@ -688,6 +737,15 @@ defmodule HomeElixir.Web do
               overflow: visible; font: inherit; }
         .cm textarea { z-index: 2; background: transparent; color: transparent;
               caret-color: var(--bs-body-color); border: 0; resize: none; outline: none; }
+        .cm-gutter { position: absolute; left: 0; top: 0; bottom: 0; width: 3.4rem;
+              overflow: hidden; box-sizing: border-box; z-index: 1;
+              background: var(--bs-tertiary-bg); border-right: 1px solid var(--bs-border-color);
+              user-select: none; }
+        #gutter { padding: 12px 8px 12px 0; font-family: ui-monospace, "SFMono-Regular",
+              Menlo, Consolas, monospace; font-size: 13px; line-height: 20px;
+              text-align: right; color: var(--bs-secondary-color); white-space: pre; }
+        @media (max-width: 768px) { #gutter { font-size: 16px; line-height: 24px; } }
+        .cm pre, .cm textarea { left: 3.4rem; }
         .flowlogs { font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.5;
               white-space: pre-wrap; height: 240px; overflow: auto; }
         .ent-row { cursor: pointer; border-bottom: 1px solid var(--bs-border-color); }
@@ -710,10 +768,12 @@ defmodule HomeElixir.Web do
             <button id="check" class="btn btn-sm btn-outline-secondary">Check</button>
             <button id="reload" class="btn btn-sm btn-outline-secondary">Reload</button>
             <button id="entities-btn" class="btn btn-sm btn-outline-secondary">Entities</button>
+            <button id="revert" class="btn btn-sm btn-outline-secondary">Revert</button>
             <button id="save" class="btn btn-sm btn-primary">Save</button>
             <span id="status" class="text-success small"></span>
           </div>
           <div class="cm">
+            <div class="cm-gutter"><div id="gutter"></div></div>
             <pre class="cm-hl" aria-hidden="true"><code id="hl" class="hljs language-elixir"></code></pre>
             <textarea id="editor" wrap="off" spellcheck="false" autocomplete="off"></textarea>
           </div>
@@ -760,6 +820,8 @@ defmodule HomeElixir.Web do
         const editor = document.getElementById("editor");
         const hl = document.getElementById("hl");
         const pre = document.querySelector(".cm pre");
+        const gutter = document.querySelector(".cm-gutter");
+        const gutterNums = document.getElementById("gutter");
         const hint = document.getElementById("hint");
         const status = document.getElementById("status");
         const nameInput = document.getElementById("name");
@@ -798,8 +860,8 @@ defmodule HomeElixir.Web do
           }
           if (editor.value.endsWith("\\n")) html += " ";
           hl.innerHTML = html;
-          pre.scrollTop = editor.scrollTop;
-          pre.scrollLeft = editor.scrollLeft;
+          gutterNums.textContent = editor.value.split("\\n").map((_, i) => i + 1).join("\\n");
+          syncScroll();
           const mod = currentModule();
           hint.textContent = mod ? ("saves as " + snake(mod.split(".").pop()) + ".ex")
                                  : "add a defmodule to save";
@@ -816,10 +878,12 @@ defmodule HomeElixir.Web do
         window.addEventListener("beforeunload", (e) => {
           if (editor.value !== savedSource) { e.preventDefault(); e.returnValue = ""; }
         });
-        editor.addEventListener("scroll", () => {
+        function syncScroll() {
           pre.scrollTop = editor.scrollTop;
           pre.scrollLeft = editor.scrollLeft;
-        });
+          gutter.scrollTop = editor.scrollTop;
+        }
+        editor.addEventListener("scroll", syncScroll);
         render();
         async function doSave() {
           status.textContent = "saving…";
@@ -827,6 +891,18 @@ defmodule HomeElixir.Web do
           const r = await fetch("/api/flows/save", { method: "POST", headers, body: editor.value });
           status.textContent = await r.text();
           if (r.ok) savedSource = editor.value;
+        }
+        async function doRevert() {
+          if (!FLOWNAME) { status.textContent = "save first"; return; }
+          status.textContent = "reverting…";
+          const r = await fetch(`/api/flows/${FLOWNAME}/loaded_source`);
+          if (!r.ok) { status.textContent = "no loaded state to revert to"; return; }
+          const { source } = await r.json();
+          editor.value = source;
+          render();
+          const s = await fetch("/api/flows/save", { method: "POST", headers: { "X-Flow-Name": FLOWNAME }, body: editor.value });
+          status.textContent = await s.text();
+          if (s.ok) savedSource = editor.value;
         }
         async function doCheck() {
           status.textContent = "checking…";
@@ -842,6 +918,7 @@ defmodule HomeElixir.Web do
           refreshControls();
         }
         document.getElementById("save").onclick = doSave;
+        document.getElementById("revert").onclick = doRevert;
         document.getElementById("check").onclick = doCheck;
         document.getElementById("reload").onclick = doReload;
         async function refreshControls() {
@@ -1049,6 +1126,18 @@ defmodule HomeElixir.Web do
   # helpers both pages use.
   defp control_js do
     """
+    function setSnapshot(el, value) {
+      el.innerHTML = "";
+      if (value) {
+        const img = document.createElement("img");
+        img.src = value; img.className = "img-fluid rounded"; img.style.maxWidth = "220px";
+        el.appendChild(img);
+      } else {
+        const s = document.createElement("span");
+        s.className = "text-secondary small"; s.textContent = "no snapshot yet";
+        el.appendChild(s);
+      }
+    }
     function renderControl(e, btnClass) {
       if (e.type === "state") {
         const b = document.createElement("span");
@@ -1060,6 +1149,16 @@ defmodule HomeElixir.Web do
         b.dataset.node = e.node;
         b.dataset.label = e.label || e.node;
         return b;
+      }
+      if (e.type === "image") {
+        const wrap = document.createElement("span");
+        wrap.className = "d-inline-flex align-items-center";
+        wrap.dataset.flow = e.name;
+        wrap.dataset.node = e.node;
+        wrap.dataset.label = e.label || e.node;
+        wrap.dataset.snapshot = "1";
+        setSnapshot(wrap, e.value);
+        return wrap;
       }
       const b = document.createElement("button");
       b.className = "btn " + (btnClass || "btn-primary");
@@ -1086,7 +1185,9 @@ defmodule HomeElixir.Web do
     function updateBadge(u) {
       const el = [...document.querySelectorAll('[data-node="' + u.node + '"]')].find(
         (b) => b.dataset.flow === u.flow || b.dataset.flow.split("/").pop() === u.flow);
-      if (el) el.textContent = el.dataset.label + ": " + (u.value === null || u.value === undefined ? "-" : u.value);
+      if (!el) return;
+      if (el.dataset.snapshot) { setSnapshot(el, u.value); return; }
+      el.textContent = el.dataset.label + ": " + (u.value === null || u.value === undefined ? "-" : u.value);
     }
     """
   end
