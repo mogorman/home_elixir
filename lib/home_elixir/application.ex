@@ -25,6 +25,9 @@ defmodule HomeElixir.Application do
     # Restore the loaded/unloaded state from the previous run (Mnesia flow-state
     # DB); broken flows are logged + skipped.
     if Application.get_env(:home_elixir, :restore_flows, false) do
+      # Wipe the dep cache if the flows' declared deps changed since last boot,
+      # so the build matches exactly what's needed (no growth, no cross-eviction).
+      HomeElixir.Dep.reset_if_stale()
       HomeElixir.FlowStore.restore()
     end
 
@@ -40,8 +43,7 @@ defmodule HomeElixir.Application do
 
     if auto && url && token do
       [
-        {HomeElixir.HA.Client,
-         [name: HomeElixir.HA.client_name(), url: url, token: token]}
+        {HomeElixir.HA.Client, [name: HomeElixir.HA.client_name(), url: url, token: token]}
       ]
     else
       []
