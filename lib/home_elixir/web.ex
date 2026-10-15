@@ -1821,6 +1821,24 @@ defmodule HomeElixir.Web do
   # helpers both pages use.
   defp control_js do
     """
+    // Session-lapse guard. If auth is lost while a page is open (cookie expiry,
+    // logout in another tab, or an admin deleting/role-changing the account —
+    // each drops the live session), the next /api/* call 401s. Send the browser
+    // back to /login instead of leaving a blank, half-dead page.
+    (function () {
+      const real = window.fetch;
+      window.fetch = function (input, init) {
+        return real(input, init).then((res) => {
+          const url = typeof input === "string" ? input : (input && input.url) || "";
+          if (res.status === 401 && url.indexOf("/api/") === 0 && url.indexOf("/api/login") < 0) {
+            location.href = "/login";
+          }
+          return res;
+        });
+      };
+      // Idle safety net: catch a session that lapses while the page sits open.
+      setInterval(() => { window.fetch("/api/me"); }, 30000);
+    })();
     function setSnapshot(el, value) {
       el.innerHTML = "";
       if (value) {
