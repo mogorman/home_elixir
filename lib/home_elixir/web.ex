@@ -1223,7 +1223,10 @@ defmodule HomeElixir.Web do
 
             const dd = document.createElement("div");
             dd.className = "dropdown";
-            dd.innerHTML = '<button class="btn btn-sm btn-outline-secondary" aria-label="menu">⋮</button><div class="dropdown-menu dropdown-menu-end">' + items + '</div>';
+            // data-bs-popper: CSS-only Bootstrap 5 (no JS/Popper) only applies the
+            // .dropdown-menu-end alignment (right:0) once Popper marks the element, so
+            // without it the menu opens rightward, off-screen, from the far-right trigger.
+            dd.innerHTML = '<button class="btn btn-sm btn-outline-secondary" aria-label="menu">⋮</button><div class="dropdown-menu dropdown-menu-end" data-bs-popper>' + items + '</div>';
             actions.appendChild(dd);
 
             const menuList = dd.querySelector(".dropdown-menu");
