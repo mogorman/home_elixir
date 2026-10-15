@@ -57,6 +57,7 @@ defmodule HomeElixir.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:mint, "~> 1.0"},
       {:mint_web_socket, "~> 1.0"},
       {:jason, "~> 1.4"},
       {:plug, "~> 1.18"},

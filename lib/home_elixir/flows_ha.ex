@@ -2,8 +2,15 @@ defmodule HomeElixir.FlowsHA do
   @moduledoc """
   Exposes every flow as a switch in a single "Flows" device in Home Assistant,
   via the Node-RED Companion integration. Each switch's state is the flow's
-  loaded state; toggling it in HA loads/unloads the flow. On boot, switches for
-  flow files that no longer exist are removed from HA.
+  loaded state; toggling it in HA loads/unloads the flow.
+
+  On every sync (at boot, after any create/delete/archive/restore, and on a
+  timer) the Flows device is reconciled against the live flow set: HA entities
+  with no matching non-archived flow are removed, and switches for current flows
+  are (re)discovered. The device's current switches are read from HA's REST
+  `/api/states` (the reliable source — the WS `get_states` list does not return
+  these entities), so orphaned entities are cleaned up even if they predate this
+  process's memory of them.
 
   A no-op when HA is not configured.
   """
@@ -14,7 +21,6 @@ defmodule HomeElixir.FlowsHA do
 
   @server_id "home_elixir"
   @device_id "home_elixir_flows"
-  @marker "flows/"
   @resync_ms 30_000
 
   def start_link(opts \\ []) do
@@ -28,18 +34,17 @@ defmodule HomeElixir.FlowsHA do
   @impl true
   def init(_) do
     HomeElixir.UI.Hub.subscribe(self())
-    state = %{switches: %{}, by_id: %{}, cleaned: false}
+    state = %{switches: %{}, by_id: %{}}
     state = ensure_discovered(state)
     Process.send_after(self(), :sync, 500)
     {:ok, state}
   end
 
   @impl true
-  # Periodic: resync (self-heals switch state after a WS reconnect) + one-time
-  # boot cleanup of stale entities, then reschedule.
+  # Periodic: reconcile the switch set against the live flows (removing stale
+  # entities and self-healing switch state after a WS reconnect), then reschedule.
   def handle_info(:sync, state) do
     state = do_sync(state)
-    state = if state.cleaned, do: state, else: clean_stale(state)
     Process.send_after(self(), :sync, @resync_ms)
     {:noreply, state}
   end
@@ -72,9 +77,6 @@ defmodule HomeElixir.FlowsHA do
     end
   end
 
-  # Boot cleanup finished (see clean_stale/1).
-  def handle_info(:flows_cleaned, state), do: {:noreply, %{state | cleaned: true}}
-
   def handle_info(_other, state), do: {:noreply, state}
 
   # ---- internals ----
@@ -82,17 +84,28 @@ defmodule HomeElixir.FlowsHA do
   # Keep the switch set in step with the flow files, then push their states.
   defp do_sync(state), do: state |> ensure_discovered() |> push_states()
 
-  # Rebuild the switch set from the current flow files: discover new ones, drop
-  # the ones that are gone (deleted or archived — removing their HA entity), and
-  # refresh each switch's state to the flow's *current* loaded state. The reduce
-  # starts from an empty map (not `state.switches`) so flows no longer present are
-  # actually dropped; existing entries are reused by node_id so a sync never
+  # Rebuild the switch set from the current flow files: discover new ones, remove
+  # the HA entity for every published flow that is now gone (deleted or archived),
+  # and refresh each switch's state to the flow's *current* loaded state. The
+  # reduce starts from an empty map (not `state.switches`) so a dropped flow's
+  # switch is dropped; existing entries are reused by node_id so a sync never
   # re-discovers (and re-ids) a still-present flow.
   defp ensure_discovered(state) do
     client = HA.client()
-    # Archived flows get no switch (their entity is dropped below); restoring
+    # Archived flows get no switch (their entity is removed below); restoring
     # re-creates it.
     flows = FlowStore.list() |> Enum.reject(& &1.archived)
+    desired = MapSet.new(flows, fn f -> node_id(f.name) end)
+
+    # Remove HA switches for flows that no longer exist: read the Flows device's
+    # current entities from HA (REST) and drop any with no matching flow. Reading
+    # the real device (not our memory) also catches orphans that predate this run.
+    if connected?(client) do
+      case device_switch_ids() do
+        {:ok, actual} -> Enum.each(MapSet.difference(actual, desired), &remove_switch/1)
+        :error -> :ok
+      end
+    end
 
     switches =
       Enum.reduce(flows, %{}, fn flow, acc ->
@@ -110,10 +123,6 @@ defmodule HomeElixir.FlowsHA do
 
         Map.put(acc, node_id, entry)
       end)
-
-    for {old_node_id, _} <- state.switches, not Map.has_key?(switches, old_node_id) do
-      remove_switch(old_node_id)
-    end
 
     %{state | switches: switches} |> refresh_by_id()
   end
@@ -146,22 +155,148 @@ defmodule HomeElixir.FlowsHA do
     %{state | by_id: by_id}
   end
 
-  # Nodered.remove no-ops when HA is not connected.
+  # The node_ids currently on the Flows device. `nil` in the test env seam
+  # (`:flows_ha_device_ids`) reads HA's REST `/api/states` — the reliable source
+  # for the device's entities (the WS `get_states` list does not return them); a
+  # list short-circuits to that set, so tests never touch a real HA. `:error` when
+  # HA REST is unreachable or misconfigured, so the caller removes nothing rather
+  # than acting on a partial view.
+  defp device_switch_ids do
+    case Application.get_env(:home_elixir, :flows_ha_device_ids) do
+      nil ->
+        rest_device_switch_ids()
+
+      ids when is_list(ids) ->
+        {:ok, MapSet.new(ids)}
+    end
+  end
+
+  # Read the device's entities from HA's REST `/api/states` (the reliable source
+  # for the device's entities — the WS `get_states` list does not return them),
+  # over Mint (the core's HTTP client; the HA WS transport is Mint too). Returns
+  # `{:ok, node_ids}` on a 200, `:error` otherwise (transport failure, non-200,
+  # misconfig) so the caller removes nothing rather than acting on a partial view.
+  defp rest_device_switch_ids do
+    base = HA.rest_base()
+    token = HA.token()
+
+    if is_binary(base) and is_binary(token) do
+      with {scheme, host, port} <- parse_rest(base),
+           {:ok, 200, body} <-
+             http_get(scheme, host, port, "/api/states", [
+               {"authorization", "Bearer " <> token}
+             ]),
+           {:ok, states} <- Jason.decode(body) do
+        if is_list(states), do: {:ok, flow_switch_ids(states)}, else: :error
+      else
+        _ -> :error
+      end
+    else
+      :error
+    end
+  end
+
+  # Derive the connect target (`scheme, host, port`) from a REST base URL.
+  defp parse_rest(base) do
+    uri = URI.parse(base)
+    https? = uri.scheme == "https"
+    {if(https?, do: :https, else: :http), uri.host, uri.port || if(https?, do: 443, else: 80)}
+  end
+
+  # A single HTTP GET: connect, request, then read until Mint reports `:done`.
+  # Returns `{:ok, status, body}` or `{:error, reason}`. Mint's socket is
+  # `active: :once`, so response bytes arrive as messages (same pattern as the
+  # WS transport's handshake).
+  defp http_get(scheme, host, port, path, headers) do
+    try do
+      with {:ok, conn} <- Mint.HTTP.connect(scheme, host, port, protocols: [:http1]),
+           {:ok, conn, ref} <- Mint.HTTP.request(conn, "GET", path, headers, "") do
+        read_response(conn, ref, {nil, <<>>})
+      else
+        {:error, _conn, reason} -> {:error, reason}
+        {:error, reason} -> {:error, reason}
+      end
+    rescue
+      _ -> {:error, :http_error}
+    catch
+      _kind, _reason -> {:error, :http_error}
+    end
+  end
+
+  defp read_response(conn, ref, {status, body}) do
+    receive do
+      {:ssl, _r, _d} = msg -> step_response(conn, ref, msg, {status, body})
+      {:tcp, _r, _d} = msg -> step_response(conn, ref, msg, {status, body})
+      {:ssl_closed, _} -> {:error, :closed}
+      {:tcp_closed, _} -> {:error, :closed}
+      {:ssl_error, _r, reason} -> {:error, reason}
+      {:tcp_error, _r, reason} -> {:error, reason}
+    after
+      8_000 -> {:error, :timeout}
+    end
+  end
+
+  defp step_response(conn, ref, msg, {status, body}) do
+    case Mint.HTTP.stream(conn, msg) do
+      {:ok, conn, responses} ->
+        {status, body, done?} =
+          Enum.reduce(responses, {status, body, false}, fn
+            {:status, ^ref, code}, {_, b, _} -> {code, b, false}
+            {:data, ^ref, chunk}, {s, b, _} -> {s, b <> chunk, false}
+            {:done, ^ref}, {s, b, _} -> {s, b, true}
+            _other, acc -> acc
+          end)
+
+        if done?, do: {:ok, status, body}, else: read_response(conn, ref, {status, body})
+
+      {:error, _conn, reason, _responses} ->
+        {:error, reason}
+
+      :unknown ->
+        read_response(conn, ref, {status, body})
+    end
+  end
+
+  @doc """
+  Pure: the Flows-device switch node_ids present in a `/api/states` list. HA names
+  them `switch.flows_<node_id>`, so the node_id is the suffix after that prefix;
+  any other entity (other devices, other domains) is ignored.
+  """
+  def flow_switch_ids(states) do
+    states
+    |> Enum.filter(&is_map/1)
+    |> Enum.map(& &1["entity_id"])
+    |> Enum.filter(&is_binary/1)
+    |> Enum.filter(&String.starts_with?(&1, "switch.flows_"))
+    |> Enum.map(&String.replace_prefix(&1, "switch.flows_", ""))
+    |> MapSet.new()
+  end
+
+  # Remove a switch from HA in a detached, fully-caught process so a removal never
+  # blocks the sync on HA's round-trip (same pattern as fire_entity/2).
+  # Nodered.remove no-ops when HA is absent.
   defp remove_switch(node_id) do
-    Nodered.remove(@server_id, node_id)
+    spawn(fn ->
+      try do
+        Nodered.remove(@server_id, node_id)
+      catch
+        _kind, _reason -> :ok
+      end
+    end)
+
     :ok
   end
 
   # Push every switch's state to HA (no-op unless connected).
   defp push_states(state) do
-    client = HA.client()
-
-    if is_pid(client) and HA.Client.status(client) == :connected do
+    if connected?(HA.client()) do
       for {node_id, sw} <- state.switches, do: fire_entity(sw.state, node_id)
     end
 
     state
   end
+
+  defp connected?(client), do: is_pid(client) and HA.Client.status(client) == :connected
 
   defp handle_toggle(state, node_id, want) do
     %{name: name} = state.switches[node_id]
@@ -206,39 +341,6 @@ defmodule HomeElixir.FlowsHA do
     end
   end
 
-  # One-time (once connected): remove HA entities under our marker whose flow
-  # file no longer exists. Runs in a detached task so a slow get_states never
-  # blocks toggle handling; retries (leaves `cleaned` false) until it succeeds.
-  defp clean_stale(state) do
-    client = HA.client()
-
-    if is_pid(client) and HA.Client.status(client) == :connected and not state.cleaned do
-      me = self()
-      valid = MapSet.new(Map.keys(state.switches))
-
-      spawn(fn ->
-        case HA.Client.call(client, "get_states") do
-          states when is_list(states) ->
-            for s <- states,
-                attrs = Map.get(s, "attributes", %{}),
-                m = Map.get(attrs, "__he"),
-                is_binary(m) and String.starts_with?(m, @marker),
-                node_id = marker_node_id(m),
-                not MapSet.member?(valid, node_id) do
-              Nodered.remove(@server_id, node_id)
-            end
-
-            send(me, :flows_cleaned)
-
-          _ ->
-            :ok
-        end
-      end)
-    end
-
-    state
-  end
-
   defp build_discovery(node_id, name) do
     %{
       "type" => "nodered/discovery",
@@ -246,11 +348,8 @@ defmodule HomeElixir.FlowsHA do
       "server_id" => @server_id,
       "node_id" => node_id,
       "config" => %{"name" => name, "icon" => "mdi:robot"},
-      # `__he` marker must land in the entity's `attributes` so clean_stale/1 can
-      # find it via `get_states` (same convention as HomeElixir.Nodes.Device).
       # No `state` here: it is set exclusively via `nodered/entity` (push_states/1),
       # so a re-discovery can never pin an entity to a stale loaded state.
-      "attributes" => %{"__he" => @marker <> node_id},
       "device_info" => %{"id" => @device_id, "name" => "Flows", "manufacturer" => "home-elixir"}
     }
   end
@@ -261,7 +360,4 @@ defmodule HomeElixir.FlowsHA do
   end
 
   defp toggle_state(_), do: nil
-
-  # The node_id embedded in our `__he` marker (`"flows/<node_id>"`).
-  defp marker_node_id(m), do: m |> String.split(@marker, parts: 2) |> Enum.at(1)
 end

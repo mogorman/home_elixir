@@ -26,6 +26,9 @@ defmodule HomeElixir.FlowsHATest do
 
   setup do
     HomeElixir.FlowState.start()
+    # Test seam for the device sweep: a controlled Flows-device switch set, so the
+    # sync never makes a real REST call to HA. Tests override it as needed.
+    Application.put_env(:home_elixir, :flows_ha_device_ids, [])
     tmp = Path.join(System.tmp_dir!(), "flows_ha_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp)
     File.write!(Path.join(tmp, "alpha.ex"), @alpha)
@@ -40,6 +43,7 @@ defmodule HomeElixir.FlowsHATest do
       HomeElixir.FlowState.unarchive("beta")
       stop_ha()
       Application.put_env(:home_elixir, :flows_dir, "flows")
+      Application.delete_env(:home_elixir, :flows_ha_device_ids)
       File.rm_rf!(tmp)
     end)
 
@@ -123,26 +127,6 @@ defmodule HomeElixir.FlowsHATest do
     end
   end
 
-  # Answer the boot get_states with `result` so the cleanup task can proceed.
-  defp respond_get_states(t, result, remaining \\ 3_000) do
-    gs =
-      FakeTransport.sent(t)
-      |> Enum.map(&Jason.decode!(&1))
-      |> Enum.find(&(&1["type"] == "get_states"))
-
-    case gs do
-      nil when remaining > 0 ->
-        Process.sleep(5)
-        respond_get_states(t, result, remaining - 5)
-
-      %{"id" => id} ->
-        FakeTransport.send_text(
-          t,
-          Jason.encode!(%{"id" => id, "type" => "result", "success" => true, "result" => result})
-        )
-    end
-  end
-
   # ---- tests ----
 
   test "discovers one switch per flow under a single Flows device" do
@@ -154,7 +138,6 @@ defmodule HomeElixir.FlowsHATest do
     assert a["server_id"] == "home_elixir"
     assert a["config"]["name"] == "alpha"
     assert a["device_info"]["id"] == "home_elixir_flows"
-    assert a["attributes"]["__he"] == "flows/alpha"
     # State is not baked into discovery (it is pushed via nodered/entity), so a
     # re-discovery can never pin the entity to a stale loaded state.
     assert Map.get(a, "state") == nil
@@ -198,17 +181,12 @@ defmodule HomeElixir.FlowsHATest do
       )
   end
 
-  test "removes a stale HA entity whose flow file no longer exists on boot" do
+  test "drops a device switch with no matching flow on boot (orphan cleanup)" do
     %{t: t} = start_ha!()
+    # The device holds alpha+beta (real flows) plus "ghost" (no such flow): an
+    # orphan, e.g. a flow that was deleted before this process started.
+    Application.put_env(:home_elixir, :flows_ha_device_ids, ["alpha", "beta", "ghost"])
     start_flows_ha!()
-
-    orphan = %{
-      "entity_id" => "switch.ghost",
-      "state" => "off",
-      "attributes" => %{"__he" => "flows/ghost"}
-    }
-
-    respond_get_states(t, [orphan])
 
     _ =
       sent_frame(
@@ -217,8 +195,10 @@ defmodule HomeElixir.FlowsHATest do
       )
   end
 
-  test "an archived flow gets no switch (its entity is removed)" do
+  test "an archived flow's switch is removed from the device" do
     %{t: t} = start_ha!()
+    # The device currently carries both switches.
+    Application.put_env(:home_elixir, :flows_ha_device_ids, ["alpha", "beta"])
     start_flows_ha!()
 
     # Both are discovered on boot.
@@ -227,12 +207,24 @@ defmodule HomeElixir.FlowsHATest do
 
     assert :ok = FlowStore.archive("alpha")
 
-    # Archiving drops alpha out of the switch set, so its entity is removed.
+    # The device still lists alpha but it is no longer a flow, so it is removed.
     _ =
       sent_frame(
         t,
         &(&1["type"] == "nodered/discovery" and &1["node_id"] == "alpha" and &1["remove"] == true)
       )
+  end
+
+  test "flow_switch_ids extracts only Flows-device switch node_ids" do
+    states = [
+      %{"entity_id" => "switch.flows_alpha"},
+      %{"entity_id" => "switch.flows_gpu_usage_alert_clone"},
+      %{"entity_id" => "light.living_room"},
+      %{"entity_id" => "switch.other_device_x"},
+      %{"state" => "on"}
+    ]
+
+    assert FlowsHA.flow_switch_ids(states) == MapSet.new(["alpha", "gpu_usage_alert_clone"])
   end
 
   defp event(id, state) do
