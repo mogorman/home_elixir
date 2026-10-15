@@ -57,19 +57,6 @@ defmodule HomeElixir.HA.Client do
   end
 
   @doc """
-  Send a command and get a fresh monotonically-increasing id, WITHOUT waiting for
-  HA's response (fire-and-forget, but with a correctly advancing id).
-
-  Use this when batching many commands (e.g. pushing several entity states): a
-  `fire/3` cast does not reliably advance the shared id counter, so a batch emits
-  duplicate ids that HA rejects. `push/3` advances the id per command and returns
-  immediately, so callers never block on HA.
-  """
-  def push(client, type, payload \\ %{}) do
-    GenServer.call(client, {:push, type, Map.new(payload || %{})})
-  end
-
-  @doc """
   Subscribe to Home Assistant events. Matching events are sent to `to` as
   `{:ha_event, ref, event}`. Returns the subscription `ref`.
 
@@ -92,6 +79,16 @@ defmodule HomeElixir.HA.Client do
   def discover(client, discovery_frame, to) do
     GenServer.call(client, {:discover, discovery_frame, to})
   end
+
+  @doc """
+  The current `[{id, node_id}]` for every channel discovered by `to` (the `node_id`
+  is read from each discovery frame).
+
+  Re-derive this rather than trusting the `id` returned by `discover/3`: a
+  reconnect's re-discovery reassigns a fresh id to each channel, so a cached
+  id→thing map goes stale and inbound frames on the new ids are dropped.
+  """
+  def channels_for(client, to), do: GenServer.call(client, {:channels_for, to})
 
   @doc "Current connection status: `:connecting`, `:authenticating`, `:connected` or `:disconnected`."
   def status(client), do: GenServer.call(client, :status)
@@ -122,6 +119,15 @@ defmodule HomeElixir.HA.Client do
   @impl true
   def handle_call(:status, _from, state), do: {:reply, state.status, state}
 
+  def handle_call({:channels_for, to}, _from, state) do
+    pairs =
+      state.channels
+      |> Enum.filter(fn {_id, %{to: t}} -> t == to end)
+      |> Enum.map(fn {id, %{discovery: d}} -> {id, Map.get(d, "node_id")} end)
+
+    {:reply, pairs, state}
+  end
+
   def handle_call(:transport_pid, _from, state), do: {:reply, state.transport, state}
 
   def handle_call({:call, type, payload}, from, state) do
@@ -134,18 +140,6 @@ defmodule HomeElixir.HA.Client do
     else
       {:reply, {:error, {:not_connected, state.status}}, state}
     end
-  end
-
-  # Fire-and-forget that still advances the shared id counter (see push/3).
-  # Replies immediately; the caller does not wait on HA's response.
-  def handle_call({:push, type, payload}, _from, state) do
-    if state.status == :connected do
-      id = state.next_id
-      state = %{state | next_id: id + 1}
-      send_transport(state, Map.put(payload, "id", id) |> Map.put("type", type))
-    end
-
-    {:reply, :ok, state}
   end
 
   def handle_call({:subscribe_events, event_type, to}, _from, state) do

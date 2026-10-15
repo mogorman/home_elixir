@@ -54,9 +54,21 @@ defmodule HomeElixir.FlowsHA do
 
   # HA pushed a frontend toggle on one of our switch channels.
   def handle_info({:ha_channel, id, frame}, state) do
-    case {Map.fetch(state.by_id, id), toggle_state(frame)} do
-      {{:ok, node_id}, want} when is_boolean(want) -> handle_toggle(state, node_id, want)
-      _ -> {:noreply, state}
+    want = toggle_state(frame)
+
+    case Map.fetch(state.by_id, id) do
+      {:ok, node_id} when is_boolean(want) ->
+        handle_toggle(state, node_id, want)
+
+      # by_id may be stale (a reconnect just re-assigned channel ids); re-derive
+      # and retry once before dropping the toggle.
+      _ ->
+        state = refresh_by_id(state)
+
+        case Map.fetch(state.by_id, id) do
+          {:ok, node_id} when is_boolean(want) -> handle_toggle(state, node_id, want)
+          _ -> {:noreply, state}
+        end
     end
   end
 
@@ -84,8 +96,12 @@ defmodule HomeElixir.FlowsHA do
 
         entry =
           case Map.fetch(acc, node_id) do
-            {:ok, %{id: id}} -> %{name: flow.name, id: id, state: flow.loaded}
-            :error -> discover_switch(client, node_id, flow.name, flow.loaded)
+            {:ok, _sw} ->
+              %{name: flow.name, state: flow.loaded}
+
+            :error ->
+              discover_switch(client, node_id, flow.name)
+              %{name: flow.name, state: flow.loaded}
           end
 
         Map.put(acc, node_id, entry)
@@ -95,16 +111,35 @@ defmodule HomeElixir.FlowsHA do
       remove_switch(old_node_id)
     end
 
-    by_id = for {node_id, %{id: id}} <- switches, is_integer(id), into: %{}, do: {id, node_id}
-    %{state | switches: switches, by_id: by_id}
+    %{state | switches: switches} |> refresh_by_id()
   end
 
-  # Discover a new switch (or track it without a channel when HA is absent).
-  defp discover_switch(nil, _node_id, name, loaded), do: %{name: name, id: nil, state: loaded}
+  # Register a discovery for a not-yet-seen flow (no-op when HA is absent). The
+  # channel id is not stored here: it changes on every reconnect's re-discovery,
+  # so it is re-derived from HA.Client on demand (see refresh_by_id/1).
+  defp discover_switch(nil, _node_id, _name), do: :ok
 
-  defp discover_switch(client, node_id, name, loaded) do
-    id = HA.Client.discover(client, build_discovery(node_id, name), self())
-    %{name: name, id: id, state: loaded}
+  defp discover_switch(client, node_id, name) do
+    HA.Client.discover(client, build_discovery(node_id, name), self())
+    :ok
+  end
+
+  # Map the *current* HA channel ids to flow node_ids, from HA.Client's live
+  # channels (kept only for our current switches). Reconnects reassign ids, so
+  # this must be re-derived rather than cached.
+  defp refresh_by_id(state) do
+    by_id =
+      case HA.client() do
+        pid when is_pid(pid) ->
+          HA.Client.channels_for(pid, self())
+          |> Enum.filter(fn {_id, node_id} -> Map.has_key?(state.switches, node_id) end)
+          |> Map.new()
+
+        _ ->
+          %{}
+      end
+
+    %{state | by_id: by_id}
   end
 
   # Nodered.remove no-ops when HA is not connected.
@@ -141,19 +176,26 @@ defmodule HomeElixir.FlowsHA do
     {:noreply, state}
   end
 
-  # Push a switch's state to HA. Uses `push/3` (not `fire/3`): a batch of
-  # fire-and-forget casts does not reliably advance the shared id counter, so a
-  # multi-entity push would emit duplicate ids that HA rejects. `push/3` advances
-  # the id per entity and returns immediately (no HA round-trip), so a sync never
-  # blocks on the connection.
+  # Push a switch's state to HA. Uses `call/4` (not `fire/3` or `push/3`) inside a
+  # detached, fully-caught process: HA only commits a switch's state change once it
+  # has acked the `nodered/entity` frame, and a fire-and-forget push is not acked in
+  # time, so the entity reverts. `call/4` also advances the shared id per entity (no
+  # duplicate-id rejection). The spawn keeps a sync/toggle from blocking on HA's
+  # round-trip (same pattern as Nodes.Device.echo_entity/2).
   defp fire_entity(loaded, node_id) do
     case HA.client() do
       client when is_pid(client) ->
-        HA.Client.push(client, "nodered/entity", %{
-          server_id: @server_id,
-          node_id: node_id,
-          state: loaded
-        })
+        spawn(fn ->
+          try do
+            HA.Client.call(client, "nodered/entity", %{
+              server_id: @server_id,
+              node_id: node_id,
+              state: loaded
+            })
+          catch
+            _kind, _reason -> :ok
+          end
+        end)
 
       _ ->
         :ok
