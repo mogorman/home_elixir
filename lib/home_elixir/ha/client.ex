@@ -57,6 +57,19 @@ defmodule HomeElixir.HA.Client do
   end
 
   @doc """
+  Send a command and get a fresh monotonically-increasing id, WITHOUT waiting for
+  HA's response (fire-and-forget, but with a correctly advancing id).
+
+  Use this when batching many commands (e.g. pushing several entity states): a
+  `fire/3` cast does not reliably advance the shared id counter, so a batch emits
+  duplicate ids that HA rejects. `push/3` advances the id per command and returns
+  immediately, so callers never block on HA.
+  """
+  def push(client, type, payload \\ %{}) do
+    GenServer.call(client, {:push, type, Map.new(payload || %{})})
+  end
+
+  @doc """
   Subscribe to Home Assistant events. Matching events are sent to `to` as
   `{:ha_event, ref, event}`. Returns the subscription `ref`.
 
@@ -74,6 +87,7 @@ defmodule HomeElixir.HA.Client do
   `discovery_frame`'s `"id"`; frames arriving with that id are forwarded to `to`
   as `{:ha_channel, id, frame}`. The frame is sent now if connected and re-sent
   on every (re)connect, so the entity re-establishes after a dropped connection.
+  Returns the channel `id` (so the caller can route inbound channel frames).
   """
   def discover(client, discovery_frame, to) do
     GenServer.call(client, {:discover, discovery_frame, to})
@@ -122,6 +136,18 @@ defmodule HomeElixir.HA.Client do
     end
   end
 
+  # Fire-and-forget that still advances the shared id counter (see push/3).
+  # Replies immediately; the caller does not wait on HA's response.
+  def handle_call({:push, type, payload}, _from, state) do
+    if state.status == :connected do
+      id = state.next_id
+      state = %{state | next_id: id + 1}
+      send_transport(state, Map.put(payload, "id", id) |> Map.put("type", type))
+    end
+
+    {:reply, :ok, state}
+  end
+
   def handle_call({:subscribe_events, event_type, to}, _from, state) do
     id = state.next_id
     state = %{state | next_id: id + 1, subs: Map.put(state.subs, id, {event_type, to})}
@@ -148,7 +174,7 @@ defmodule HomeElixir.HA.Client do
 
     if state.status == :connected, do: send_transport(state, frame)
 
-    {:reply, :ok, state}
+    {:reply, id, state}
   end
 
   @impl true
@@ -200,6 +226,7 @@ defmodule HomeElixir.HA.Client do
 
       {:error, reason} ->
         Logger.warning("HA transport failed to connect: #{inspect(reason)}; retrying")
+
         %{state | transport: nil, status: :disconnected}
         |> schedule_reconnect()
     end
@@ -240,7 +267,10 @@ defmodule HomeElixir.HA.Client do
             state
 
           "auth_invalid" ->
-            Logger.error("Home Assistant rejected the access token (auth_invalid); not reconnecting")
+            Logger.error(
+              "Home Assistant rejected the access token (auth_invalid); not reconnecting"
+            )
+
             # Do not auto-reconnect: the same token will keep failing.
             %{state | status: :disconnected, transport: stop_transport(state.transport)}
 
@@ -321,5 +351,11 @@ defmodule HomeElixir.HA.Client do
   end
 
   defp stop_transport(nil), do: nil
-  defp stop_transport(pid), do: (GenServer.stop(pid, :normal); nil)
+
+  defp stop_transport(pid),
+    do:
+      (
+        GenServer.stop(pid, :normal)
+        nil
+      )
 end

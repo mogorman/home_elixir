@@ -143,10 +143,12 @@ defmodule HomeElixir.FlowStore do
   end
 
   def handle_call({:loaded?, name}, _from, cache) do
+    # The cache stores `{name => {:ok, module}}` (see atom_for/2); unwrap the
+    # inner tuple before checking the Registry.
     loaded =
       case Map.fetch(cache, name) do
-        {:ok, mod} -> Registry.loaded?(mod)
-        :error -> false
+        {:ok, {:ok, mod}} -> Registry.loaded?(mod)
+        _ -> false
       end
 
     {:reply, loaded, cache}

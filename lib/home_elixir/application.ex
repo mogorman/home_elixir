@@ -17,7 +17,7 @@ defmodule HomeElixir.Application do
         {HomeElixir.Log, []},
         {HomeElixir.Auth, []},
         {HomeElixir.HA.PendingLogins, []}
-      ] ++ ha_client_child() ++ web_child()
+      ] ++ ha_client_child() ++ flows_ha_child() ++ web_child()
 
     opts = [strategy: :one_for_one, name: HomeElixir.Supervisor]
     {:ok, pid} = Supervisor.start_link(children, opts)
@@ -50,6 +50,14 @@ defmodule HomeElixir.Application do
     else
       []
     end
+  end
+
+  # The HA "Flows" switcher (one switch per flow). Started after the HA client
+  # so its name is registered; disabled in tests (an isolated instance runs there).
+  defp flows_ha_child do
+    if Application.get_env(:home_elixir, :start_flows_ha, true),
+      do: [HomeElixir.FlowsHA],
+      else: []
   end
 
   # Serves the flow manager on `HOST:PORT` (defaults 127.0.0.1:4000; override

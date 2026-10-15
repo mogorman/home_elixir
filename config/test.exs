@@ -7,5 +7,6 @@ config :home_elixir,
   auto_start_ha: false,
   start_web: false,
   restore_flows: false,
+  start_flows_ha: false,
   flow_state_disc: false,
   auth_users: [{"admin", "admin-pass"}]

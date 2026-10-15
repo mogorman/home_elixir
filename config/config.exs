@@ -24,6 +24,11 @@ config :home_elixir, start_web: true
 # flow-state DB); the first run loads every flow.
 config :home_elixir, restore_flows: true
 
+# Start the HA "Flows" switcher (HomeElixir.FlowsHA): one switch per flow in a
+# single "Flows" device. Off in :test, where an isolated instance is started
+# per-test instead.
+config :home_elixir, start_flows_ha: true
+
 # FlowState persists to disk by default so flows resume their state across
 # restarts; set :flow_state_disc to false for in-memory. Disk needs a named
 # node — nonode@nohost (mix's default) can't hold disc_copies tables, so disk
