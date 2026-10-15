@@ -17,6 +17,8 @@ defmodule HomeElixir.WebAuthTest do
     Application.put_env(:home_elixir, :flows_dir, tmp)
 
     on_exit(fn ->
+      FlowState.forget_flow("alpha")
+      FlowState.forget_flow("beta")
       Application.put_env(:home_elixir, :flows_dir, "flows")
       File.rm_rf!(tmp)
     end)
@@ -32,13 +34,19 @@ defmodule HomeElixir.WebAuthTest do
 
   defp get(path, token \\ nil) do
     conn = Plug.Test.conn(:get, path)
-    conn = if token, do: Plug.Conn.put_req_header(conn, "cookie", "he_session=" <> token), else: conn
+
+    conn =
+      if token, do: Plug.Conn.put_req_header(conn, "cookie", "he_session=" <> token), else: conn
+
     run(conn)
   end
 
   defp post(path, body, token) do
     conn = Plug.Test.conn(:post, path, body)
-    conn = if token, do: Plug.Conn.put_req_header(conn, "cookie", "he_session=" <> token), else: conn
+
+    conn =
+      if token, do: Plug.Conn.put_req_header(conn, "cookie", "he_session=" <> token), else: conn
+
     run(conn)
   end
 
@@ -107,11 +115,13 @@ defmodule HomeElixir.WebAuthTest do
 
   test "non-admin is forbidden from /logs, /terminal, and /admin; admin can open them" do
     token = session_cookie("alice", "user")
+
     for path <- ["/logs", "/terminal", "/admin"] do
       assert get(path, token).status == 403
     end
 
     admin = session_cookie("admin", "admin")
+
     for path <- ["/logs", "/admin"] do
       assert get(path, admin).status == 200
     end
@@ -123,6 +133,40 @@ defmodule HomeElixir.WebAuthTest do
     result = post("/api/flows/alpha/load", "", session_cookie("alice", "user"))
     assert result.status == 400
     assert Jason.decode!(result.body)["error"] == "forbidden"
+  end
+
+  test "GET /archived renders for a logged-in user" do
+    assert get("/archived", session_cookie("admin", "admin")).status == 200
+  end
+
+  test "archive / unarchive respect ownership" do
+    FlowState.set_flow_owner("alpha", "bob")
+
+    # owner can archive; the flow is flagged
+    assert post("/api/flows/alpha/archive", "", session_cookie("bob", "user")).status == 200
+    assert FlowState.is_archived?("alpha")
+
+    # non-owner is forbidden
+    r = post("/api/flows/alpha/archive", "", session_cookie("alice", "user"))
+    assert r.status == 400
+    assert Jason.decode!(r.body)["error"] == "forbidden"
+
+    # owner can unarchive
+    assert post("/api/flows/alpha/unarchive", "", session_cookie("bob", "user")).status == 200
+    refute FlowState.is_archived?("alpha")
+  end
+
+  test "delete removes the flow file; non-owner is forbidden" do
+    tmp = Application.get_env(:home_elixir, :flows_dir)
+    FlowState.set_flow_owner("beta", "bob")
+    assert File.exists?(Path.join(tmp, "beta.ex"))
+
+    r = post("/api/flows/beta/delete", "", session_cookie("alice", "user"))
+    assert r.status == 400
+    assert Jason.decode!(r.body)["error"] == "forbidden"
+
+    assert post("/api/flows/beta/delete", "", session_cookie("bob", "user")).status == 200
+    refute File.exists?(Path.join(tmp, "beta.ex"))
   end
 
   # ---- OAuth routes (public) ----

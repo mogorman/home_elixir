@@ -31,7 +31,8 @@ defmodule HomeElixir.Flow.Node do
       routed?: false,
       node_state: node_state,
       state_ui?: ui_state?(config),
-      flow_name: to_string(flow_key) |> String.split(".") |> List.last() |> Macro.underscore()
+      flow_name: to_string(flow_key) |> String.split(".") |> List.last() |> Macro.underscore(),
+      last_hit: nil
     }
 
     # Tag every log line from this process with the flow's name; the web flow
@@ -61,6 +62,7 @@ defmodule HomeElixir.Flow.Node do
   # External events (e.g. HA state changes) drive source nodes via trigger/2.
   def handle_info(event, %{routed?: true} = state) do
     if function_exported?(state.handler, :trigger, 2) do
+      state = record_trigger(state)
       {outputs, node_state} = state.handler.trigger(event, state.node_state)
       state = %{state | node_state: node_state}
       push_ui(state)
@@ -74,6 +76,7 @@ defmodule HomeElixir.Flow.Node do
 
   @impl true
   def handle_cast({:msg, msg}, %{routed?: true} = state) do
+    state = record_trigger(state)
     msg = with_flow(msg, state.flow_name)
     {outputs, node_state} = state.handler.handle(msg, state.node_state)
     state = %{state | node_state: node_state}
@@ -98,6 +101,19 @@ defmodule HomeElixir.Flow.Node do
         out = with_flow(out, state.flow_name)
         Enum.each(state.routing, fn pid -> GenServer.cast(pid, {:msg, out}) end)
         state
+    end
+  end
+
+  # Record that this flow was triggered, at most once per second per node, so a
+  # bursty flow can't hammer the Mnesia write path on every message.
+  defp record_trigger(state) do
+    now = System.system_time(:millisecond)
+
+    if is_nil(state.last_hit) or now - state.last_hit >= 1_000 do
+      HomeElixir.FlowState.record_triggered(state.flow_key)
+      %{state | last_hit: now}
+    else
+      state
     end
   end
 

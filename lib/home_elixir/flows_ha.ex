@@ -83,21 +83,25 @@ defmodule HomeElixir.FlowsHA do
   defp do_sync(state), do: state |> ensure_discovered() |> push_states()
 
   # Rebuild the switch set from the current flow files: discover new ones, drop
-  # whose file was deleted (removing the HA entity too), and — crucially — refresh
-  # each switch's state to the flow's *current* loaded state (so it tracks
-  # load/unload from any source, not just discovery/toggle time).
+  # the ones that are gone (deleted or archived — removing their HA entity), and
+  # refresh each switch's state to the flow's *current* loaded state. The reduce
+  # starts from an empty map (not `state.switches`) so flows no longer present are
+  # actually dropped; existing entries are reused by node_id so a sync never
+  # re-discovers (and re-ids) a still-present flow.
   defp ensure_discovered(state) do
     client = HA.client()
-    flows = FlowStore.list()
+    # Archived flows get no switch (their entity is dropped below); restoring
+    # re-creates it.
+    flows = FlowStore.list() |> Enum.reject(& &1.archived)
 
     switches =
-      Enum.reduce(flows, state.switches, fn flow, acc ->
+      Enum.reduce(flows, %{}, fn flow, acc ->
         node_id = node_id(flow.name)
 
         entry =
-          case Map.fetch(acc, node_id) do
-            {:ok, _sw} ->
-              %{name: flow.name, state: flow.loaded}
+          case Map.fetch(state.switches, node_id) do
+            {:ok, prev} ->
+              Map.put(prev, :state, flow.loaded)
 
             :error ->
               discover_switch(client, node_id, flow.name)

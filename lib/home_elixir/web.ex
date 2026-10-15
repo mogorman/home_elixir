@@ -57,14 +57,22 @@ defmodule HomeElixir.Web do
     q = URI.decode_query(conn.query_string)
 
     case q do
-      %{"error" => _err} -> redirect(conn, to: "/login")
-      %{"code" => code, "state" => state} -> finish_oauth(conn, HomeElixir.HA.OAuth.complete_login(code, state))
-      _ -> redirect(conn, to: "/login")
+      %{"error" => _err} ->
+        redirect(conn, to: "/login")
+
+      %{"code" => code, "state" => state} ->
+        finish_oauth(conn, HomeElixir.HA.OAuth.complete_login(code, state))
+
+      _ ->
+        redirect(conn, to: "/login")
     end
   end
 
   def call(%{method: "GET", request_path: "/"} = conn, _opts),
-    do: html(conn, list_page(cur(conn)))
+    do: html(conn, list_page(cur(conn), :flows))
+
+  def call(%{method: "GET", request_path: "/archived"} = conn, _opts),
+    do: html(conn, list_page(cur(conn), :archived))
 
   def call(%{method: "GET", request_path: "/api/flows"} = conn, _opts),
     do: json(conn, visible_flows(conn, HomeElixir.FlowStore.list()))
@@ -114,7 +122,8 @@ defmodule HomeElixir.Web do
       true ->
         with :ok <- flow_access(conn, name) do
           case List.last(parts) do
-            "ui" -> json(conn, HomeElixir.FlowStore.flow_ui(name))
+            "ui" ->
+              json(conn, HomeElixir.FlowStore.flow_ui(name))
 
             "loaded_source" ->
               case HomeElixir.FlowStore.loaded_source(name) do
@@ -122,7 +131,8 @@ defmodule HomeElixir.Web do
                 :error -> not_found(conn)
               end
 
-            _ -> not_found(conn)
+            _ ->
+              not_found(conn)
           end
         else
           _ -> forbidden(conn)
@@ -157,7 +167,9 @@ defmodule HomeElixir.Web do
   # In-browser IEx: admin only (it can run arbitrary code on the app node).
   def call(%{method: "GET", request_path: "/terminal"} = conn, _opts) do
     if is_admin?(conn) do
-      if websocket?(conn), do: upgrade_to_terminal(conn), else: html(conn, terminal_page(cur(conn)))
+      if websocket?(conn),
+        do: upgrade_to_terminal(conn),
+        else: html(conn, terminal_page(cur(conn)))
     else
       forbidden(conn)
     end
@@ -206,8 +218,12 @@ defmodule HomeElixir.Web do
       bad_request(conn, "invalid flow name")
     else
       case {name, action} do
-        {"", "save"} -> save_endpoint(conn)
-        {"", "check"} -> check_endpoint(conn)
+        {"", "save"} ->
+          save_endpoint(conn)
+
+        {"", "check"} ->
+          check_endpoint(conn)
+
         # "reload all" touches every loaded flow, so admin only.
         {"", "reload"} ->
           if is_admin?(conn) do
@@ -216,9 +232,34 @@ defmodule HomeElixir.Web do
             reply(conn, {:error, "forbidden"})
           end
 
-        {name, "load"} -> reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.load(name) end))
-        {name, "unload"} -> reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.unload(name) end))
-        {name, "reload"} -> reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.reload(name) end))
+        {name, "load"} ->
+          reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.load(name) end))
+
+        {name, "unload"} ->
+          reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.unload(name) end))
+
+        {name, "reload"} ->
+          reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.reload(name) end))
+
+        {name, "archive"} ->
+          reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.archive(name) end))
+
+        {name, "unarchive"} ->
+          reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.unarchive(name) end))
+
+        {name, "delete"} ->
+          reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.delete(name) end))
+
+        {name, "clone"} ->
+          # clone returns {:ok, new_name}; the client only needs to refresh.
+          reply(conn,
+            guard_flow(conn, name, fn ->
+              case HomeElixir.FlowStore.clone(name) do
+                {:ok, _} -> :ok
+                {:error, reason} -> {:error, reason}
+              end
+            end))
+
         # Change a flow's owner (admin only): a username, "public" (all users),
         # or null (unowned / admin-only).
         {name, "owner"} ->
@@ -228,7 +269,8 @@ defmodule HomeElixir.Web do
             reply(conn, {:error, "forbidden"})
           end
 
-        _ -> not_found(conn)
+        _ ->
+          not_found(conn)
       end
     end
   end
@@ -243,8 +285,11 @@ defmodule HomeElixir.Web do
 
       reply(conn, :ok)
     else
-      {:error, :bad_owner} -> bad_request(conn, "owner must be null, \"public\", or an existing user")
-      _ -> reply(conn, {:error, "owner required"})
+      {:error, :bad_owner} ->
+        bad_request(conn, "owner must be null, \"public\", or an existing user")
+
+      _ ->
+        reply(conn, {:error, "owner required"})
     end
   end
 
@@ -277,28 +322,47 @@ defmodule HomeElixir.Web do
 
   defp save_endpoint(conn) do
     source = body(conn)
+    header = List.first(get_req_header(conn, "x-flow-name"))
 
-    case save_name(List.first(get_req_header(conn, "x-flow-name")), source) do
-      {:ok, name} ->
-        with :ok <- save_guard(conn, name) do
-          # First save of a flow claims it for the saving user; later saves
-          # (by the owner or admin) keep the existing owner.
-          HomeElixir.FlowState.assign_owner_if_new(name, elem(cur(conn), 0))
+    case name_from_source(source) do
+      nil ->
+        text(conn, 400, "could not find a `defmodule` in the source")
+
+      new_name ->
+        # The editor sends the path it was opened on. If the source's module now
+        # implies a different name, this is a rename: the file moves to the new
+        # name (and the old one is dropped).
+        old_name =
+          case header do
+            n when n in [nil, ""] -> nil
+            n -> if flow_name_valid?(n) and File.exists?(flow_path(n)), do: n, else: nil
+          end
+
+        renaming? = old_name != nil and old_name != new_name
+
+        with :ok <- save_guard(conn, old_name || new_name),
+             :ok <- rename_collision?(old_name, new_name) do
+          # New flows claim their owner on first save; a rename carries the
+          # original's owner in FlowStore.rename, so don't reassign here.
+          unless renaming?,
+            do: HomeElixir.FlowState.assign_owner_if_new(new_name, elem(cur(conn), 0))
 
           try do
-            save_flow(name, source)
+            save_flow(new_name, source)
+            if renaming?, do: HomeElixir.FlowStore.rename(old_name, new_name)
             HomeElixir.UI.Hub.push(:flow_changed, %{})
-            text(conn, 200, "saved " <> name <> ".ex (reload to apply)")
+            text(conn, 200, "saved " <> new_name <> ".ex (reload to apply)")
           rescue
             e ->
-              text(conn, 400, "saved " <> name <> ".ex, but save failed:\n" <> Exception.message(e))
+              text(
+                conn,
+                400,
+                "saved " <> new_name <> ".ex, but save failed:\n" <> Exception.message(e)
+              )
           end
         else
-          {:error, msg} -> text(conn, 403, msg)
+          {:error, msg} -> text(conn, 400, msg)
         end
-
-      {:error, msg} ->
-        text(conn, 400, msg)
     end
   end
 
@@ -321,28 +385,15 @@ defmodule HomeElixir.Web do
     end
   end
 
-  # The editor sends the path it was opened on (X-Flow-Name) and that wins, so
-  # editing never moves a file. Only new flows (no header) derive their path
-  # from the module name.
-  def save_name(header_name, source) do
-    case header_name do
-      nil ->
-        derive_name(source)
+  # A rename must not clobber a different flow that already has the new name.
+  defp rename_collision?(nil, _new), do: :ok
 
-      "" ->
-        derive_name(source)
-
-      name ->
-        if flow_name_valid?(name), do: {:ok, name}, else: {:error, "invalid flow name: #{name}"}
-    end
-  end
-
-  defp derive_name(source) do
-    case name_from_source(source) do
-      nil -> {:error, "could not find a `defmodule` in the source"}
-      name -> {:ok, name}
-    end
-  end
+  defp rename_collision?(_old, new),
+    do:
+      if(File.exists?(flow_path(new)),
+        do: {:error, "a flow named #{new} already exists"},
+        else: :ok
+      )
 
   defp flow_name_valid?(name), do: Regex.match?(~r/^[A-Za-z0-9_]+(?:\/[A-Za-z0-9_]+)*$/, name)
 
@@ -377,7 +428,8 @@ defmodule HomeElixir.Web do
     case Jason.decode(body(conn)) do
       {:ok, %{"name" => name, "node" => node} = data} when is_binary(name) and is_binary(node) ->
         if flow_name_valid?(name) do
-          reply(conn,
+          reply(
+            conn,
             guard_flow(conn, name, fn ->
               HomeElixir.FlowStore.click(name, node, Map.get(data, "payload"))
             end)
@@ -454,7 +506,8 @@ defmodule HomeElixir.Web do
   # Create a user (admin only — the /admin page is the only UI that reaches this,
   # and the route itself is behind the auth guard).
   defp admin_create_user(conn) do
-    with {:ok, %{"name" => name, "password" => password} = data} when name != "" and password != "" <-
+    with {:ok, %{"name" => name, "password" => password} = data}
+         when name != "" and password != "" <-
            Jason.decode(body(conn)) do
       role = if data["role"] in ~w(admin user), do: data["role"], else: "user"
 
@@ -575,7 +628,9 @@ defmodule HomeElixir.Web do
     pub = HomeElixir.FlowState.public_owner()
 
     case cur(conn) do
-      {_id, "admin"} -> :ok
+      {_id, "admin"} ->
+        :ok
+
       {id, _} ->
         case HomeElixir.FlowState.flow_owner(name) do
           ^id -> :ok
@@ -604,7 +659,9 @@ defmodule HomeElixir.Web do
   # see their own + public; unowned (admin-only) flows are excluded.
   defp visible_flow_names(conn) do
     case cur(conn) do
-      {_id, "admin"} -> nil
+      {_id, "admin"} ->
+        nil
+
       {id, _} ->
         pub = HomeElixir.FlowState.public_owner()
 
@@ -612,7 +669,8 @@ defmodule HomeElixir.Web do
         |> Enum.filter(fn {_n, owner} -> owner == id or owner == pub end)
         |> MapSet.new()
 
-      _ -> nil
+      _ ->
+        nil
     end
   end
 
@@ -798,11 +856,20 @@ defmodule HomeElixir.Web do
 
   # ---- pages ----
 
-  defp list_page(user \\ nil) do
+  defp list_page(user, mode \\ :flows) do
     is_admin = user != nil and elem(user, 1) == "admin"
+    archived? = mode == :archived
+    title = if archived?, do: "Archived", else: "Flows"
+
+    header_buttons =
+      if archived? do
+        ""
+      else
+        ~s|<a href="/edit" class="btn btn-sm btn-primary">New flow</a><button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>|
+      end
 
     """
-    #{base_html("Flows", :flows, user)}
+    #{base_html(title, if(archived?, do: :archived, else: :flows), user)}
       <style>
         /* Header row: distinguish from the flow rows below (uppercase, small,
            muted, subtle bg) so the column labels don't read as a flow. */
@@ -821,20 +888,21 @@ defmodule HomeElixir.Web do
         .status-dot.is-red { background: var(--bs-danger); }
         /* broken (won't compile): hollow red ring, distinct from solid red "unloaded" */
         .status-dot.is-broken { background: transparent; border: 2px solid var(--bs-danger); box-sizing: border-box; }
+        /* The kebab menu is a Bootstrap .dropdown-menu toggled by our own JS
+           (no Bootstrap JS bundle); keep it visible and unclipped by the card. */
+        .card { overflow: visible; }
+        .dropdown-menu { z-index: 1080; }
       </style>
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
-          <span class="fw-semibold">Flows</span>
-          <div class="d-flex gap-1">
-            <a href="/edit" class="btn btn-sm btn-primary">New flow</a>
-            <button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>
-          </div>
+          <span class="fw-semibold">#{title}</span>
+          <div class="d-flex gap-1">#{header_buttons}</div>
         </div>
         <table class="table table-hover align-middle mb-0 flows-table">
           <thead><tr>
             <th class="sortable" data-label="name" data-sort="name" style="cursor:pointer">name</th>
-            <th class="sortable" data-label="module" data-sort="module" style="cursor:pointer">module</th>
             <th class="sortable" data-label="status" data-sort="loaded" style="cursor:pointer">status</th>
+            <th class="sortable" data-label="last triggered" data-sort="last_triggered" style="cursor:pointer">last triggered</th>
             <th class="text-end">actions</th>
           </tr></thead>
           <tbody id="flows"></tbody>
@@ -845,9 +913,24 @@ defmodule HomeElixir.Web do
         <pre class="mb-0" style="white-space:pre-wrap;max-height:400px;overflow:auto"></pre>
         <form method="dialog" class="mt-3 text-end"><button class="btn btn-sm btn-secondary">Close</button></form>
       </dialog>
+      <dialog id="confirm-dlg" class="border rounded-3" style="max-width:440px">
+        <h6 class="fw-semibold mb-2">Delete flow</h6>
+        <p class="mb-0">Delete <span class="dlg-name fw-semibold"></span>? This removes its file and cannot be undone.</p>
+        <div class="mt-3 text-end d-flex gap-2">
+          <button id="confirm-cancel" class="btn btn-sm btn-secondary">Cancel</button>
+          <button id="confirm-ok" class="btn btn-sm btn-danger">Delete</button>
+        </div>
+      </dialog>
+      <dialog id="perm-dlg" class="border rounded-3" style="max-width:360px">
+        <h6 class="fw-semibold mb-2">Visibility</h6>
+        <p class="small text-secondary mb-2">Who can see and run <span class="perm-name fw-semibold"></span></p>
+        <select id="perm-select" class="form-select form-select-sm mb-3"></select>
+        <div class="text-end"><button id="perm-close" class="btn btn-sm btn-secondary">Done</button></div>
+      </dialog>
       <script>
         #{control_js()}
         const IS_ADMIN = #{is_admin};
+        const MODE = "#{if(archived?, do: "archived", else: "flows")}";
         let ALL_USERS = [];
         const errDlg = document.getElementById("error-dlg");
         async function fail(what, r) {
@@ -860,6 +943,31 @@ defmodule HomeElixir.Web do
           if (!r.ok) fail(name + " " + action, r);
           refresh();
         }
+        // The clone's name, mirroring the server's rule (<last segment>_clone).
+        function cloneName(name) {
+          const parts = name.split("/");
+          parts[parts.length - 1] += "_clone";
+          return parts.join("/");
+        }
+        // Clone, then open the clone's editor. On failure, show the error and stay.
+        async function cloneFlow(f) {
+          const r = await fetch(`/api/flows/${f.name}/clone`, { method: "POST" });
+          if (r.ok) location.href = "/edit/" + cloneName(f.name);
+          else fail(f.name + " clone", r);
+        }
+        const confirmDlg = document.getElementById("confirm-dlg");
+        let confirmName = null;
+        function confirmDelete(name) {
+          confirmName = name;
+          confirmDlg.querySelector(".dlg-name").textContent = name;
+          confirmDlg.showModal();
+        }
+        document.getElementById("confirm-cancel").onclick = () => confirmDlg.close();
+        document.getElementById("confirm-ok").onclick = async () => {
+          const name = confirmName;
+          confirmDlg.close();
+          if (name) act(name, "delete");
+        };
         async function loadUsers() {
           if (!IS_ADMIN) return;
           try { ALL_USERS = (await (await fetch("/api/admin/users")).json()).map((u) => u.name); } catch (_) {}
@@ -868,13 +976,6 @@ defmodule HomeElixir.Web do
           const r = await fetch("/api/flows/reload", { method: "POST" });
           if (!r.ok) fail("reload all", r);
           refresh();
-        }
-        function addBtn(parent, label, cls, fn) {
-          const b = document.createElement("button");
-          b.className = "btn btn-sm " + cls;
-          b.textContent = label;
-          b.onclick = fn;
-          parent.appendChild(b);
         }
         // Folder tree: flow names may be path-style ("LivingRoom/counter").
         // Expanded folders live in this Set; folders start collapsed.
@@ -911,7 +1012,11 @@ defmodule HomeElixir.Web do
         }
         // Sort value of a tree entry (folder or flow) for a column key.
         function entryVal(e, key) {
-          if (e.kind === "flow") return key === "loaded" ? (e.f.loaded ? 1 : 0) : e.f[key];
+          if (e.kind === "flow") {
+            if (key === "loaded") return e.f.loaded ? 1 : 0;
+            if (key === "name") return modLabel(e.f);
+            return e.f[key];
+          }
           return key === "loaded" ? (folderAllLoaded(e.folder) ? 1 : 0) : e.name;
         }
         function cmpEntries(a, b) {
@@ -1018,11 +1123,20 @@ defmodule HomeElixir.Web do
           });
           return tr;
         }
-        function ownerSelect(f) {
-          const sel = document.createElement("select");
-          sel.className = "form-select form-select-sm";
-          sel.style.width = "10rem";
-          const cur = f.owner === null || f.owner === undefined ? "" : String(f.owner);
+        function timeAgo(ms) {
+          if (ms == null) return "never";
+          const min = Math.floor((Date.now() - ms) / 60000);
+          if (min < 1) return "just now";
+          if (min < 60) return min + (min === 1 ? " minute" : " minutes") + " ago";
+          const hr = Math.floor(min / 60);
+          if (hr < 24) return hr + (hr === 1 ? " hour" : " hours") + " ago";
+          const day = Math.floor(hr / 24);
+          if (day < 7) return day + (day === 1 ? " day" : " days") + " ago";
+          return new Date(ms).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+        }
+        function fillOwnerOptions(sel, owner) {
+          sel.innerHTML = "";
+          const cur = owner === null || owner === undefined ? "" : String(owner);
           const opts = [["public", "All users"], ["", "Admin only"]].concat(ALL_USERS.map((u) => [u, "user: " + u]));
           for (const [val, label] of opts) {
             const o = document.createElement("option");
@@ -1031,35 +1145,100 @@ defmodule HomeElixir.Web do
             if (val === cur) o.selected = true;
             sel.appendChild(o);
           }
-          sel.onchange = async () => {
-            const r = await fetch(`/api/flows/${f.name}/owner`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner: sel.value || null }) });
-            if (!r.ok) fail(f.name + " owner", r);
-            refresh();
-          };
-          return sel;
+        }
+        const permDlg = document.getElementById("perm-dlg");
+        const permSelect = document.getElementById("perm-select");
+        let permName = null;
+        function openPerms(f) {
+          permName = f.name;
+          permDlg.querySelector(".perm-name").textContent = f.name.split("/").pop();
+          fillOwnerOptions(permSelect, f.owner);
+          permDlg.showModal();
+        }
+        permSelect.onchange = async () => {
+          if (!permName) return;
+          const name = permName;
+          const r = await fetch(`/api/flows/${name}/owner`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner: permSelect.value || null }) });
+          if (!r.ok) fail(name + " owner", r);
+          permDlg.close();
+          refresh();
+        };
+        document.getElementById("perm-close").onclick = () => permDlg.close();
+        function closeMenus(except) {
+          document.querySelectorAll(".dropdown-menu.show").forEach((m) => { if (m !== except) m.classList.remove("show"); });
+        }
+        document.addEventListener("click", () => closeMenus());
+        // Name shown in the list: the flow's module, trimmed of the
+        // Elixir.HomeElixir.Flows. prefix (its leaf). Broken flows (no module)
+        // fall back to the file name.
+        function modLabel(f) {
+          if (f.module) return String(f.module).replace(/^Elixir\.HomeElixir\.Flows\./, "").split(".").pop();
+          return f.name.split("/").pop();
+        }
+        function mkBtn(label, cls) {
+          const b = document.createElement("button");
+          b.className = "btn btn-sm " + cls;
+          b.textContent = label;
+          return b;
         }
         function flowRow(f, depth, label) {
           const tr = document.createElement("tr");
-          tr.style.cursor = "pointer";
-          tr.onclick = (ev) => { if (!ev.target.closest("button, a, select")) togglePanel(f.name); };
-          const actions = document.createElement("div");
-          actions.className = "d-flex gap-1 justify-content-end";
-          if (f.loaded) {
-            addBtn(actions, "Reload", "btn-outline-secondary", () => act(f.name, "reload"));
-            addBtn(actions, "Unload", "btn-outline-secondary", () => act(f.name, "unload"));
-          } else {
-            addBtn(actions, "Load", "btn-primary", () => act(f.name, "load"));
+          if (MODE !== "archived") {
+            tr.style.cursor = "pointer";
+            tr.onclick = (ev) => { if (!ev.target.closest("button, a, select, input, .dropdown")) togglePanel(f.name); };
           }
-          const edit = document.createElement("a");
-          edit.className = "btn btn-sm btn-outline-secondary";
-          edit.href = "/edit/" + f.name;
-          edit.textContent = "Edit";
-          actions.appendChild(edit);
-          if (IS_ADMIN) actions.appendChild(ownerSelect(f));
           tr.innerHTML =
-            `<td class="fw-semibold" style="padding-left:${12 + depth * 20}px">${label}</td>` +
-            `<td class="text-secondary">${f.module ? f.module.replace(/^Elixir\./, "") : '<span class="text-warning-emphasis">broken</span>'}</td>` +
-            `<td><span class="status-dot ${f.status === "grey" ? "" : "is-" + f.status}" title="${f.status}"></span></td>`;
+            `<td class="fw-semibold" style="padding-left:${12 + depth * 20}px">${modLabel(f)}</td>` +
+            `<td><span class="status-dot ${f.status === "grey" ? "" : "is-" + f.status}" title="${f.status}"></span></td>` +
+            `<td class="text-secondary">${timeAgo(f.last_triggered)}</td>`;
+          const actions = document.createElement("div");
+          actions.className = "d-flex gap-2 justify-content-end align-items-center";
+
+          if (MODE === "archived") {
+            // Archived: Restore + Delete as direct buttons (no menu, no toggle).
+            const restore = mkBtn("Restore", "btn-outline-secondary");
+            restore.onclick = () => act(f.name, "unarchive");
+            const del = mkBtn("Delete", "btn-outline-danger");
+            del.onclick = () => confirmDelete(f.name);
+            actions.append(restore, del);
+          } else {
+            const sw = document.createElement("div");
+            sw.className = "form-check form-switch mb-0";
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.className = "form-check-input";
+            cb.checked = !!f.loaded;
+            cb.onchange = () => act(f.name, cb.checked ? "load" : "unload");
+            sw.appendChild(cb);
+            actions.appendChild(sw);
+
+            const items =
+              '<a class="dropdown-item" href="/edit/' + f.name + '">Edit</a>' +
+              '<button class="dropdown-item" data-a="reload">Reload</button>' +
+              (IS_ADMIN ? '<button class="dropdown-item" data-a="perms">Permissions</button>' : "") +
+              '<button class="dropdown-item" data-a="clone">Clone</button>' +
+              '<button class="dropdown-item" data-a="archive">Archive</button>' +
+              '<hr class="dropdown-divider">' +
+              '<button class="dropdown-item text-danger" data-a="delete">Delete</button>';
+
+            const dd = document.createElement("div");
+            dd.className = "dropdown";
+            dd.innerHTML = '<button class="btn btn-sm btn-outline-secondary" aria-label="menu">⋮</button><div class="dropdown-menu dropdown-menu-end">' + items + '</div>';
+            actions.appendChild(dd);
+
+            const menuList = dd.querySelector(".dropdown-menu");
+            dd.querySelector("button").onclick = (ev) => { ev.stopPropagation(); closeMenus(menuList); menuList.classList.toggle("show"); };
+            menuList.querySelectorAll("[data-a]").forEach((el) => {
+              el.onclick = () => {
+                closeMenus();
+                const a = el.dataset.a;
+                if (a === "delete") confirmDelete(f.name);
+                else if (a === "perms") openPerms(f);
+                else if (a === "clone") cloneFlow(f);
+                else act(f.name, a);
+              };
+            });
+          }
           tr.appendChild(actions);
           return tr;
         }
@@ -1077,7 +1256,7 @@ defmodule HomeElixir.Web do
         function renderNode(node, depth, tbody) {
           const entries = [];
           for (const name of Object.keys(node.folders)) entries.push({ kind: "folder", name, folder: node.folders[name] });
-          for (const f of node.flows) entries.push({ kind: "flow", name: f.name.split("/").pop(), f });
+          for (const f of node.flows) entries.push({ kind: "flow", name: modLabel(f), f });
           if (sortOrder.length) {
             entries.sort(cmpEntries);
           } else {
@@ -1095,13 +1274,15 @@ defmodule HomeElixir.Web do
           }
         }
         async function refresh() {
-          const flows = await (await fetch("/api/flows")).json();
+          const all = await (await fetch("/api/flows")).json();
+          const flows = MODE === "archived" ? all.filter((f) => f.archived) : all.filter((f) => !f.archived);
           const tbody = document.getElementById("flows");
           tbody.innerHTML = "";
           renderNode(buildTree(flows), 0, tbody);
           updateSortHeaders();
         }
-        document.getElementById("reload-all").onclick = reloadAll;
+        const reloadAllBtn = document.getElementById("reload-all");
+        if (reloadAllBtn) reloadAllBtn.onclick = reloadAll;
         for (const th of document.querySelectorAll("th.sortable")) th.onclick = () => sortBy(th.dataset.sort);
         if (IS_ADMIN) loadUsers().then(refresh);
         else refresh();
@@ -1951,6 +2132,7 @@ defmodule HomeElixir.Web do
         <a class="navbar-brand fw-semibold d-flex align-items-center gap-2" href="/"><img src="/static/favicon.ico" width="24" height="24" alt="">home_elixir</a>
         <ul class="navbar-nav gap-1 flex-wrap">
           <li class="nav-item"><a class="nav-link#{a.(:flows)}" href="/">Flows</a></li>
+          <li class="nav-item"><a class="nav-link#{a.(:archived)}" href="/archived">Archived</a></li>
           <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="/controls">Controls</a></li>
           #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:logs)}" href="/logs">Logs</a></li>|, else: ""}
           #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:iex)}" href="/terminal">IEx</a></li>|, else: ""}

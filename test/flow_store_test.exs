@@ -160,7 +160,7 @@ defmodule HomeElixir.FlowStoreTest do
 
   test "check reports valid and broken source" do
     assert {:ok, "OK — compiles cleanly"} =
-      FlowStore.check("defmodule HomeElixir.Flows.CheckValid do end")
+             FlowStore.check("defmodule HomeElixir.Flows.CheckValid do end")
 
     assert {:error, msg} = FlowStore.check("defmodule Broken do use Nope")
     assert msg =~ ~r/undefined|error|missing/i
@@ -170,6 +170,9 @@ defmodule HomeElixir.FlowStoreTest do
     assert :ok = FlowStore.load("store_test")
     Registry.send_msg(@mod, "in", HomeElixir.Msg.new("x"))
     poll(fn -> length(Registry.node_state(@mod, "out") || []) >= 1 end)
+    # processing a message records last-triggered, surfaced on the list entry
+    poll(fn -> HomeElixir.FlowState.last_triggered(@mod) end)
+    assert Enum.find(FlowStore.list(), &(&1.name == "store_test")).last_triggered
 
     assert :ok = FlowStore.reload("store_test")
     assert Registry.loaded?(@mod)
@@ -204,17 +207,94 @@ defmodule HomeElixir.FlowStoreTest do
              "A/B/deep_flow"
   end
 
-  test "save_name: editor path wins, traversal rejected, module fallback" do
-    src = "defmodule HomeElixir.Flows.Examples.NowClock do"
+  test "list picks up a renamed module after the file changes (no restart)" do
+    assert Enum.find(FlowStore.list(), &(&1.name == "store_test")).module ==
+             HomeElixir.Flows.StoreTest
 
-    assert HomeElixir.Web.save_name("Examples/now_clock", src) == {:ok, "Examples/now_clock"}
+    p = Path.join(Application.get_env(:home_elixir, :flows_dir), "store_test.ex")
+    File.write!(p, String.replace(File.read!(p), "HomeElixir.Flows.StoreTest", "HomeElixir.Flows.StoreTestRenamed"))
 
-    assert {:error, _} = HomeElixir.Web.save_name("../evil", src)
-    assert {:error, _} = HomeElixir.Web.save_name("a/b/c.ex", src)
+    # the checksum-changed file recompiles, so list shows the new module
+    assert Enum.find(FlowStore.list(), &(&1.name == "store_test")).module ==
+             HomeElixir.Flows.StoreTestRenamed
+  end
 
-    assert HomeElixir.Web.save_name(nil, src) == {:ok, "Examples/now_clock"}
-    assert HomeElixir.Web.save_name("", src) == {:ok, "Examples/now_clock"}
-    assert {:error, _} = HomeElixir.Web.save_name(nil, "no module here")
+  test "rename drops the old file and carries ownership to the new name" do
+    tmp = Application.get_env(:home_elixir, :flows_dir)
+    old = Path.join(tmp, "rename_src.ex")
+    new = Path.join(tmp, "rename_dest.ex")
+
+    File.write!(old, "defmodule HomeElixir.Flows.RenameSrc do\n  use HomeElixir.Flow\n  node(\"in\", HomeElixir.Nodes.Sink)\nend")
+    File.write!(new, "defmodule HomeElixir.Flows.RenameDest do\n  use HomeElixir.Flow\n  node(\"in\", HomeElixir.Nodes.Sink)\nend")
+    HomeElixir.FlowState.set_flow_owner("rename_src", "someone")
+
+    assert :ok = FlowStore.rename("rename_src", "rename_dest")
+    refute File.exists?(old)
+    assert File.exists?(new)
+    assert Enum.find(FlowStore.list(), &(&1.name == "rename_src")) == nil
+    assert Enum.find(FlowStore.list(), &(&1.name == "rename_dest")) != nil
+    assert HomeElixir.FlowState.flow_owner("rename_dest") == "someone"
+    assert HomeElixir.FlowState.flow_owner("rename_src") == nil
+  end
+
+  test "archive force-unloads, flags the flow, and blocks load; unarchive restores" do
+    assert :ok = FlowStore.load("alt_flow")
+    assert Registry.loaded?(@alt_mod)
+
+    assert :ok = FlowStore.archive("alt_flow")
+    refute Registry.loaded?(@alt_mod)
+    assert Enum.find(FlowStore.list(), &(&1.name == "alt_flow")).archived == true
+    assert {:error, :archived} = FlowStore.load("alt_flow")
+
+    assert :ok = FlowStore.unarchive("alt_flow")
+    assert Enum.find(FlowStore.list(), &(&1.name == "alt_flow")).archived == false
+    assert :ok = FlowStore.load("alt_flow")
+    assert Registry.loaded?(@alt_mod)
+    FlowStore.unload("alt_flow")
+  end
+
+  test "delete removes the flow file and clears its metadata" do
+    tmp = Application.get_env(:home_elixir, :flows_dir)
+    target = Path.join(tmp, "del_target.ex")
+
+    File.write!(
+      target,
+      "defmodule HomeElixir.Flows.DelTarget do\n  use HomeElixir.Flow\n  node(\"in\", HomeElixir.Nodes.Sink)\nend"
+    )
+
+    assert File.exists?(target)
+    HomeElixir.FlowState.set_flow_owner("del_target", "someone")
+
+    assert :ok = FlowStore.delete("del_target")
+    refute File.exists?(target)
+    assert Enum.find(FlowStore.list(), &(&1.name == "del_target")) == nil
+    assert HomeElixir.FlowState.flow_owner("del_target") == nil
+    assert {:error, :not_found} = FlowStore.delete("del_target")
+  end
+
+  test "clone copies the flow file and module with a Clone suffix" do
+    tmp = Application.get_env(:home_elixir, :flows_dir)
+    clone_path = Path.join(tmp, "store_test_clone.ex")
+
+    assert {:ok, "store_test_clone"} = FlowStore.clone("store_test")
+    assert File.exists?(clone_path)
+
+    src = File.read!(clone_path)
+    assert src =~ "defmodule HomeElixir.Flows.StoreTestClone do"
+    refute src =~ "defmodule HomeElixir.Flows.StoreTest do"
+
+    clone = Enum.find(FlowStore.list(), &(&1.name == "store_test_clone"))
+    assert clone.module == HomeElixir.Flows.StoreTestClone
+    assert clone.loaded == false
+
+    # the clone compiles, loads, and runs
+    assert :ok = FlowStore.load("store_test_clone")
+    assert Registry.loaded?(clone.module)
+    FlowStore.unload("store_test_clone")
+
+    # cloning the same flow again collides
+    assert {:error, :exists} = FlowStore.clone("store_test")
+    assert {:error, :not_found} = FlowStore.clone("nope")
   end
 
   defp poll(fun, timeout \\ 1_000) do

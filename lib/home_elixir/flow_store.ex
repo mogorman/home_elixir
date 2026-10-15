@@ -35,6 +35,25 @@ defmodule HomeElixir.FlowStore do
   @doc "Stop a loaded flow."
   def unload(name), do: call({:unload, name})
 
+  @doc "Archive a flow: force-unload it and hide it from the flow list."
+  def archive(name), do: call({:archive, name})
+
+  @doc "Restore an archived flow back to the flow list (does not load it)."
+  def unarchive(name), do: call({:unarchive, name})
+
+  @doc "Delete a flow: unload it, remove its file, and drop its saved state."
+  def delete(name), do: call({:delete, name})
+
+  @doc "Clone a flow into a sibling file/module with a `Clone` suffix. Returns `{:ok, new_name}`."
+  def clone(name), do: call({:clone, name})
+
+  @doc """
+  Rename a flow after the editor changed its module name. The new file has
+  already been written by the caller; this unloads the old flow (if running),
+  removes the old file, and carries the old flow's ownership to the new name.
+  """
+  def rename(old_name, new_name), do: call({:rename, old_name, new_name})
+
   @doc "UI elements declared by loaded flows (name-keyed, for the web UI)."
   def ui, do: call(:ui)
 
@@ -143,11 +162,11 @@ defmodule HomeElixir.FlowStore do
   end
 
   def handle_call({:loaded?, name}, _from, cache) do
-    # The cache stores `{name => {:ok, module}}` (see atom_for/2); unwrap the
-    # inner tuple before checking the Registry.
+    # The cache stores `{name => {:ok, module, checksum}}` (see atom_for/2);
+    # unwrap the inner tuple before checking the Registry.
     loaded =
       case Map.fetch(cache, name) do
-        {:ok, {:ok, mod}} -> Registry.loaded?(mod)
+        {:ok, {:ok, mod, _sum}} -> Registry.loaded?(mod)
         _ -> false
       end
 
@@ -179,6 +198,103 @@ defmodule HomeElixir.FlowStore do
   def handle_call({:unload, name}, _from, cache) do
     {reply, cache} = do_unload(name, cache)
     {:reply, reply, cache}
+  end
+
+  # Archive: force-unload (if running), then mark archived.
+  def handle_call({:archive, name}, _from, cache) do
+    case resolve(name) do
+      {:ok, path} ->
+        {mod, cache} = atom_for(path, cache)
+
+        cache =
+          if mod != nil and Registry.loaded?(mod),
+            do: elem(do_unload(name, cache), 1),
+            else: cache
+
+        HomeElixir.FlowState.archive(name)
+        flow_changed()
+        {:reply, :ok, cache}
+
+      error ->
+        {:reply, error, cache}
+    end
+  end
+
+  def handle_call({:unarchive, name}, _from, cache) do
+    case resolve(name) do
+      {:ok, _path} ->
+        HomeElixir.FlowState.unarchive(name)
+        flow_changed()
+        {:reply, :ok, cache}
+
+      error ->
+        {:reply, error, cache}
+    end
+  end
+
+  def handle_call({:delete, name}, _from, cache) do
+    case resolve(name) do
+      {:ok, path} ->
+        {mod, cache} = atom_for(path, cache)
+
+        cache =
+          if mod != nil and Registry.loaded?(mod),
+            do: elem(do_unload(name, cache), 1),
+            else: cache
+
+        File.rm(path)
+        HomeElixir.FlowState.forget_flow(name)
+        if mod, do: HomeElixir.FlowState.forget_triggered(mod)
+        flow_changed()
+        {:reply, :ok, cache}
+
+      error ->
+        {:reply, error, cache}
+    end
+  end
+
+  def handle_call({:clone, name}, _from, cache) do
+    case resolve(name) do
+      {:ok, path} ->
+        {mod, cache} = atom_for(path, cache)
+
+        if mod do
+          {reply, cache} = do_clone(name, path, mod, cache)
+          {:reply, reply, cache}
+        else
+          {:reply, {:error, :compile_error}, cache}
+        end
+
+      error ->
+        {:reply, error, cache}
+    end
+  end
+
+  def handle_call({:rename, old_name, new_name}, _from, cache) do
+    case resolve(old_name) do
+      {:ok, old_path} ->
+        {mod, cache} = atom_for(old_path, cache)
+
+        cache =
+          if mod != nil and Registry.loaded?(mod),
+            do: elem(do_unload(old_name, cache), 1),
+            else: cache
+
+        case HomeElixir.FlowState.flow_owner(old_name) do
+          nil -> :ok
+          owner -> HomeElixir.FlowState.set_flow_owner(new_name, owner)
+        end
+
+        HomeElixir.FlowState.forget_flow(old_name)
+        if mod, do: HomeElixir.FlowState.forget_triggered(mod)
+        File.rm(old_path)
+        cache = Map.delete(cache, old_name)
+        flow_changed()
+        {:reply, :ok, cache}
+
+      error ->
+        {:reply, error, cache}
+    end
   end
 
   def handle_call({:reload, name}, _from, cache) do
@@ -268,38 +384,42 @@ defmodule HomeElixir.FlowStore do
 
   # Load/unload bodies shared by the `load`/`unload`/`reload`/`reload_all` calls.
   defp do_load(name, cache) do
-    case resolve(name) do
-      {:ok, path} ->
-        # Recompile from source so an edited flow is picked up on (re)load.
-        reply =
-          try do
-            mod = compile_atom(path)
+    if HomeElixir.FlowState.is_archived?(name) do
+      {{:error, :archived}, cache}
+    else
+      case resolve(name) do
+        {:ok, path} ->
+          # Recompile from source so an edited flow is picked up on (re)load.
+          reply =
+            try do
+              mod = compile_atom(path)
 
-            case Registry.load(mod) do
-              {:ok, _pid} ->
-                Logger.info("loaded flow #{name} (#{inspect(mod)})")
-                :ok
+              case Registry.load(mod) do
+                {:ok, _pid} ->
+                  Logger.info("loaded flow #{name} (#{inspect(mod)})")
+                  :ok
 
-              {:error, :already_loaded} ->
-                :ok
+                {:error, :already_loaded} ->
+                  :ok
 
-              {:error, reason} ->
-                {:error, reason}
+                {:error, reason} ->
+                  {:error, reason}
+              end
+            rescue
+              e -> {:error, Exception.message(e)}
             end
-          rescue
-            e -> {:error, Exception.message(e)}
+
+          if reply == :ok do
+            add_loaded(name)
+            record_loaded!(name, path)
+            flow_changed()
           end
 
-        if reply == :ok do
-          add_loaded(name)
-          record_loaded!(name, path)
-          flow_changed()
-        end
+          {reply, cache}
 
-        {reply, cache}
-
-      error ->
-        {error, cache}
+        error ->
+          {error, cache}
+      end
     end
   end
 
@@ -326,6 +446,58 @@ defmodule HomeElixir.FlowStore do
         {error, cache}
     end
   end
+
+  # Copy a flow to a sibling file/module with a "Clone" suffix, inheriting the
+  # original's owner. The clone starts unloaded. Returns {:ok, new_name}.
+  defp do_clone(name, path, mod, cache) do
+    new_name = clone_name(name)
+    new_path = Path.join(dir(), "#{new_name}.ex")
+
+    if File.exists?(new_path) do
+      {{:error, :exists}, cache}
+    else
+      case File.read(path) do
+        {:ok, source} ->
+          new_src =
+            String.replace(source, "defmodule #{bare(mod)} do",
+              "defmodule #{bare(clone_module(mod))} do")
+
+          File.mkdir_p!(Path.dirname(new_path))
+          File.write!(new_path, new_src)
+
+          case HomeElixir.FlowState.flow_owner(name) do
+            nil -> :ok
+            owner -> HomeElixir.FlowState.set_flow_owner(new_name, owner)
+          end
+
+          flow_changed()
+          {{:ok, new_name}, cache}
+
+        _ ->
+          {{:error, :clone_failed}, cache}
+      end
+    end
+  end
+
+  # "Examples/counter" -> "Examples/counter_clone"; "foo" -> "foo_clone"
+  defp clone_name(name) do
+    {prefix, [leaf]} = name |> String.split("/") |> Enum.split(-1)
+    Enum.join(prefix ++ [leaf <> "_clone"], "/")
+  end
+
+  # HomeElixir.Flows.GpuUsageAlert -> HomeElixir.Flows.GpuUsageAlertClone
+  defp clone_module(mod) do
+    {prefix, [leaf]} =
+      to_string(mod)
+      |> String.replace_prefix("Elixir.", "")
+      |> String.split(".")
+      |> Enum.split(-1)
+
+    String.to_atom(Enum.join(prefix ++ [leaf <> "Clone"], "."))
+  end
+
+  # The module name as written in a defmodule clause (no "Elixir." prefix).
+  defp bare(mod), do: to_string(mod) |> String.replace_prefix("Elixir.", "")
 
   # Tell web clients the flow set changed so list pages refresh without polling.
   defp flow_changed, do: HomeElixir.UI.Hub.push(:flow_changed, %{})
@@ -383,8 +555,10 @@ defmodule HomeElixir.FlowStore do
   # are skipped (and logged), never fatal.
   defp list_flows(cache) do
     ever = MapSet.new(HomeElixir.FlowState.ever_loaded_names())
+    archived = MapSet.new(HomeElixir.FlowState.archived_names())
     sums = HomeElixir.FlowState.loaded_checksums()
     owners = HomeElixir.FlowState.all_flow_owners()
+    triggered = HomeElixir.FlowState.all_last_triggered()
 
     {flows, cache} =
       dir()
@@ -403,6 +577,8 @@ defmodule HomeElixir.FlowStore do
             module: mod,
             loaded: loaded,
             owner: Map.get(owners, name),
+            archived: MapSet.member?(archived, name),
+            last_triggered: Map.get(triggered, mod),
             status: flow_status(loaded, MapSet.member?(ever, name), path, Map.get(sums, name))
           }
 
@@ -416,6 +592,8 @@ defmodule HomeElixir.FlowStore do
             module: nil,
             loaded: false,
             owner: Map.get(owners, name),
+            archived: MapSet.member?(archived, name),
+            last_triggered: nil,
             status: :broken
           }
 
@@ -489,24 +667,26 @@ defmodule HomeElixir.FlowStore do
 
   # Module atom for a flow file (cached). Returns nil — and logs — when the
   # file fails to compile, so one broken file can never crash the store.
-  # Successful compiles are cached permanently; failures are cached with the
-  # file's checksum, so a broken flow is recompiled (and re-warned) only when
-  # the file actually changes — not on every list refresh.
+  # Successful compiles are cached with the file's checksum; a changed file
+  # (e.g. a renamed module in the editor) recompiles so the new module is picked
+  # up without a restart. Failures are cached with the checksum too, so a broken
+  # flow is recompiled (and re-warned) only when the file actually changes —
+  # not on every list refresh.
   defp atom_for(path, cache) do
     key = rel_name(path)
     sum = file_checksum(path)
 
     case Map.fetch(cache, key) do
-      {:ok, {:ok, mod}} ->
+      {:ok, {:ok, mod, ^sum}} ->
         {mod, cache}
 
-      {:ok, {:err, cached_sum}} when sum == cached_sum ->
+      {:ok, {:err, sum}} ->
         {nil, cache}
 
       _ ->
         case compile_atom_safe(path) do
           {:ok, mod} ->
-            {mod, Map.put(cache, key, {:ok, mod})}
+            {mod, Map.put(cache, key, {:ok, mod, sum})}
 
           {:error, msg} ->
             Logger.warning("skipping flow #{key}: #{msg}")

@@ -57,4 +57,72 @@ defmodule HomeElixir.FlowStateTest do
       if is_list(prev), do: FlowState.save_loaded_names(prev)
     end
   end
+
+  test "archive / unarchive / is_archived? round-trip" do
+    assert FlowState.is_archived?("zz-arch-test") == false
+
+    try do
+      FlowState.archive("zz-arch-test")
+      assert FlowState.is_archived?("zz-arch-test") == true
+      assert "zz-arch-test" in FlowState.archived_names()
+      # idempotent
+      FlowState.archive("zz-arch-test")
+      assert Enum.filter(FlowState.archived_names(), &(&1 == "zz-arch-test")) == ["zz-arch-test"]
+
+      FlowState.unarchive("zz-arch-test")
+      assert FlowState.is_archived?("zz-arch-test") == false
+    after
+      FlowState.unarchive("zz-arch-test")
+    end
+  end
+
+  test "forget_flow clears a flow's metadata entries" do
+    name = "zz-forget-test"
+
+    try do
+      FlowState.set_flow_owner(name, "someone")
+      FlowState.save_loaded_names((FlowState.loaded_names() || []) ++ [name])
+      FlowState.record_load(name, "abc123", "defmodule X do end")
+      FlowState.archive(name)
+
+      assert FlowState.flow_owner(name) == "someone"
+      assert name in FlowState.loaded_names()
+      assert name in FlowState.ever_loaded_names()
+      assert FlowState.loaded_source(name) == "defmodule X do end"
+      assert FlowState.is_archived?(name)
+
+      FlowState.forget_flow(name)
+
+      assert FlowState.flow_owner(name) == nil
+      assert name not in FlowState.loaded_names()
+      assert name not in FlowState.ever_loaded_names()
+      assert FlowState.loaded_source(name) == nil
+      assert FlowState.is_archived?(name) == false
+    after
+      FlowState.forget_flow(name)
+    end
+  end
+
+  test "last_triggered records, lists, and forgets by module" do
+    key = :"Elixir.HomeElixir.Flows.ZZTriggerTest"
+
+    try do
+      assert FlowState.last_triggered(key) == nil
+      FlowState.record_triggered(key)
+      assert is_integer(FlowState.last_triggered(key))
+      assert Map.has_key?(FlowState.all_last_triggered(), key)
+
+      # recording again updates the timestamp
+      before = FlowState.last_triggered(key)
+      FlowState.record_triggered(key)
+      assert FlowState.last_triggered(key) >= before
+
+      FlowState.forget_triggered(key)
+      assert FlowState.last_triggered(key) == nil
+      # forgetting an absent key is a no-op
+      assert FlowState.forget_triggered(key) == :ok
+    after
+      FlowState.forget_triggered(key)
+    end
+  end
 end

@@ -36,6 +36,8 @@ defmodule HomeElixir.FlowsHATest do
       stop_flows_ha()
       FlowStore.unload("alpha")
       FlowStore.unload("beta")
+      HomeElixir.FlowState.unarchive("alpha")
+      HomeElixir.FlowState.unarchive("beta")
       stop_ha()
       Application.put_env(:home_elixir, :flows_dir, "flows")
       File.rm_rf!(tmp)
@@ -212,6 +214,24 @@ defmodule HomeElixir.FlowsHATest do
       sent_frame(
         t,
         &(&1["type"] == "nodered/discovery" and &1["node_id"] == "ghost" and &1["remove"] == true)
+      )
+  end
+
+  test "an archived flow gets no switch (its entity is removed)" do
+    %{t: t} = start_ha!()
+    start_flows_ha!()
+
+    # Both are discovered on boot.
+    _ = sent_frame(t, &(&1["type"] == "nodered/discovery" and &1["node_id"] == "alpha"))
+    _ = sent_frame(t, &(&1["type"] == "nodered/discovery" and &1["node_id"] == "beta"))
+
+    assert :ok = FlowStore.archive("alpha")
+
+    # Archiving drops alpha out of the switch set, so its entity is removed.
+    _ =
+      sent_frame(
+        t,
+        &(&1["type"] == "nodered/discovery" and &1["node_id"] == "alpha" and &1["remove"] == true)
       )
   end
 

@@ -96,7 +96,9 @@ defmodule HomeElixir.FlowState do
       case :application.get_key(:mnesia, :modules) do
         {:ok, modules} ->
           case :code.ensure_modules_loaded(modules) do
-            :ok -> :ok
+            :ok ->
+              :ok
+
             {:error, errors} ->
               raise "FlowState: cannot load mnesia modules from #{ebin}: #{inspect(errors)}"
           end
@@ -273,11 +275,102 @@ defmodule HomeElixir.FlowState do
     end)
   end
 
+  # ---- archived flows (app metadata: set of flow names) ----
+
+  # Every archived flow name.
+  def archived_names do
+    tx(fn -> Map.get(read_data(@meta_flow), :archived) || [] end)
+  end
+
+  # Whether a flow is archived.
+  def is_archived?(name) do
+    name in archived_names()
+  end
+
+  # Mark a flow archived (idempotent).
+  def archive(name) do
+    tx(fn ->
+      data = read_data(@meta_flow)
+      archived = Enum.uniq((Map.get(data, :archived) || []) ++ [name])
+      :mnesia.write({@table, @meta_flow, Map.put(data, :archived, archived)})
+      :ok
+    end)
+  end
+
+  # Un-mark a flow archived (no-op if not archived).
+  def unarchive(name) do
+    tx(fn ->
+      data = read_data(@meta_flow)
+      archived = (Map.get(data, :archived) || []) -- [name]
+      :mnesia.write({@table, @meta_flow, Map.put(data, :archived, archived)})
+      :ok
+    end)
+  end
+
+  # Remove every per-flow record for `name` (loaded/ever-loaded/owner/checksum/
+  # source). Called on delete so a later flow of the same name starts fresh.
+  def forget_flow(name) do
+    tx(fn ->
+      data = read_data(@meta_flow)
+
+      data =
+        data
+        |> Map.update(:loaded, [], &(&1 -- [name]))
+        |> Map.update(:ever_loaded, [], &(&1 -- [name]))
+        |> Map.update(:archived, [], &(&1 -- [name]))
+        |> Map.update(:owners, %{}, &Map.delete(&1, name))
+        |> Map.update(:checksums, %{}, &Map.delete(&1, name))
+        |> Map.update(:sources, %{}, &Map.delete(&1, name))
+
+      :mnesia.write({@table, @meta_flow, data})
+      :ok
+    end)
+  end
+
+  # ---- last triggered (app metadata: module => unix ms) ----
+
+  # The last time a flow was triggered (processed an inbound message or event),
+  # in unix milliseconds, or nil if never. Keyed by the flow module — not its
+  # file-derived name — so it survives subfolders/renames that change the name.
+  def last_triggered(flow_key) do
+    tx(fn -> (Map.get(read_data(@meta_flow), :last_triggered) || %{}) |> Map.get(flow_key) end)
+  end
+
+  # The full module => last-triggered map (for listing without one read per flow).
+  def all_last_triggered do
+    tx(fn -> Map.get(read_data(@meta_flow), :last_triggered) || %{} end)
+  end
+
+  def record_triggered(flow_key) do
+    tx(fn ->
+      data = read_data(@meta_flow)
+      lt = Map.put(Map.get(data, :last_triggered) || %{}, flow_key, System.system_time(:millisecond))
+      :mnesia.write({@table, @meta_flow, Map.put(data, :last_triggered, lt)})
+      :ok
+    end)
+  end
+
+  # Drop a flow's last-triggered record (called on delete; the key is a module).
+  def forget_triggered(flow_key) do
+    tx(fn ->
+      data = read_data(@meta_flow)
+      lt = Map.get(data, :last_triggered) || %{}
+
+      if Map.has_key?(lt, flow_key) do
+        :mnesia.write({@table, @meta_flow, Map.put(data, :last_triggered, Map.delete(lt, flow_key))})
+      end
+
+      :ok
+    end)
+  end
   # Run `fun` in a Mnesia transaction; unwrap {atomic, result}, re-raise on abort.
   defp tx(fun) do
     case :mnesia.transaction(fun) do
-      {:atomic, result} -> result
-      {:aborted, reason} -> raise "FlowState: mnesia aborted: #{inspect(reason)}#{stranded_hint(reason)}"
+      {:atomic, result} ->
+        result
+
+      {:aborted, reason} ->
+        raise "FlowState: mnesia aborted: #{inspect(reason)}#{stranded_hint(reason)}"
     end
   end
 
