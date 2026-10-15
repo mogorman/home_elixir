@@ -53,22 +53,6 @@ defmodule HomeElixir.HA do
   end
 
   @doc """
-  The HA WebSocket endpoint derived from the configured URL (which may be a
-  plain `http(s)://` REST base). `nil` when no HA endpoint is configured.
-  """
-  def ws_url do
-    case config_url() do
-      nil ->
-        nil
-
-      url ->
-        url
-        |> String.replace_prefix("https://", "wss://")
-        |> String.replace_prefix("http://", "ws://")
-    end
-  end
-
-  @doc """
   Resolve who an HA access token belongs to via the WebSocket `auth/current_user`
   command, on a transient one-shot client. Returns `{:ok, {name, is_admin}}` or
   `{:error, reason}`.

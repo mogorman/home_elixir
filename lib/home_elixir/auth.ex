@@ -232,6 +232,14 @@ defmodule HomeElixir.Auth do
 
   def delete_session(_), do: :ok
 
+  # Drop every live session for a user (used on delete and on role change, so a
+  # stale role or deleted account can't outlive the change in an open session).
+  defp drop_sessions_for(name) do
+    :ets.tab2list(@sessions)
+    |> Enum.filter(fn {_token, uid, _role, _exp} -> uid == name end)
+    |> Enum.each(fn {token, _uid, _role, _exp} -> :ets.delete(@sessions, token) end)
+  end
+
   @doc "The session cookie name."
   def cookie_name, do: @cookie
 
@@ -266,7 +274,18 @@ defmodule HomeElixir.Auth do
   defp tx(fun) do
     case :mnesia.transaction(fun) do
       {:atomic, result} -> result
-      {:aborted, reason} -> raise "Auth: transaction aborted: #{inspect(reason)}"
+      {:aborted, reason} -> raise "Auth: mnesia aborted: #{inspect(reason)}#{stranded_hint(reason)}"
+    end
+  end
+
+  # {:no_exists, table} = a hostname change stranded the disc data under the old
+  # node name (this node has no copy). Say so instead of a cryptic abort.
+  defp stranded_hint(reason) do
+    if is_tuple(reason) and elem(reason, 0) == :no_exists do
+      " — the Mnesia data is stranded under the previous hostname. Back up and delete " <>
+        "priv/mnesia to re-seed (users come from config; flow ownership resets)."
+    else
+      ""
     end
   end
 
@@ -297,13 +316,13 @@ defmodule HomeElixir.Auth do
     if name == @admin do
       {:reply, {:error, "cannot delete the admin account"}, state}
     else
-      # OTP 28 has delete/3 (Tab, Key, LockKind) but not the old delete/2 wrapper.
-      tx(fn -> :mnesia.delete(@table, name, :write) end)
-      # Drop that user's live sessions.
-      :ets.tab2list(@sessions)
-      |> Enum.filter(fn {_token, uid, _role, _exp} -> uid == name end)
-      |> Enum.each(fn {token, _uid, _role, _exp} -> :ets.delete(@sessions, token) end)
+      # Re-home this user's flows to admin-only first, so they don't silently
+      # vanish (owned by a user that no longer exists) once the account is gone.
+      HomeElixir.FlowState.owned_flow_names(name)
+      |> Enum.each(&HomeElixir.FlowState.clear_flow_owner/1)
 
+      tx(fn -> :mnesia.delete(@table, name, :write) end)
+      drop_sessions_for(name)
       {:reply, :ok, state}
     end
   end
@@ -351,6 +370,9 @@ defmodule HomeElixir.Auth do
 
           {id, salt, hash, _role} ->
             tx(fn -> :mnesia.write(rec(id, salt, hash, role)) end)
+            # The role is baked into live sessions; drop them so the new role
+            # applies on next login (a demotion can't linger for up to the TTL).
+            drop_sessions_for(name)
             {:reply, :ok, state}
         end
     end

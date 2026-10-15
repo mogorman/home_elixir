@@ -62,7 +62,6 @@ defmodule HomeElixir.MixProject do
       {:plug, "~> 1.18"},
       {:plug_cowboy, "~> 2.7"},
       {:crontab, "~> 1.1"},
-      {:ecto, "~> 3.13"},
       {:oauth2, "~> 2.1"}
     ]
   end

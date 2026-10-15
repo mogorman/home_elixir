@@ -92,7 +92,7 @@ defmodule HomeElixir.Web do
     do: html(conn, controls_page(cur(conn)))
 
   def call(%{method: "GET", request_path: "/api/ui"} = conn, _opts),
-    do: json(conn, HomeElixir.FlowStore.ui())
+    do: json(conn, visible_ui(conn))
 
   # Live UI updates over a web socket (pushes state-badge changes to the browser).
   def call(%{method: "GET", request_path: "/api/ui/ws"} = conn, _opts) do
@@ -105,22 +105,28 @@ defmodule HomeElixir.Web do
     parts = String.split(rest, "/")
     name = Enum.join(Enum.drop(parts, -1), "/")
 
-    if length(parts) >= 2 do
-      case List.last(parts) do
-        "ui" ->
-          json(conn, HomeElixir.FlowStore.flow_ui(name))
+    # Reject names that aren't valid flow paths (blocks ../ traversal) and
+    # enforce per-flow access, matching the /edit route.
+    cond do
+      length(parts) < 2 or not flow_name_valid?(name) ->
+        not_found(conn)
 
-        "loaded_source" ->
-          case HomeElixir.FlowStore.loaded_source(name) do
-            {:ok, src} -> json(conn, %{source: src})
-            :error -> not_found(conn)
+      true ->
+        with :ok <- flow_access(conn, name) do
+          case List.last(parts) do
+            "ui" -> json(conn, HomeElixir.FlowStore.flow_ui(name))
+
+            "loaded_source" ->
+              case HomeElixir.FlowStore.loaded_source(name) do
+                {:ok, src} -> json(conn, %{source: src})
+                :error -> not_found(conn)
+              end
+
+            _ -> not_found(conn)
           end
-
-        _ ->
-          not_found(conn)
-      end
-    else
-      not_found(conn)
+        else
+          _ -> forbidden(conn)
+        end
     end
   end
 
@@ -128,9 +134,13 @@ defmodule HomeElixir.Web do
     do: html(conn, editor_page(nil, new_flow_template(), cur(conn)))
 
   def call(%{method: "GET", request_path: "/edit/" <> name} = conn, _opts) do
-    case flow_access(conn, name) do
-      :ok -> html(conn, editor_page(name, read_flow(name), cur(conn)))
-      _ -> forbidden(conn)
+    if flow_name_valid?(name) do
+      case flow_access(conn, name) do
+        :ok -> html(conn, editor_page(name, read_flow(name), cur(conn)))
+        _ -> forbidden(conn)
+      end
+    else
+      not_found(conn)
     end
   end
 
@@ -189,45 +199,69 @@ defmodule HomeElixir.Web do
   end
 
   defp flow_api(conn, name, action) do
-    case {name, action} do
-      {"", "save"} -> save_endpoint(conn)
-      {"", "check"} -> check_endpoint(conn)
-      # "reload all" touches every loaded flow, so admin only.
-      {"", "reload"} ->
-        if is_admin?(conn) do
-          reply(conn, HomeElixir.FlowStore.reload_all())
-        else
-          reply(conn, {:error, "forbidden"})
-        end
+    # "save"/"check" use an empty name (the path comes from the header/source);
+    # every other action is keyed by a flow name, which must be a valid path
+    # (blocks ../ traversal into resolve/compile).
+    if name != "" and not flow_name_valid?(name) do
+      bad_request(conn, "invalid flow name")
+    else
+      case {name, action} do
+        {"", "save"} -> save_endpoint(conn)
+        {"", "check"} -> check_endpoint(conn)
+        # "reload all" touches every loaded flow, so admin only.
+        {"", "reload"} ->
+          if is_admin?(conn) do
+            reply(conn, HomeElixir.FlowStore.reload_all())
+          else
+            reply(conn, {:error, "forbidden"})
+          end
 
-      {name, "load"} -> reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.load(name) end))
-      {name, "unload"} -> reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.unload(name) end))
-      {name, "reload"} -> reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.reload(name) end))
-      # Change a flow's owner (admin only): a username, "public" (all users),
-      # or null (unowned / admin-only).
-      {name, "owner"} ->
-        if is_admin?(conn) do
-          set_flow_owner_endpoint(conn, name)
-        else
-          reply(conn, {:error, "forbidden"})
-        end
+        {name, "load"} -> reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.load(name) end))
+        {name, "unload"} -> reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.unload(name) end))
+        {name, "reload"} -> reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.reload(name) end))
+        # Change a flow's owner (admin only): a username, "public" (all users),
+        # or null (unowned / admin-only).
+        {name, "owner"} ->
+          if is_admin?(conn) do
+            set_flow_owner_endpoint(conn, name)
+          else
+            reply(conn, {:error, "forbidden"})
+          end
 
-      _ -> not_found(conn)
+        _ -> not_found(conn)
+      end
     end
   end
 
   defp set_flow_owner_endpoint(conn, name) do
-    with {:ok, %{"owner" => raw}} <- Jason.decode(body(conn)) do
+    with {:ok, %{"owner" => raw}} <- Jason.decode(body(conn)),
+         :ok <- valid_owner?(raw) do
       case raw do
         nil -> HomeElixir.FlowState.clear_flow_owner(name)
-        other -> HomeElixir.FlowState.set_flow_owner(name, other)
+        owner -> HomeElixir.FlowState.set_flow_owner(name, owner)
       end
 
       reply(conn, :ok)
     else
+      {:error, :bad_owner} -> bad_request(conn, "owner must be null, \"public\", or an existing user")
       _ -> reply(conn, {:error, "owner required"})
     end
   end
+
+  # An owner is null (unowned/admin-only), the all-users sentinel, or a real
+  # username — nothing else (a stray value would orphan the flow).
+  defp valid_owner?(nil), do: :ok
+  defp valid_owner?("public"), do: :ok
+
+  defp valid_owner?(owner) when is_binary(owner) do
+    if HomeElixir.Auth.list_users() |> Enum.any?(&(&1.name == owner)) do
+      :ok
+    else
+      {:error, :bad_owner}
+    end
+  end
+
+  defp valid_owner?(_), do: {:error, :bad_owner}
 
   # Run a per-flow action only if the current user may touch that flow.
   defp guard_flow(conn, name, fun) do
@@ -341,8 +375,16 @@ defmodule HomeElixir.Web do
 
   defp click_endpoint(conn) do
     case Jason.decode(body(conn)) do
-      {:ok, %{"name" => name, "node" => node} = data} ->
-        reply(conn, HomeElixir.FlowStore.click(name, node, Map.get(data, "payload")))
+      {:ok, %{"name" => name, "node" => node} = data} when is_binary(name) and is_binary(node) ->
+        if flow_name_valid?(name) do
+          reply(conn,
+            guard_flow(conn, name, fn ->
+              HomeElixir.FlowStore.click(name, node, Map.get(data, "payload"))
+            end)
+          )
+        else
+          bad_request(conn, "invalid flow name")
+        end
 
       {:ok, _} ->
         conn |> put_status(400) |> json(%{error: "name and node required"})
@@ -558,6 +600,31 @@ defmodule HomeElixir.Web do
     end
   end
 
+  # The set of flow names a user may see (nil = admin, see all). Regular users
+  # see their own + public; unowned (admin-only) flows are excluded.
+  defp visible_flow_names(conn) do
+    case cur(conn) do
+      {_id, "admin"} -> nil
+      {id, _} ->
+        pub = HomeElixir.FlowState.public_owner()
+
+        HomeElixir.FlowState.all_flow_owners()
+        |> Enum.filter(fn {_n, owner} -> owner == id or owner == pub end)
+        |> MapSet.new()
+
+      _ -> nil
+    end
+  end
+
+  # UI controls restricted to flows the user may see, so an admin-only flow's
+  # controls can't leak to a user who can't open it.
+  defp visible_ui(conn) do
+    case visible_flow_names(conn) do
+      nil -> HomeElixir.FlowStore.ui()
+      names -> Enum.filter(HomeElixir.FlowStore.ui(), fn el -> MapSet.member?(names, el.name) end)
+    end
+  end
+
   # Log lines visible to a user: everything for admin, only their flows for
   # others. Lines are tagged "level  [FlowTag] …"; untagged (app) lines are
   # hidden from non-admins.
@@ -567,9 +634,14 @@ defmodule HomeElixir.Web do
         Enum.map(lines, fn {id, line} -> %{"id" => id, "line" => line} end)
 
       {id, _} ->
+        # Their flows + public ones (matching visible_flows/flow_access), keyed
+        # by the leaf name used as the log tag.
+        pub = HomeElixir.FlowState.public_owner()
+
         tags =
-          HomeElixir.FlowState.owned_flow_names(id)
-          |> Enum.map(fn n -> n |> String.split("/") |> List.last() end)
+          HomeElixir.FlowState.all_flow_owners()
+          |> Enum.filter(fn {_n, owner} -> owner == id or owner == pub end)
+          |> Enum.map(fn {n, _o} -> n |> String.split("/") |> List.last() end)
           |> MapSet.new()
 
         lines
@@ -592,6 +664,12 @@ defmodule HomeElixir.Web do
     conn
     |> put_resp_content_type("application/json")
     |> send_resp(403, Jason.encode!(%{error: "forbidden"}))
+  end
+
+  defp bad_request(conn, msg) do
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(400, Jason.encode!(%{error: msg}))
   end
 
   # This Plug version has no Conn.redirect/2; a 302 is all we need.

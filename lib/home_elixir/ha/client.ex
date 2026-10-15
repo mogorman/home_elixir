@@ -67,11 +67,6 @@ defmodule HomeElixir.HA.Client do
     GenServer.call(client, {:subscribe_events, event_type, to}, timeout)
   end
 
-  @doc "Unsubscribe a subscription returned by `subscribe_events/3`."
-  def unsubscribe(client, ref, timeout \\ 5_000) do
-    GenServer.call(client, {:unsubscribe, ref}, timeout)
-  end
-
   @doc """
   Register a message-id channel for a long-lived HA feature (e.g. a Node-RED
   device). A fresh id from the shared monotonically-increasing counter (the same
@@ -137,11 +132,6 @@ defmodule HomeElixir.HA.Client do
 
     # Otherwise it is sent by resubscribe/1 on the next auth_ok.
     {:reply, id, state}
-  end
-
-  def handle_call({:unsubscribe, ref}, _from, state) do
-    send_transport(state, %{id: ref, type: "unsubscribe_events"})
-    {:reply, :ok, %{state | subs: Map.delete(state.subs, ref)}}
   end
 
   def handle_call({:discover, discovery_frame, to}, _from, state) do

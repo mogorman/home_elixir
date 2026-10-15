@@ -229,24 +229,30 @@ defmodule HomeElixir.FlowStore do
         if mod do
           loaded = Registry.loaded?(mod)
 
-          elements =
-            for {node_id, {_handler, config}} <- mod.__flow__().nodes,
-                %{type: _t} = ui <- [Map.get(config, :ui)] do
-              %{
-                name: name,
-                node: node_id,
-                type: ui.type,
-                label: Map.get(ui, :label),
-                payload: Map.get(ui, :payload),
-                value:
-                  if(ui.type in ["state", "image"] and loaded,
-                    do: node_state_value(mod, node_id),
-                    else: nil
-                  )
-              }
-            end
+          case flow_nodes(mod) do
+            {:ok, nodes} ->
+              elements =
+                for {node_id, {_handler, config}} <- nodes,
+                    %{type: _t} = ui <- [Map.get(config, :ui)] do
+                  %{
+                    name: name,
+                    node: node_id,
+                    type: ui.type,
+                    label: Map.get(ui, :label),
+                    payload: Map.get(ui, :payload),
+                    value:
+                      if(ui.type in ["state", "image"] and loaded,
+                        do: node_state_value(mod, node_id),
+                        else: nil
+                      )
+                  }
+                end
 
-          {:reply, elements, cache}
+              {:reply, elements, cache}
+
+            {:error, _} ->
+              {:reply, {:error, :compile_error}, cache}
+          end
         else
           {:reply, {:error, :compile_error}, cache}
         end
@@ -326,6 +332,16 @@ defmodule HomeElixir.FlowStore do
     case Registry.node_state(mod, node_id) do
       m when is_map(m) -> Map.get(m, :state)
       _ -> nil
+    end
+  end
+
+  # The flow's node map, or an error if `mod` isn't a flow module. Keeps one bad
+  # .ex from raising UndefinedFunctionError and taking down the whole store.
+  defp flow_nodes(mod) do
+    if function_exported?(mod, :__flow__, 0) do
+      {:ok, mod.__flow__().nodes}
+    else
+      {:error, :not_a_flow}
     end
   end
 

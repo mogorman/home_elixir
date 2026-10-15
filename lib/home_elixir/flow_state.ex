@@ -220,9 +220,6 @@ defmodule HomeElixir.FlowState do
   # which is admin-only). A flow with this owner can be seen and run by anyone.
   def public_owner, do: "public"
 
-  # True if the flow is shared with all users.
-  def flow_public?(name), do: flow_owner(name) == public_owner()
-
   # The username that owns a flow, or nil (unowned — treated as admin-only).
   def flow_owner(name) do
     tx(fn -> (Map.get(read_data(@meta_flow), :owners) || %{}) |> Map.get(name) end)
@@ -280,7 +277,19 @@ defmodule HomeElixir.FlowState do
   defp tx(fun) do
     case :mnesia.transaction(fun) do
       {:atomic, result} -> result
-      {:aborted, reason} -> raise "FlowState: transaction aborted: #{inspect(reason)}"
+      {:aborted, reason} -> raise "FlowState: mnesia aborted: #{inspect(reason)}#{stranded_hint(reason)}"
+    end
+  end
+
+  # A {:no_exists, table} abort is the signature of a hostname change: the disc
+  # schema was written under home_elixir@<old-host> and this node (…@<new-host>)
+  # has no copy of any table. Say so, since the raw abort is otherwise cryptic.
+  defp stranded_hint(reason) do
+    if is_tuple(reason) and elem(reason, 0) == :no_exists do
+      " — the Mnesia data is stranded under the previous hostname. Back up and delete " <>
+        "priv/mnesia to re-seed (users come from config; flow ownership resets)."
+    else
+      ""
     end
   end
 

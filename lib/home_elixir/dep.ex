@@ -70,7 +70,7 @@ defmodule HomeElixir.Dep do
     else
       File.rm_rf!(Path.join(dir, "_build"))
       File.rm(Path.join(dir, "installed_deps"))
-      File.write!(file, current)
+      atomic_write!(file, current)
       Logger.info("dep reset: flow deps changed (#{current}) -> wiped _build + union")
       :ok
     end
@@ -101,7 +101,17 @@ defmodule HomeElixir.Dep do
 
     existing =
       case File.read(file) do
-        {:ok, src} -> elem(Code.eval_string(src), 0)
+        # A torn write (crash mid-install) could leave this corrupt; treat it as
+        # empty rather than crashing every subsequent install.
+        {:ok, src} ->
+          try do
+            elem(Code.eval_string(src), 0)
+          rescue
+            _ ->
+              Logger.warning("dep: installed_deps unreadable, resetting")
+              []
+          end
+
         _ -> []
       end
 
@@ -113,8 +123,16 @@ defmodule HomeElixir.Dep do
       "dep union: requested=#{inspect(deps)} existing=#{inspect(existing)} -> #{inspect(all)}"
     )
 
-    File.write!(file, inspect(all))
+    atomic_write!(file, inspect(all))
     all
+  end
+
+  # Write-then-rename so a crash mid-write can't leave a torn file (which would
+  # break Code.eval_string on the next read).
+  defp atomic_write!(path, content) do
+    tmp = path <> ".tmp"
+    File.write!(tmp, content)
+    File.rename!(tmp, path)
   end
 
   # Build in the env the app runs in. The subprocess inherits this same OS
@@ -129,7 +147,7 @@ defmodule HomeElixir.Dep do
     if File.exists?(mix_exs) and File.read!(mix_exs) == project_source(deps) do
       :ok
     else
-      File.write!(mix_exs, project_source(deps))
+      atomic_write!(mix_exs, project_source(deps))
       File.rm(Path.join(dir, "mix.lock"))
       # A changed deps set means a fresh, correctly-ordered build (a stale
       # _build breaks timex-style deps that compile against sibling deps).
@@ -149,12 +167,9 @@ defmodule HomeElixir.Dep do
   end
 
   defp mix!(dir, args) do
-    # Strip node flags: the subprocess BEAM must not inherit the app's node
-    # name (ERL_AFLAGS), or it exits on a node-name collision before doing
-    # anything.
-    # Blank out (can't unset — System.cmd's env only overrides, never removes)
-    # the node flags so the subprocess BEAM doesn't collide with the app's
-    # node name.
+    # Blank out the node flags: System.cmd's env only overrides (never unsets),
+    # and the subprocess BEAM must not inherit the app's node name (ERL_AFLAGS)
+    # or it exits on a node-name collision before doing anything.
     env =
       System.get_env()
       |> Map.put("ERL_AFLAGS", "")
