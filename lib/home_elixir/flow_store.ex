@@ -366,6 +366,7 @@ defmodule HomeElixir.FlowStore do
   defp list_flows(cache) do
     ever = MapSet.new(HomeElixir.FlowState.ever_loaded_names())
     sums = HomeElixir.FlowState.loaded_checksums()
+    owners = HomeElixir.FlowState.all_flow_owners()
 
     {flows, cache} =
       dir()
@@ -373,9 +374,9 @@ defmodule HomeElixir.FlowStore do
       |> Path.wildcard()
       |> Enum.reduce({[], cache}, fn path, {acc, cache} ->
         {mod, cache} = atom_for(path, cache)
+        name = rel_name(path)
 
         if mod do
-          name = rel_name(path)
           loaded = Registry.loaded?(mod)
 
           flow = %{
@@ -383,6 +384,7 @@ defmodule HomeElixir.FlowStore do
             path: path,
             module: mod,
             loaded: loaded,
+            owner: Map.get(owners, name),
             status: flow_status(loaded, MapSet.member?(ever, name), path, Map.get(sums, name))
           }
 
@@ -391,10 +393,11 @@ defmodule HomeElixir.FlowStore do
           # Broken (won't compile): still list it so a flow broken between
           # restarts stays visible and can be opened in the editor to fix.
           flow = %{
-            name: rel_name(path),
+            name: name,
             path: path,
             module: nil,
             loaded: false,
+            owner: Map.get(owners, name),
             status: :broken
           }
 

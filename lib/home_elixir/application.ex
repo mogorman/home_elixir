@@ -14,7 +14,9 @@ defmodule HomeElixir.Application do
         {Registry, keys: :unique, name: HomeElixir.NodeLookup},
         {HomeElixir.Registry, []},
         {HomeElixir.FlowStore, []},
-        {HomeElixir.Log, []}
+        {HomeElixir.Log, []},
+        {HomeElixir.Auth, []},
+        {HomeElixir.HA.PendingLogins, []}
       ] ++ ha_client_child() ++ web_child()
 
     opts = [strategy: :one_for_one, name: HomeElixir.Supervisor]
@@ -66,7 +68,7 @@ defmodule HomeElixir.Application do
       [
         Plug.Cowboy.child_spec(
           scheme: :http,
-          plug: HomeElixir.Web,
+          plug: HomeElixir.AuthGuard,
           port: String.to_integer(port),
           ip: parse_ip(host)
         )

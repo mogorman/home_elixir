@@ -214,6 +214,68 @@ defmodule HomeElixir.FlowState do
     tx(fn -> (Map.get(read_data(@meta_flow), :sources) || %{}) |> Map.get(name) end)
   end
 
+  # ---- flow ownership (app metadata: name => username) ----
+
+  # Owner value meaning "visible to every user" (vs a username, or nil/unowned
+  # which is admin-only). A flow with this owner can be seen and run by anyone.
+  def public_owner, do: "public"
+
+  # True if the flow is shared with all users.
+  def flow_public?(name), do: flow_owner(name) == public_owner()
+
+  # The username that owns a flow, or nil (unowned — treated as admin-only).
+  def flow_owner(name) do
+    tx(fn -> (Map.get(read_data(@meta_flow), :owners) || %{}) |> Map.get(name) end)
+  end
+
+  # The full name => owner map (for listing).
+  def all_flow_owners do
+    tx(fn -> Map.get(read_data(@meta_flow), :owners) || %{} end)
+  end
+
+  # Set a flow's owner unconditionally.
+  def set_flow_owner(name, owner) do
+    tx(fn ->
+      data = read_data(@meta_flow)
+      owners = Map.put(Map.get(data, :owners) || %{}, name, owner)
+      :mnesia.write({@table, @meta_flow, Map.put(data, :owners, owners)})
+      :ok
+    end)
+  end
+
+  # Remove a flow's owner entirely (reverts to unowned / admin-only). Deleting
+  # the key (rather than storing nil) keeps `assign_owner_if_new/2` able to
+  # re-claim the flow on its next save.
+  def clear_flow_owner(name) do
+    tx(fn ->
+      data = read_data(@meta_flow)
+      owners = Map.delete(Map.get(data, :owners) || %{}, name)
+      :mnesia.write({@table, @meta_flow, Map.put(data, :owners, owners)})
+      :ok
+    end)
+  end
+
+  # Assign ownership only if the flow has none yet (first save). Returns the
+  # resulting owner.
+  def assign_owner_if_new(name, owner) do
+    tx(fn ->
+      data = read_data(@meta_flow)
+      owners = Map.get(data, :owners) || %{}
+      owners = if Map.has_key?(owners, name), do: owners, else: Map.put(owners, name, owner)
+      :mnesia.write({@table, @meta_flow, Map.put(data, :owners, owners)})
+      Map.get(owners, name)
+    end)
+  end
+
+  # The names of every flow owned by `uid` (for scoping a non-admin's log view).
+  def owned_flow_names(uid) do
+    tx(fn ->
+      (Map.get(read_data(@meta_flow), :owners) || %{})
+      |> Enum.filter(fn {_n, o} -> o == uid end)
+      |> Enum.map(fn {n, _o} -> n end)
+    end)
+  end
+
   # Run `fun` in a Mnesia transaction; unwrap {atomic, result}, re-raise on abort.
   defp tx(fun) do
     case :mnesia.transaction(fun) do

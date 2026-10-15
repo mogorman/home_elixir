@@ -25,6 +25,7 @@ defmodule HomeElixir.Web do
   @behaviour Plug
 
   import Plug.Conn
+  require Logger
 
   @hljs "/static/hljs"
   @bootstrap "/static/bootstrap/bootstrap.min.css"
@@ -33,17 +34,62 @@ defmodule HomeElixir.Web do
 
   # ---- GET ----
 
+  # Public (bypasses the guard): shown when not logged in, redirects when logged in.
+  def call(%{method: "GET", request_path: "/login"} = conn, _opts) do
+    case HomeElixir.Auth.user_from_conn(conn) do
+      {:ok, _} -> redirect(conn, to: "/")
+      _ -> html(conn, login_page())
+    end
+  end
+
+  # Public OAuth entry: begin the HA local-OAuth flow and send the browser to
+  # HA's authorize page. Bounces back to /login when HA is not configured.
+  def call(%{method: "GET", request_path: "/oauth/start"} = conn, _opts) do
+    case HomeElixir.HA.OAuth.start_login() do
+      {:ok, url, _state} -> redirect(conn, to: url)
+      {:error, _reason} -> redirect(conn, to: "/login")
+    end
+  end
+
+  # Public OAuth callback: exchange the code for a token, resolve the user via
+  # HA, set the session cookie, and redirect home.
+  def call(%{method: "GET", request_path: "/oauth/callback"} = conn, _opts) do
+    q = URI.decode_query(conn.query_string)
+
+    case q do
+      %{"error" => _err} -> redirect(conn, to: "/login")
+      %{"code" => code, "state" => state} -> finish_oauth(conn, HomeElixir.HA.OAuth.complete_login(code, state))
+      _ -> redirect(conn, to: "/login")
+    end
+  end
+
   def call(%{method: "GET", request_path: "/"} = conn, _opts),
-    do: html(conn, list_page())
+    do: html(conn, list_page(cur(conn)))
 
   def call(%{method: "GET", request_path: "/api/flows"} = conn, _opts),
-    do: json(conn, HomeElixir.FlowStore.list())
+    do: json(conn, visible_flows(conn, HomeElixir.FlowStore.list()))
+
+  def call(%{method: "GET", request_path: "/api/me"} = conn, _opts) do
+    case cur(conn) do
+      {name, role} -> json(conn, %{name: name, role: role})
+      _ -> json(conn, %{name: nil, role: nil})
+    end
+  end
+
+  # User management (admin only).
+  def call(%{method: "GET", request_path: "/admin"} = conn, _opts) do
+    if is_admin?(conn), do: html(conn, admin_page(cur(conn))), else: forbidden(conn)
+  end
+
+  def call(%{method: "GET", request_path: "/api/admin/users"} = conn, _opts) do
+    if is_admin?(conn), do: json(conn, HomeElixir.Auth.list_users()), else: forbidden(conn)
+  end
 
   def call(%{method: "GET", request_path: "/api/entity_tree"} = conn, _opts),
     do: json(conn, HomeElixir.EntityBrowser.tree())
 
   def call(%{method: "GET", request_path: "/controls"} = conn, _opts),
-    do: html(conn, controls_page())
+    do: html(conn, controls_page(cur(conn)))
 
   def call(%{method: "GET", request_path: "/api/ui"} = conn, _opts),
     do: json(conn, HomeElixir.FlowStore.ui())
@@ -79,19 +125,32 @@ defmodule HomeElixir.Web do
   end
 
   def call(%{method: "GET", request_path: "/edit"} = conn, _opts),
-    do: html(conn, editor_page(nil, new_flow_template()))
+    do: html(conn, editor_page(nil, new_flow_template(), cur(conn)))
 
-  def call(%{method: "GET", request_path: "/edit/" <> name} = conn, _opts),
-    do: html(conn, editor_page(name, read_flow(name)))
+  def call(%{method: "GET", request_path: "/edit/" <> name} = conn, _opts) do
+    case flow_access(conn, name) do
+      :ok -> html(conn, editor_page(name, read_flow(name), cur(conn)))
+      _ -> forbidden(conn)
+    end
+  end
 
-  def call(%{method: "GET", request_path: "/logs"} = conn, _opts),
-    do: html(conn, logs_page())
+  # Full log view is admin-only; per-flow log panels use the filtered /api/logs.
+  def call(%{method: "GET", request_path: "/logs"} = conn, _opts) do
+    if is_admin?(conn), do: html(conn, logs_page(cur(conn))), else: forbidden(conn)
+  end
 
-  def call(%{method: "GET", request_path: "/api/logs"} = conn, _opts),
-    do: logs_endpoint(conn)
+  def call(%{method: "GET", request_path: "/api/logs"} = conn, _opts) do
+    lines = HomeElixir.Log.lines(parse_since(conn.query_string))
+    json(conn, log_entries(lines, conn))
+  end
 
+  # In-browser IEx: admin only (it can run arbitrary code on the app node).
   def call(%{method: "GET", request_path: "/terminal"} = conn, _opts) do
-    if websocket?(conn), do: upgrade_to_terminal(conn), else: html(conn, terminal_page())
+    if is_admin?(conn) do
+      if websocket?(conn), do: upgrade_to_terminal(conn), else: html(conn, terminal_page(cur(conn)))
+    else
+      forbidden(conn)
+    end
   end
 
   def call(%{method: "GET", request_path: "/favicon.ico"} = conn, _opts),
@@ -104,6 +163,18 @@ defmodule HomeElixir.Web do
 
   def call(%{method: "POST"} = conn, _opts) do
     case conn.request_path |> String.split("/") do
+      ["", "api", "login"] ->
+        login_endpoint(conn)
+
+      ["", "api", "logout"] ->
+        logout_endpoint(conn)
+
+      ["", "api", "admin", "users"] ->
+        if is_admin?(conn), do: admin_create_user(conn), else: forbidden(conn)
+
+      ["", "api", "admin", "users", name, action] ->
+        if is_admin?(conn), do: admin_user_action(conn, name, action), else: forbidden(conn)
+
       # Flow names may be path-style ("LivingRoom/counter"), so the name is
       # everything between "flows" and the trailing action segment.
       ["", "api", "flows" | tail] when length(tail) >= 1 ->
@@ -121,11 +192,48 @@ defmodule HomeElixir.Web do
     case {name, action} do
       {"", "save"} -> save_endpoint(conn)
       {"", "check"} -> check_endpoint(conn)
-      {"", "reload"} -> reply(conn, HomeElixir.FlowStore.reload_all())
-      {name, "load"} -> reply(conn, HomeElixir.FlowStore.load(name))
-      {name, "unload"} -> reply(conn, HomeElixir.FlowStore.unload(name))
-      {name, "reload"} -> reply(conn, HomeElixir.FlowStore.reload(name))
+      # "reload all" touches every loaded flow, so admin only.
+      {"", "reload"} ->
+        if is_admin?(conn) do
+          reply(conn, HomeElixir.FlowStore.reload_all())
+        else
+          reply(conn, {:error, "forbidden"})
+        end
+
+      {name, "load"} -> reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.load(name) end))
+      {name, "unload"} -> reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.unload(name) end))
+      {name, "reload"} -> reply(conn, guard_flow(conn, name, fn -> HomeElixir.FlowStore.reload(name) end))
+      # Change a flow's owner (admin only): a username, "public" (all users),
+      # or null (unowned / admin-only).
+      {name, "owner"} ->
+        if is_admin?(conn) do
+          set_flow_owner_endpoint(conn, name)
+        else
+          reply(conn, {:error, "forbidden"})
+        end
+
       _ -> not_found(conn)
+    end
+  end
+
+  defp set_flow_owner_endpoint(conn, name) do
+    with {:ok, %{"owner" => raw}} <- Jason.decode(body(conn)) do
+      case raw do
+        nil -> HomeElixir.FlowState.clear_flow_owner(name)
+        other -> HomeElixir.FlowState.set_flow_owner(name, other)
+      end
+
+      reply(conn, :ok)
+    else
+      _ -> reply(conn, {:error, "owner required"})
+    end
+  end
+
+  # Run a per-flow action only if the current user may touch that flow.
+  defp guard_flow(conn, name, fun) do
+    case flow_access(conn, name) do
+      :ok -> fun.()
+      _ -> {:error, "forbidden"}
     end
   end
 
@@ -138,17 +246,44 @@ defmodule HomeElixir.Web do
 
     case save_name(List.first(get_req_header(conn, "x-flow-name")), source) do
       {:ok, name} ->
-        try do
-          save_flow(name, source)
-          HomeElixir.UI.Hub.push(:flow_changed, %{})
-          text(conn, 200, "saved " <> name <> ".ex (reload to apply)")
-        rescue
-          e ->
-            text(conn, 400, "saved " <> name <> ".ex, but save failed:\n" <> Exception.message(e))
+        with :ok <- save_guard(conn, name) do
+          # First save of a flow claims it for the saving user; later saves
+          # (by the owner or admin) keep the existing owner.
+          HomeElixir.FlowState.assign_owner_if_new(name, elem(cur(conn), 0))
+
+          try do
+            save_flow(name, source)
+            HomeElixir.UI.Hub.push(:flow_changed, %{})
+            text(conn, 200, "saved " <> name <> ".ex (reload to apply)")
+          rescue
+            e ->
+              text(conn, 400, "saved " <> name <> ".ex, but save failed:\n" <> Exception.message(e))
+          end
+        else
+          {:error, msg} -> text(conn, 403, msg)
         end
 
       {:error, msg} ->
         text(conn, 400, msg)
+    end
+  end
+
+  # New flows may be created by anyone logged in; an existing flow may be saved
+  # only by its owner or an admin. Unowned pre-existing files are admin-only.
+  defp save_guard(conn, name) do
+    case cur(conn) do
+      {_id, "admin"} ->
+        :ok
+
+      {id, _} ->
+        cond do
+          not File.exists?(flow_path(name)) -> :ok
+          HomeElixir.FlowState.flow_owner(name) == id -> :ok
+          true -> {:error, "forbidden: not your flow"}
+        end
+
+      _ ->
+        :ok
     end
   end
 
@@ -217,9 +352,126 @@ defmodule HomeElixir.Web do
     end
   end
 
-  defp logs_endpoint(conn) do
-    lines = HomeElixir.Log.lines(parse_since(conn.query_string))
-    json(conn, Enum.map(lines, fn {id, line} -> %{"id" => id, "line" => line} end))
+  # ---- auth + admin endpoints ----
+
+  # Accepts {username, password}; on success sets the session cookie and
+  # redirects home.
+  defp login_endpoint(conn) do
+    case Jason.decode(body(conn)) do
+      {:ok, data} ->
+        result = HomeElixir.Auth.login(data["username"] || "", data["password"] || "")
+
+        case result do
+          {:ok, {uid, role}} ->
+            token = HomeElixir.Auth.create_session(uid, role)
+
+            conn
+            |> put_resp_cookie(HomeElixir.Auth.cookie_name(), token, cookie_opts())
+            |> redirect(to: "/")
+
+          {:error, reason} ->
+            unauthorized(conn, error_message(reason))
+        end
+
+      _ ->
+        conn |> put_status(400) |> json(%{error: "invalid json body"})
+    end
+  end
+
+  # OAuth callback success: resolve the token's user and open a session.
+  defp finish_oauth(conn, {:ok, token}) do
+    case HomeElixir.Auth.login_ha_token(token) do
+      {:ok, {uid, role}} ->
+        session = HomeElixir.Auth.create_session(uid, role)
+
+        conn
+        |> put_resp_cookie(HomeElixir.Auth.cookie_name(), session, cookie_opts())
+        |> redirect(to: "/")
+
+      err ->
+        Logger.warning("oauth: token ok but identity failed: #{inspect(err)}")
+        redirect(conn, to: "/login")
+    end
+  end
+
+  defp finish_oauth(conn, {:error, reason}) do
+    Logger.warning("oauth: complete_login failed: #{inspect(reason)}")
+    redirect(conn, to: "/login")
+  end
+
+  defp logout_endpoint(conn) do
+    if token = conn.cookies[HomeElixir.Auth.cookie_name()] do
+      HomeElixir.Auth.delete_session(token)
+    end
+
+    conn
+    |> delete_resp_cookie(HomeElixir.Auth.cookie_name(), path: "/", sign: false)
+    |> redirect(to: "/login")
+  end
+
+  # Create a user (admin only — the /admin page is the only UI that reaches this,
+  # and the route itself is behind the auth guard).
+  defp admin_create_user(conn) do
+    with {:ok, %{"name" => name, "password" => password} = data} when name != "" and password != "" <-
+           Jason.decode(body(conn)) do
+      role = if data["role"] in ~w(admin user), do: data["role"], else: "user"
+
+      case HomeElixir.Auth.create_user(name, password, role) do
+        :ok -> json(conn, %{ok: true})
+        {:error, reason} -> conn |> put_status(400) |> json(%{error: to_string(reason)})
+      end
+    else
+      _ -> conn |> put_status(400) |> json(%{error: "name and password required"})
+    end
+  end
+
+  defp admin_user_action(conn, name, action) do
+    case action do
+      "delete" ->
+        case HomeElixir.Auth.delete_user(name) do
+          :ok -> json(conn, %{ok: true})
+          {:error, reason} -> conn |> put_status(400) |> json(%{error: to_string(reason)})
+        end
+
+      "role" ->
+        with {:ok, %{"role" => role}} <- Jason.decode(body(conn)) do
+          case HomeElixir.Auth.set_role(name, role) do
+            :ok -> json(conn, %{ok: true})
+            {:error, reason} -> conn |> put_status(400) |> json(%{error: to_string(reason)})
+          end
+        else
+          _ -> conn |> put_status(400) |> json(%{error: "role required"})
+        end
+
+      "reset" ->
+        with {:ok, %{"password" => password}} when password != "" <- Jason.decode(body(conn)) do
+          case HomeElixir.Auth.reset_password(name, password) do
+            :ok -> json(conn, %{ok: true})
+            {:error, reason} -> conn |> put_status(400) |> json(%{error: to_string(reason)})
+          end
+        else
+          _ -> conn |> put_status(400) |> json(%{error: "password required"})
+        end
+
+      _ ->
+        not_found(conn)
+    end
+  end
+
+  defp cookie_opts do
+    [
+      http_only: true,
+      same_site: "Lax",
+      path: "/",
+      sign: false,
+      max_age: Application.get_env(:home_elixir, :session_ttl_h, 168) * 3600
+    ]
+  end
+
+  defp error_message(:bad_credentials), do: "invalid username or password"
+
+  defp unauthorized(conn, msg) do
+    conn |> put_status(401) |> json(%{error: msg})
   end
 
   defp parse_since(query) do
@@ -269,6 +521,85 @@ defmodule HomeElixir.Web do
   end
 
   # ---- conn helpers ----
+
+  # The current user, assigned by HomeElixir.AuthGuard: {username, role} or nil.
+  defp cur(conn), do: conn.assigns[:user]
+  defp role_of(conn), do: elem(cur(conn) || {"", ""}, 1)
+  defp is_admin?(conn), do: role_of(conn) == "admin"
+
+  # A user may open/edit a named flow if they are admin, its owner, or the flow
+  # is public (owned by everyone).
+  defp flow_access(conn, name) do
+    pub = HomeElixir.FlowState.public_owner()
+
+    case cur(conn) do
+      {_id, "admin"} -> :ok
+      {id, _} ->
+        case HomeElixir.FlowState.flow_owner(name) do
+          ^id -> :ok
+          ^pub -> :ok
+          _ -> {:error, :forbidden}
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  # The flows a user may see: everything for admin, their own + public for
+  # others. (Unowned flows — never saved through the UI — are admin-only.)
+  defp visible_flows(conn, flows) do
+    pub = HomeElixir.FlowState.public_owner()
+
+    case cur(conn) do
+      {_id, "admin"} -> flows
+      {id, _} -> Enum.filter(flows, fn f -> f[:owner] == id or f[:owner] == pub end)
+      _ -> flows
+    end
+  end
+
+  # Log lines visible to a user: everything for admin, only their flows for
+  # others. Lines are tagged "level  [FlowTag] …"; untagged (app) lines are
+  # hidden from non-admins.
+  defp log_entries(lines, conn) do
+    case cur(conn) do
+      {_id, "admin"} ->
+        Enum.map(lines, fn {id, line} -> %{"id" => id, "line" => line} end)
+
+      {id, _} ->
+        tags =
+          HomeElixir.FlowState.owned_flow_names(id)
+          |> Enum.map(fn n -> n |> String.split("/") |> List.last() end)
+          |> MapSet.new()
+
+        lines
+        |> Enum.filter(fn {_i, line} -> (log_tag(line) || "") in tags end)
+        |> Enum.map(fn {id, line} -> %{"id" => id, "line" => line} end)
+
+      _ ->
+        Enum.map(lines, fn {id, line} -> %{"id" => id, "line" => line} end)
+    end
+  end
+
+  defp log_tag(line) do
+    case Regex.run(~r/^\w+\s+\[([^\]]+)\]/, line) do
+      [_, tag] -> tag
+      _ -> nil
+    end
+  end
+
+  defp forbidden(conn) do
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(403, Jason.encode!(%{error: "forbidden"}))
+  end
+
+  # This Plug version has no Conn.redirect/2; a 302 is all we need.
+  defp redirect(conn, to: to) do
+    conn
+    |> put_resp_header("location", to)
+    |> send_resp(302, "")
+  end
 
   defp body(conn) do
     case read_body(conn) do
@@ -335,7 +666,7 @@ defmodule HomeElixir.Web do
     Plug.Conn.upgrade_adapter(conn, :websocket, {HomeElixir.WebUI, %{}, %{}})
   end
 
-  defp terminal_page do
+  defp terminal_page(user \\ nil) do
     """
     <!DOCTYPE html>
     <html>
@@ -354,7 +685,7 @@ defmodule HomeElixir.Web do
       </style>
     </head>
     <body>
-    #{navbar_html(:iex)}
+    #{navbar_html(:iex, user)}
       <div id="terminal"></div>
       <script>
         const term = new Terminal({ cursorBlink: true, fontFamily: "monospace", fontSize: 13, convertEol: true });
@@ -389,9 +720,11 @@ defmodule HomeElixir.Web do
 
   # ---- pages ----
 
-  defp list_page do
+  defp list_page(user \\ nil) do
+    is_admin = user != nil and elem(user, 1) == "admin"
+
     """
-    #{base_html("Flows")}
+    #{base_html("Flows", :flows, user)}
       <style>
         /* Header row: distinguish from the flow rows below (uppercase, small,
            muted, subtle bg) so the column labels don't read as a flow. */
@@ -436,6 +769,8 @@ defmodule HomeElixir.Web do
       </dialog>
       <script>
         #{control_js()}
+        const IS_ADMIN = #{is_admin};
+        let ALL_USERS = [];
         const errDlg = document.getElementById("error-dlg");
         async function fail(what, r) {
           const e = await r.json().catch(() => ({}));
@@ -446,6 +781,10 @@ defmodule HomeElixir.Web do
           const r = await fetch(`/api/flows/${name}/${action}`, { method: "POST" });
           if (!r.ok) fail(name + " " + action, r);
           refresh();
+        }
+        async function loadUsers() {
+          if (!IS_ADMIN) return;
+          try { ALL_USERS = (await (await fetch("/api/admin/users")).json()).map((u) => u.name); } catch (_) {}
         }
         async function reloadAll() {
           const r = await fetch("/api/flows/reload", { method: "POST" });
@@ -601,10 +940,30 @@ defmodule HomeElixir.Web do
           });
           return tr;
         }
+        function ownerSelect(f) {
+          const sel = document.createElement("select");
+          sel.className = "form-select form-select-sm";
+          sel.style.width = "10rem";
+          const cur = f.owner === null || f.owner === undefined ? "" : String(f.owner);
+          const opts = [["public", "All users"], ["", "Admin only"]].concat(ALL_USERS.map((u) => [u, "user: " + u]));
+          for (const [val, label] of opts) {
+            const o = document.createElement("option");
+            o.value = val;
+            o.textContent = label;
+            if (val === cur) o.selected = true;
+            sel.appendChild(o);
+          }
+          sel.onchange = async () => {
+            const r = await fetch(`/api/flows/${f.name}/owner`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner: sel.value || null }) });
+            if (!r.ok) fail(f.name + " owner", r);
+            refresh();
+          };
+          return sel;
+        }
         function flowRow(f, depth, label) {
           const tr = document.createElement("tr");
           tr.style.cursor = "pointer";
-          tr.onclick = (ev) => { if (!ev.target.closest("button, a")) togglePanel(f.name); };
+          tr.onclick = (ev) => { if (!ev.target.closest("button, a, select")) togglePanel(f.name); };
           const actions = document.createElement("div");
           actions.className = "d-flex gap-1 justify-content-end";
           if (f.loaded) {
@@ -618,6 +977,7 @@ defmodule HomeElixir.Web do
           edit.href = "/edit/" + f.name;
           edit.textContent = "Edit";
           actions.appendChild(edit);
+          if (IS_ADMIN) actions.appendChild(ownerSelect(f));
           tr.innerHTML =
             `<td class="fw-semibold" style="padding-left:${12 + depth * 20}px">${label}</td>` +
             `<td class="text-secondary">${f.module ? f.module.replace(/^Elixir\./, "") : '<span class="text-warning-emphasis">broken</span>'}</td>` +
@@ -665,7 +1025,8 @@ defmodule HomeElixir.Web do
         }
         document.getElementById("reload-all").onclick = reloadAll;
         for (const th of document.querySelectorAll("th.sortable")) th.onclick = () => sortBy(th.dataset.sort);
-        refresh();
+        if (IS_ADMIN) loadUsers().then(refresh);
+        else refresh();
         // Push: refresh when the flow set changes elsewhere (editor, IEx, ...).
         connectUI({ flow_changed: refresh, state: updateBadge, log: onLog });
         // Slow safety net for files added or edited on disk without loading.
@@ -674,9 +1035,9 @@ defmodule HomeElixir.Web do
     """
   end
 
-  defp controls_page do
+  defp controls_page(user \\ nil) do
     """
-    #{base_html("Controls", :controls)}
+    #{base_html("Controls", :controls, user)}
       <div id="controls" class="d-flex flex-column gap-3"></div>
       <script>
         #{control_js()}
@@ -714,12 +1075,12 @@ defmodule HomeElixir.Web do
     """
   end
 
-  defp editor_page(name, source) do
+  defp editor_page(name, source, user \\ nil) do
     source_json = Jason.encode!(source)
     name_json = Jason.encode!(name)
 
     """
-    #{base_html("Edit flow", :edit)}
+    #{base_html("Edit flow", :edit, user)}
       <style>
         .cm { position: relative; border: 1px solid var(--bs-border-color); height: 46vh;
               min-height: 280px; background: var(--bs-tertiary-bg); }
@@ -756,8 +1117,11 @@ defmodule HomeElixir.Web do
         #entities-card { width: min(940px, 94vw); height: min(72vh, 680px);
                display: flex; flex-direction: column; overflow: hidden; }
         #entities-card .card-header { flex: 0 0 auto; }
-        #entities-card .card-body { flex: 1 1 auto; overflow: auto; }
-      </style>
+         #entities-card .card-body { flex: 1 1 auto; overflow: auto; }
+         #cron-overlay { position: fixed; inset: 0; z-index: 1070; display: flex;
+               align-items: center; justify-content: center; background: rgba(0, 0, 0, .45); }
+         #cron-card { width: min(560px, 94vw); }
+       </style>
       <div class="card">
         <div class="card-body">
           <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
@@ -768,6 +1132,7 @@ defmodule HomeElixir.Web do
             <button id="check" class="btn btn-sm btn-outline-secondary">Check</button>
             <button id="reload" class="btn btn-sm btn-outline-secondary">Reload</button>
             <button id="entities-btn" class="btn btn-sm btn-outline-secondary">Entities</button>
+            <button id="cron-btn" class="btn btn-sm btn-outline-secondary">Cron</button>
             <button id="revert" class="btn btn-sm btn-outline-secondary">Revert</button>
             <button id="save" class="btn btn-sm btn-primary">Save</button>
             <span id="status" class="text-success small"></span>
@@ -794,6 +1159,25 @@ defmodule HomeElixir.Web do
           </div>
         </div>
       </div>
+      <div id="cron-overlay" class="d-none">
+        <div id="cron-card" class="card">
+          <div class="card-header d-flex align-items-center gap-2">
+            <span class="fw-semibold">Cron</span>
+            <button id="cron-close" class="btn btn-sm btn-outline-secondary ms-auto" aria-label="Close">×</button>
+          </div>
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2">
+              <input id="cron-in" class="form-control font-monospace" spellcheck="false" style="flex: 1">
+              <button id="cron-copy" class="btn btn-sm btn-outline-secondary">Copy</button>
+            </div>
+            <div id="cron-out" class="mt-2 text-secondary"></div>
+            <div id="cron-presets" class="d-flex flex-wrap gap-1 mt-2"></div>
+            <div class="text-secondary small mt-2">
+              5-field: <code>min hour dom month dow</code> — used by a <code>Schedule</code> node's <code>cron:</code> config.
+            </div>
+          </div>
+        </div>
+      </div>
       <div id="panels" class="row g-3 d-none">
         <div class="col-12 col-lg-6">
           <div class="card h-100">
@@ -811,6 +1195,7 @@ defmodule HomeElixir.Web do
       <link id="hljs-theme" href="#{@hljs}/styles/github-dark.min.css" rel="stylesheet">
       <script src="#{@hljs}/highlight.min.js"></script>
       <script src="#{@hljs}/languages/elixir.min.js"></script>
+      <script src="/static/cron/cronstrue.min.js"></script>
       <script>
         #{control_js()}
         const FLOW = #{source_json};
@@ -993,6 +1378,48 @@ defmodule HomeElixir.Web do
           if (e.key === "Escape" && !entOverlay.classList.contains("d-none")) closeEnt();
         });
         document.getElementById("ent-refresh").onclick = () => loadEntities();
+
+        // ---- cron calculator (cronstrue): humanize / build a Schedule-node cron ----
+        const cronOverlay = document.getElementById("cron-overlay");
+        const cronIn = document.getElementById("cron-in");
+        const cronOut = document.getElementById("cron-out");
+        function cronRender() {
+          const e = cronIn.value.trim();
+          if (!e) { cronOut.textContent = ""; cronOut.className = "mt-2 text-secondary"; return; }
+          try { cronOut.textContent = cronstrue.toString(e); cronOut.className = "mt-2"; }
+          catch (err) { cronOut.textContent = "Invalid: " + err.message; cronOut.className = "mt-2 text-danger"; }
+        }
+        function openCron() {
+          const m = editor.value.match(/cron:\s*"([^"]+)"/);
+          cronIn.value = m ? m[1] : "*/2 * * * *";
+          cronOverlay.classList.remove("d-none");
+          cronRender(); cronIn.focus(); cronIn.select();
+        }
+        function closeCron() { cronOverlay.classList.add("d-none"); }
+        document.getElementById("cron-btn").onclick = () =>
+          cronOverlay.classList.contains("d-none") ? openCron() : closeCron();
+        document.getElementById("cron-close").onclick = closeCron;
+        cronOverlay.addEventListener("click", (e) => { if (e.target === cronOverlay) closeCron(); });
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "Escape" && !cronOverlay.classList.contains("d-none")) closeCron();
+        });
+        cronIn.addEventListener("input", cronRender);
+        document.getElementById("cron-copy").onclick = async (e) => {
+          try { await navigator.clipboard.writeText(cronIn.value.trim());
+            e.target.textContent = "Copied"; setTimeout(() => (e.target.textContent = "Copy"), 1200);
+          } catch (_) {}
+        };
+        for (const [label, val] of [
+          ["Every 1 min", "* * * * *"], ["Every 2 min", "*/2 * * * *"], ["Every 5 min", "*/5 * * * *"],
+          ["Hourly", "0 * * * *"], ["Daily 9am", "0 9 * * *"], ["Weekdays 9am", "0 9 * * 1-5"],
+          ["Monday 3pm", "0 15 * * 1"], ["1st of month", "0 0 1 * *"]
+        ]) {
+          const b = document.createElement("button");
+          b.className = "btn btn-sm btn-outline-secondary";
+          b.textContent = label;
+          b.onclick = () => { cronIn.value = val; cronRender(); cronIn.focus(); };
+          document.getElementById("cron-presets").appendChild(b);
+        }
         entSearch.addEventListener("input", renderEnt);
         async function loadEntities() {
           entStatus.textContent = "loading…";
@@ -1082,9 +1509,9 @@ defmodule HomeElixir.Web do
     """
   end
 
-  defp logs_page do
+  defp logs_page(user \\ nil) do
     """
-    #{base_html("Logs", :logs)}
+    #{base_html("Logs", :logs, user)}
       <div id="logs" class="rounded border p-2"
            style="font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.5;
                   white-space: pre-wrap; height: 78vh; overflow: auto;"></div>
@@ -1117,6 +1544,196 @@ defmodule HomeElixir.Web do
           syncing = false;
         }
         connectUI({ log: onLog }, resync);
+      </script>
+    """
+  end
+
+  # Standalone (unauthenticated) login page: local username/password or an HA token.
+  defp login_page do
+    """
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <link rel="icon" href="/static/favicon.ico">
+      <title>Log in — home_elixir</title>
+      <link href="#{@bootstrap}" rel="stylesheet">
+      #{theme_script()}
+    </head>
+    <body class="p-3 d-flex align-items-center" style="min-height: 100vh">
+      <div class="card mx-auto" style="width: min(420px, 94vw)">
+        <div class="card-header fw-semibold d-flex align-items-center gap-2"><img src="/static/favicon.ico" width="22" height="22" alt="">home_elixir</div>
+        <div class="card-body">
+          <a href="/oauth/start" class="btn btn-primary btn-lg w-100">Log in with Home Assistant</a>
+          <div class="text-center text-secondary my-3"><hr class="d-inline-block" style="width:2.2rem">or<hr class="d-inline-block" style="width:2.2rem"></div>
+          <details>
+            <summary class="text-secondary small">Use username &amp; password</summary>
+            <div class="mt-2">
+              <div class="mb-2">
+                <label class="form-label">Username</label>
+                <input id="username" class="form-control" autocomplete="username" spellcheck="false">
+              </div>
+              <div class="mb-2">
+                <label class="form-label">Password</label>
+                <input id="password" type="password" class="form-control" autocomplete="current-password">
+              </div>
+              <button id="login" class="btn btn-outline-secondary w-100">Log in</button>
+            </div>
+          </details>
+          <div id="error" class="text-danger small mt-2"></div>
+        </div>
+      </div>
+      <script>
+        function doLogin() {
+          const username = document.getElementById("username").value.trim();
+          const password = document.getElementById("password").value;
+          document.getElementById("error").textContent = "";
+          fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) })
+            .then(async (r) => {
+              if (r.ok) { location.href = "/"; }
+              else { const e = await r.json().catch(() => ({})); document.getElementById("error").textContent = e.error || "login failed"; }
+            })
+            .catch(() => (document.getElementById("error").textContent = "network error"));
+        }
+        document.getElementById("login").onclick = doLogin;
+        for (const id of ["username", "password"])
+          document.getElementById(id).addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+      </script>
+    </body>
+    </html>
+    """
+  end
+
+  defp admin_page(user) do
+    """
+    #{base_html("Admin", :admin, user)}
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <span class="fw-semibold">Users</span>
+          <form id="create" class="d-flex gap-1 align-items-center">
+            <input id="new-name" class="form-control form-control-sm" style="width: 9rem" placeholder="username" spellcheck="false">
+            <input id="new-pass" class="form-control form-control-sm" style="width: 9rem" placeholder="password" type="text" spellcheck="false">
+            <select id="new-role" class="form-select form-select-sm" style="width: 6rem">
+              <option value="user">user</option>
+              <option value="admin">admin</option>
+            </select>
+            <button class="btn btn-sm btn-primary">Add user</button>
+          </form>
+        </div>
+        <table class="table table-hover align-middle mb-0">
+          <thead><tr><th>name</th><th>role</th><th class="text-end">actions</th></tr></thead>
+          <tbody id="users"></tbody>
+        </table>
+      </div>
+      <div class="alert alert-secondary small mt-3">
+        "Reset password" works for any user, including your own (no current password needed).
+        Deleting a user revokes their live session and blocks that account from logging in again.
+      </div>
+      <dialog id="reset-dlg" class="border rounded-3" style="max-width:420px">
+        <h6 class="fw-semibold mb-2">Reset password</h6>
+        <input id="reset-pass" class="form-control form-control-sm mb-2" placeholder="new password" type="text" spellcheck="false">
+        <form method="dialog" class="text-end">
+          <button id="reset-cancel" class="btn btn-sm btn-secondary">Cancel</button>
+          <button id="reset-ok" class="btn btn-sm btn-primary">Save</button>
+        </form>
+      </dialog>
+      <script>
+        let resetTarget = null;
+        function err(msg) { alert(msg); }
+        async function api(url, opts) {
+          const r = await fetch(url, opts);
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || r.statusText);
+          return j;
+        }
+        async function refresh() {
+          const users = await (await fetch("/api/admin/users")).json();
+          const tbody = document.getElementById("users");
+          tbody.innerHTML = "";
+          for (const u of users) {
+            const tr = document.createElement("tr");
+            const tdName = document.createElement("td");
+            tdName.className = "fw-semibold";
+            tdName.textContent = u.name;
+            tr.appendChild(tdName);
+
+            const tdRole = document.createElement("td");
+            if (u.name !== "admin") {
+              const sel = document.createElement("select");
+              sel.className = "form-select form-select-sm";
+              for (const r of ["user", "admin"]) {
+                const opt = document.createElement("option");
+                opt.value = r; opt.textContent = r;
+                if (r === u.role) opt.selected = true;
+                sel.appendChild(opt);
+              }
+              sel.onchange = async () => {
+                try {
+                  await api("/api/admin/users/" + u.name + "/role", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: sel.value }) });
+                  refresh();
+                } catch (e) { err(e.message); refresh(); }
+              };
+              tdRole.appendChild(sel);
+            } else {
+              tdRole.textContent = "admin";
+            }
+            tr.appendChild(tdRole);
+
+            const td = document.createElement("td");
+            td.className = "text-end";
+            const wrap = document.createElement("div");
+            wrap.className = "d-flex gap-1 justify-content-end";
+            const reset = document.createElement("button");
+            reset.className = "btn btn-sm btn-outline-secondary";
+            reset.textContent = "Reset password";
+            reset.onclick = () => openReset(u.name);
+            wrap.appendChild(reset);
+            if (u.role !== "admin") {
+              const del = document.createElement("button");
+              del.className = "btn btn-sm btn-outline-danger";
+              del.textContent = "Delete";
+              del.onclick = async () => {
+                if (!confirm("Delete user " + u.name + "?")) return;
+                try { await api("/api/admin/users/" + u.name + "/delete", { method: "POST" }); refresh(); }
+                catch (e) { err(e.message); }
+              };
+              wrap.appendChild(del);
+            }
+            td.appendChild(wrap);
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+          }
+        }
+        document.getElementById("create").addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const name = document.getElementById("new-name").value.trim();
+          const password = document.getElementById("new-pass").value;
+          const role = document.getElementById("new-role").value;
+          if (!name || !password) return;
+          try {
+            await api("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, password, role }) });
+            document.getElementById("new-name").value = "";
+            document.getElementById("new-pass").value = "";
+            document.getElementById("new-role").value = "user";
+            refresh();
+          } catch (er) { err(er.message); }
+        });
+        function openReset(name) {
+          resetTarget = name;
+          document.getElementById("reset-pass").value = "";
+          document.getElementById("reset-dlg").showModal();
+        }
+        document.getElementById("reset-ok").onclick = async () => {
+          const password = document.getElementById("reset-pass").value;
+          if (!password) return;
+          try {
+            await api("/api/admin/users/" + resetTarget + "/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+            document.getElementById("reset-dlg").close();
+          } catch (e) { err(e.message); }
+        };
+        document.getElementById("reset-cancel").onclick = () => document.getElementById("reset-dlg").close();
+        refresh();
       </script>
     """
   end
@@ -1192,8 +1809,8 @@ defmodule HomeElixir.Web do
     """
   end
 
-  defp base_html(title, active \\ :flows) do
-    nav = navbar_html(active)
+  defp base_html(title, active, user \\ nil) do
+    nav = navbar_html(active, user)
 
     """
     <!DOCTYPE html>
@@ -1226,10 +1843,11 @@ defmodule HomeElixir.Web do
     """
   end
 
-  # Shared top navbar (all pages) + the light/dark toggle. The toggle persists
-  # to localStorage and fires a `themechange` event pages can listen to.
-  defp navbar_html(active) do
+  # Shared top navbar (all pages) + the light/dark toggle + the logged-in user's
+  # name/role and Log out. Logs, IEx and the Admin page are shown to admins only.
+  defp navbar_html(active, user \\ nil) do
     a = fn key -> if key == active, do: " active", else: "" end
+    admin? = user != nil and elem(user, 1) == "admin"
 
     """
     <nav class="navbar navbar-expand-lg bg-body-tertiary rounded-3 mb-3 px-3">
@@ -1238,9 +1856,11 @@ defmodule HomeElixir.Web do
         <ul class="navbar-nav gap-1 flex-wrap">
           <li class="nav-item"><a class="nav-link#{a.(:flows)}" href="/">Flows</a></li>
           <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="/controls">Controls</a></li>
-          <li class="nav-item"><a class="nav-link#{a.(:logs)}" href="/logs">Logs</a></li>
-          <li class="nav-item"><a class="nav-link#{a.(:iex)}" href="/terminal">IEx</a></li>
+          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:logs)}" href="/logs">Logs</a></li>|, else: ""}
+          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:iex)}" href="/terminal">IEx</a></li>|, else: ""}
+          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:admin)}" href="/admin">Admin</a></li>|, else: ""}
         </ul>
+        #{user_menu_html(user)}
         <button id="theme-toggle" class="btn btn-outline-secondary btn-sm ms-2"></button>
       </div>
     </nav>
@@ -1264,8 +1884,25 @@ defmodule HomeElixir.Web do
           if (!localStorage.getItem("theme")) apply(e.matches ? "light" : "dark");
         });
         label();
+        var lo = document.getElementById("logout");
+        if (lo) lo.onclick = function () {
+          fetch("/api/logout", { method: "POST" }).then(function () { location.href = "/login"; });
+        };
       })();
     </script>
+    """
+  end
+
+  defp user_menu_html(nil), do: ""
+
+  defp user_menu_html({name, role}) do
+    badge = if role == "admin", do: ~s|<span class="badge bg-primary ms-1">admin</span>|, else: ""
+
+    """
+    <span class="navbar-text ms-auto me-2 d-flex align-items-center">
+      #{name}#{badge}
+      <button id="logout" class="btn btn-outline-secondary btn-sm ms-2">Log out</button>
+    </span>
     """
   end
 end

@@ -82,11 +82,11 @@ defmodule HomeElixir.Flow do
                 not Enum.any?(@fe_wires, fn {f, _} -> f == id end),
                 do: {id, "__he_handle__"}
 
-          # State-badge nodes with no incoming wire are fed by the handler,
-          # so a display mirror needs no wiring.
+          # Display nodes (state badges + images) with no incoming wire are fed
+          # by the handler, so a display mirror needs no wiring.
           auto_out =
             for {id, {_mod, config}} <- @fe_nodes,
-                is_map(config) and config[:ui][:type] == "state",
+                is_map(config) and config[:ui][:type] in ["state", "image"],
                 not Enum.any?(@fe_wires, fn {_, t} -> t == id end),
                 do: {"__he_handle__", id}
 

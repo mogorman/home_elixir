@@ -31,3 +31,13 @@ home_elixir-*.tar
 # FlowState Mnesia schema/tables (disk persistence)
 /priv/mnesia/
 
+# Mix release build
+/rel/
+
+# Nix build symlink
+/result
+
+# Editor swap files
+*.swp
+*.swo
+

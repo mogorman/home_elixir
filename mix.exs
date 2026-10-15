@@ -28,12 +28,12 @@ defmodule HomeElixir.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      # :mnesia is NOT in extra_applications: FlowState.start/0 must run before
-      # Mnesia starts (a running RAM-schema Mnesia blocks create_schema on a
-      # fresh install). But its ebin IS shipped in the release (not started),
-      # because FlowState.ensure_mnesia_code/0 locates it under the OTP root,
-      # which is the release dir at runtime (see copy_mnesia_ebin/1).
-      extra_applications: [:logger],
+       # :mnesia is NOT in extra_applications: FlowState.start/0 must run before
+       # Mnesia starts (a running RAM-schema Mnesia blocks create_schema on a
+       # fresh install). But its ebin IS shipped in the release (not started),
+       # because FlowState.ensure_mnesia_code/0 locates it under the OTP root,
+       # which is the release dir at runtime (see copy_mnesia_ebin/1).
+       extra_applications: [:logger],
       mod: {HomeElixir.Application, []}
     ]
   end
@@ -62,7 +62,8 @@ defmodule HomeElixir.MixProject do
       {:plug, "~> 1.18"},
       {:plug_cowboy, "~> 2.7"},
       {:crontab, "~> 1.1"},
-      {:ecto, "~> 3.13"}
+      {:ecto, "~> 3.13"},
+      {:oauth2, "~> 2.1"}
     ]
   end
 end

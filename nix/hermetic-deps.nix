@@ -46,6 +46,10 @@
     url = "https://repo.hex.pm/tarballs/mint_web_socket-1.0.6.tar";
     sha256 = "0c360e9012413f1c115a63532601eb5d63731aab7010949178769760686c1698";
   };
+  "oauth2-2.1.1.tar" = fetchurl {
+    url = "https://repo.hex.pm/tarballs/oauth2-2.1.1.tar";
+    sha256 = "1d5997cb1ff1643dac17076b6c00c91e4381d8389f3c49a8c390984606dad439";
+  };
   "plug-1.20.3.tar" = fetchurl {
     url = "https://repo.hex.pm/tarballs/plug-1.20.3.tar";
     sha256 = "be266aee1b8536ef6409d58cf39a3121319f0ec47cfa1b24024485aa0e76ad76";
@@ -65,6 +69,10 @@
   "telemetry-1.4.2.tar" = fetchurl {
     url = "https://repo.hex.pm/tarballs/telemetry-1.4.2.tar";
     sha256 = "928f6495066506077862c0d1646609eed891a4326bee3126ba54b60af61febb1";
+  };
+  "tesla-1.22.0.tar" = fetchurl {
+    url = "https://repo.hex.pm/tarballs/tesla-1.22.0.tar";
+    sha256 = "35330827f5b804073eda9792d4476b2834315c5e373e79c32d1e5ef08e607c50";
   };
   "websock-0.4.3.tar" = fetchurl {
     url = "https://repo.hex.pm/tarballs/websock-0.4.3.tar";

@@ -121,8 +121,9 @@ defmodule HomeElixir.HA.ClientTest do
     HA.Client.subscribe_events(client, "state_changed", me)
 
     FakeTransport.close(t0)
-    wait_status(client, :disconnected)
 
+    # Wait for the replacement transport; poll_pid_change is race-free here,
+    # unlike a status check that can miss the short :disconnected window.
     t1 = poll_pid_change(client, t0)
     assert t1 != t0
 

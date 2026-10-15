@@ -6,9 +6,8 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
 
   The latch is a stored date, not a boolean: `mail_date == today` is the
   derived state, so it goes false at midnight even if nothing runs then. A
-  spawned sleeper pokes the flow at midnight purely to refresh the badge.
-  (If the VM restarts after the poke was scheduled, the next check refreshes
-  it — correctness never depends on the timer.)
+  nightly cron (a `Schedule` node, `0 0 * * *`) pokes the flow at local
+  midnight purely to refresh the badge; correctness never depends on it.
 
   LLM settings under `:home_elixir` in config/secret.exs (or env):
   `:llm_url`, `:llm_model`, `:llm_api_key`.
@@ -26,7 +25,6 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
 
   def setup do
     HomeElixir.Dep.install([{:req_llm, "~> 1.28"}])
-    schedule_midnight_refresh()
   end
 
   # ---- handler flow: the button click and the midnight poke arrive here ----
@@ -48,8 +46,10 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
 
     case snapshot_b64() do
       {:ok, b64} ->
+        data_url = "data:image/jpeg;base64,#{b64}"
         Logger.info("check: snapshot fetched in #{now_ms() - t0}ms")
-        FlowState.put(:snapshot, "data:image/jpeg;base64,#{b64}")
+        FlowState.put(:snapshot, data_url)
+        push_snapshot(data_url)
         check_answer(ask_llm(b64))
 
       {:error, reason} ->
@@ -102,6 +102,14 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 
+  # Push the fresh snapshot to the UI as soon as it's captured (before the slow
+  # LLM call), so the front-door image updates immediately rather than waiting
+  # for handle/1 to return.
+  defp push_snapshot(data_url) do
+    flow = __MODULE__ |> to_string() |> String.split(".") |> List.last() |> Macro.underscore()
+    HomeElixir.UI.Hub.push(:state, %{flow: flow, node: "snapshot", value: data_url})
+  end
+
   # The model's text answer, ignoring its reasoning/thinking parts.
   defp response_text(response) do
     response.message.content
@@ -148,24 +156,6 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
     Application.get_env(:home_elixir, key, default)
   end
 
-  defp schedule_midnight_refresh do
-    spawn(fn ->
-      case ms_until_local_midnight() do
-        ms when ms > 0 ->
-          Process.sleep(ms)
-
-          HomeElixir.Registry.send_msg(
-            __MODULE__,
-            "check",
-            HomeElixir.Msg.new("midnight", topic: "check")
-          )
-
-        _ ->
-          :ok
-      end
-    end)
-  end
-
   # Machine-local date (this Elixir build dropped Date.today/0 and
   # Calendar.default/0; the VM's :calendar always knows the system zone).
   defp local_today do
@@ -173,30 +163,14 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
     Date.new!(y, m, d)
   end
 
-  defp ms_until_local_midnight do
-    {{y, m, d}, _} = :calendar.local_time()
-    tomorrow = Date.new!(y, m, d) |> Date.add(1)
-
-    # Returns a list (ambiguous local times have two candidates).
-    # ponytail: on a DST transition a local midnight may not exist (empty) —
-    # then the badge just doesn't auto-refresh; the next check does.
-    case :calendar.local_time_to_universal_time_dst(
-           {{tomorrow.year, tomorrow.month, tomorrow.day}, {0, 0, 0}}
-         ) do
-      [midnight_utc | _] ->
-        # This OTP returns seconds (not ms) from universal_time_to_system_time.
-        :calendar.universal_time_to_system_time(midnight_utc) * 1000 -
-          System.system_time(:millisecond)
-
-      [] ->
-        0
-    end
-  end
-
   # Web button (Inject re-emits the click payload into the handler).
   node("check", HomeElixir.Nodes.Inject,
     ui: %{type: "button", label: "Check for mail", payload: "check"}
   )
+
+  # Nightly reset: a cron (wall clock) pokes the flow at local midnight so the
+  # "Mail came today" badge re-derives to false. Replaces the old spawned sleeper.
+  node("midnight", HomeElixir.Nodes.Schedule, cron: "0 0 * * *", payload: "midnight")
 
   # Display badges (this module); no wires needed — unconnected Inject nodes
   # feed the handler, and state-badge nodes are fed by its output.
