@@ -783,7 +783,7 @@ defmodule HomeElixir.Web do
   end
 
   defp html(conn, body) do
-    tag = base_tag(conn.assigns[:base] || "")
+    tag = base_tag(conn)
     body = inject_base(body, tag)
 
     conn
@@ -795,9 +795,16 @@ defmodule HomeElixir.Web do
   # A `<base>` + the JS base constant, injected right after every page's `<head>`
   # so relative URLs (links, scripts, fetch, location) and websockets re-root
   # under the ingress/proxy prefix, or the site root when there is none.
-  # `__BASE__` has no trailing slash (websockets prepend it before the path).
-  defp base_tag(base) do
-    ~s|<base href="#{base}/">\n<script>window.__BASE__ = "#{base}";</script>|
+  # Behind HA ingress the supervisor strips the prefix, so we omit the base tag
+  # entirely — relative URLs then resolve naturally from the browser's URL.
+  defp base_tag(conn) do
+    base = conn.assigns[:base] || ""
+
+    if ingress?(conn) and base == "" do
+      ~s|<script>window.__BASE__ = "";</script>|
+    else
+      ~s|<base href="#{base}/">\n<script>window.__BASE__ = "#{base}";</script>|
+    end
   end
 
   defp inject_base(body, tag) do
