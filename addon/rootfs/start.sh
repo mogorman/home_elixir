@@ -68,7 +68,7 @@ DIRECT_PORT="${HE_DIRECT_PORT:-8080}"
 mkdir -p /etc/nginx/servers
 rm -f /etc/nginx/servers/*.conf
 
-if [ "${direct_port:-false}" = "true" ] || [ "${direct_port:-false}" = "True" ]; then
+if [ "$(opt direct_port)" = "true" ]; then
   cat > /etc/nginx/servers/direct.conf <<EOF
 server {
     listen ${DIRECT_PORT} default_server;
