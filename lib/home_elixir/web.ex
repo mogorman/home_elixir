@@ -2173,6 +2173,33 @@ defmodule HomeElixir.Web do
       <title>#{title} — home_elixir</title>
       <link href="#{@bootstrap}" rel="stylesheet">
       #{theme_script()}
+      <style>
+        :root {
+          --bs-primary: #03a9f4;
+          --bs-primary-rgb: 3,169,244;
+          --bs-link-color: #03a9f4;
+          --bs-link-color-rgb: 3,169,244;
+          --bs-link-hover-color: #0288d1;
+          --bs-border-radius: 0.75rem;
+          --bs-border-radius-lg: 0.75rem;
+          --bs-border-radius-xl: 1rem;
+          --bs-body-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          --bs-body-bg: #f5f5f5;
+          --bs-body-color: #212121;
+        }
+        [data-bs-theme="dark"] {
+          --bs-body-bg: #111111;
+          --bs-body-color: #e0e0e0;
+          --bs-bg-body-tertiary: #1e1e1e;
+        }
+        .navbar { background: var(--bs-bg-body-tertiary, #fff) !important; }
+        [data-bs-theme="dark"] .navbar { background: #1e1e1e !important; }
+        .table { --bs-table-bg: transparent; }
+        .card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .btn-primary { --bs-btn-bg: #03a9f4; --bs-btn-border-color: #03a9f4; --bs-btn-hover-bg: #0288d1; --bs-btn-hover-border-color: #0288d1; --bs-btn-active-bg: #0277bd; }
+        .nav-link { color: var(--bs-body-color); opacity: 0.7; }
+        .nav-link.active, .nav-link:hover { opacity: 1; color: #03a9f4; }
+      </style>
     </head>
     <body class="p-3">
     #{nav}
