@@ -66,12 +66,13 @@ cat > /config/config.json <<EOF
 }
 EOF
 
-# ---- render nginx (one direct port, no auth layer; the app handles login) ----
+# ---- render nginx ----
 DIRECT_PORT="${HE_DIRECT_PORT:-8080}"
 mkdir -p /etc/nginx/servers
 rm -f /etc/nginx/servers/*.conf
 
-cat > /etc/nginx/servers/direct.conf <<EOF
+if [ "${direct_port:-false}" = "true" ] || [ "${direct_port:-false}" = "True" ]; then
+  cat > /etc/nginx/servers/direct.conf <<EOF
 server {
     listen ${DIRECT_PORT} default_server;
     listen [::]:${DIRECT_PORT} default_server;
@@ -82,6 +83,10 @@ server {
     }
 }
 EOF
+  echo "[start] direct port enabled on :${DIRECT_PORT}"
+else
+  echo "[start] direct port disabled (set direct_port=true in options to enable)"
+fi
 
 # ---- ingress (embedded HA sidebar panel) ----
 # The supervisor proxies /api/ingress/<uuid>/… to this port, preserving the
