@@ -48,7 +48,8 @@ cat > /config/config.json <<EOF
     "web_port": 4000,
     "flows_dir": "/config/flows",
     "node_name": "home_elixir",
-    "node_cookie": "home_elixir"${ha_field}${auth_field}
+    "node_cookie": "home_elixir",
+    "flow_state_disc": true${ha_field}${auth_field}
   },
   "mnesia": { "dir": "/config/mnesia" }
 }
