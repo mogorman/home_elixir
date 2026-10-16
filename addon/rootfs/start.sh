@@ -27,12 +27,13 @@ if [ ! -f /config/.flows-seeded ]; then
 fi
 
 # HA: in-HA, connect to this HA with the supervisor token. No user option.
-# Without host_network, HA is not at 127.0.0.1 — derive the host IP from the
-# SUPERVISOR env var (e.g. ws://172.30.32.2:8080 → HA at 172.30.32.2:8123).
+# Derive the host IP from the SUPERVISOR env var when available; fall back
+# to 127.0.0.1 (works on older HA with host_network or same-namespace setups).
 ha_field=""
 if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
   export HA_TOKEN="${SUPERVISOR_TOKEN}"
-  ha_host=$(printf '%s' "${SUPERVISOR#*//}" | cut -d/ -f1 | cut -d: -f1)
+  ha_host=$(printf '%s' "${SUPERVISOR:-}" | sed 's|.*//||' | cut -d: -f1 2>/dev/null)
+  [ -z "$ha_host" ] && ha_host="127.0.0.1"
   ha_field=', "ha_url": "ws://'"${ha_host}"':8123/api/websocket"'
 fi
 
