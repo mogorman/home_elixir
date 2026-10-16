@@ -36,9 +36,6 @@ fi
 
 # Optional admin password (the app's single login). Empty -> the app generates
 # one and prints it to the log on first start.
-auth_field=""
-admin_pw="$(opt admin_password)"
-[ -n "$admin_pw" ] && auth_field=", \"auth_users\": [[\"admin\", \"${admin_pw}\", \"admin\"]]"
 
 # Optional web base URL (external URL for OAuth redirects). Empty -> app default.
 url_field=""
@@ -57,7 +54,7 @@ cat > /config/config.json <<EOF
     "web_port": 4000,
     "flows_dir": "/config/flows",
     "node_name": "home_elixir",
-    "node_cookie": "home_elixir"${ha_field}${auth_field}${url_field}${ha_ext_field}
+    "node_cookie": "home_elixir"${ha_field}${url_field}${ha_ext_field}
   },
   "mnesia": { "dir": "/config/mnesia" }
 }
