@@ -3,8 +3,11 @@
 #   --build-arg RELEASE_IMAGE=home-elixir-release:local
 ARG RELEASE_IMAGE=ghcr.io/mogorman/home-elixir-release:0.1.0
 ARG RUNTIME_IMAGE=debian:trixie-slim
+ARG ELIXIR_IMAGE=elixir:1.20.4
 
 FROM ${RELEASE_IMAGE} AS release
+FROM ${ELIXIR_IMAGE} AS elixir-tools
+RUN mix local.hex --force && mix local.rebar --force
 
 FROM ${RUNTIME_IMAGE}
 RUN apt-get update \
@@ -13,6 +16,13 @@ RUN apt-get update \
 
 # The self-contained release (standard glibc, portable).
 COPY --from=release /opt/home-elixir /opt/home-elixir
+
+# Elixir toolchain for runtime dep installation (mix deps.get/compile).
+COPY --from=elixir-tools /usr/local/lib/elixir /usr/local/lib/elixir
+COPY --from=elixir-tools /usr/local/bin/elixir /usr/local/bin/elixir
+COPY --from=elixir-tools /usr/local/bin/mix /usr/local/bin/mix
+COPY --from=elixir-tools /usr/local/bin/rebar3 /usr/local/bin/rebar3
+COPY --from=elixir-tools /root/.mix /root/.mix
 
 # bashio (Supervisor option/port discovery) + the app's nginx front.
 COPY vendor/lib/bashio /usr/local/lib/bashio

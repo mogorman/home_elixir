@@ -167,13 +167,16 @@ defmodule HomeElixir.Dep do
   end
 
   defp mix!(dir, args) do
-    # Blank out the node flags: System.cmd's env only overrides (never unsets),
-    # and the subprocess BEAM must not inherit the app's node name (ERL_AFLAGS)
-    # or it exits on a node-name collision before doing anything.
+    # Blank out the node flags and ERL paths: the subprocess BEAM must use the
+    # standard OTP installation (/usr/local/lib/elixir), not the release's VM
+    # (which expects release-specific boot files).
     env =
       System.get_env()
       |> Map.put("ERL_AFLAGS", "")
       |> Map.put("ERL_ARGS", "")
+      |> Map.put("ERL_LIBS", "")
+      |> Map.put("ERL_ROOT", "/usr/local/lib/elixir")
+      |> Map.put("PATH", "/usr/local/lib/elixir/bin:/usr/local/bin:" <> (System.get_env("PATH") || ""))
 
     # stderr_to_stdout: mix/BEAM write failures to stderr; without this the
     # error message below is empty.
