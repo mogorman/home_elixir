@@ -79,24 +79,16 @@ EOF
 # ---- ingress (embedded HA sidebar panel) - in-HA only ----
 # The supervisor proxies /api/ingress/<uuid>/… to this interface, preserving the
 # path; the app detects that prefix from the request and re-roots its URLs. The
-# proxy passes the path through unchanged (no rewrite). Restricted to the
-# supervisor (+localhost); the app's own login is the real gate.
+# proxy passes the path through unchanged (no rewrite). The port is not exposed
+# externally (not in config.yaml ports); the app's own login is the real gate.
 if [ "$in_ha" = true ]; then
   INGRESS_PORT=8090   # must match ingress_port in addon/config.yaml
-  allow_lines="        allow 127.0.0.1;
-        allow 172.30.32.2;"
-  sup_ip=""
-  case "${SUPERVISOR:-}" in *//*) sup_ip=$(printf '%s' "${SUPERVISOR#*://}" | cut -d/ -f1 | cut -d: -f1);; esac
-  [ -n "$sup_ip" ] && [ "$sup_ip" != "172.30.32.2" ] && allow_lines="${allow_lines}
-        allow ${sup_ip};"
   cat > /etc/nginx/servers/ingress.conf <<EOF
 server {
     listen 0.0.0.0:${INGRESS_PORT} default_server;
     listen [::]:${INGRESS_PORT} default_server;
     include /etc/nginx/includes/server_params.conf;
     location / {
-${allow_lines}
-        deny  all;
         include /etc/nginx/includes/proxy_params.conf;
         proxy_pass http://backend;
     }
