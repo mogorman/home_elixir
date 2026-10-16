@@ -59,6 +59,11 @@ defmodule HomeElixir.Auth do
       {:aborted, {:already_exists, _}} -> :ok
       {:aborted, reason} -> raise "Auth: mnesia create_table failed: #{inspect(reason)}"
     end
+
+    case :mnesia.wait_for_tables([@table], 10_000) do
+      :ok -> :ok
+      other -> raise "Auth: mnesia table #{@table} not ready: #{inspect(other)}"
+    end
   end
 
   defp ensure_sessions do

@@ -48,8 +48,7 @@ cat > /config/config.json <<EOF
     "web_port": 4000,
     "flows_dir": "/config/flows",
     "node_name": "home_elixir",
-    "node_cookie": "home_elixir",
-    "flow_state_disc": true${ha_field}${auth_field}
+    "node_cookie": "home_elixir"${ha_field}${auth_field}
   },
   "mnesia": { "dir": "/config/mnesia" }
 }
@@ -101,6 +100,24 @@ EOF
 fi
 
 echo "home-elixir starting (in_ha=${in_ha} ha=${ha_field:+yes} direct_port=${DIRECT_PORT} ingress=${in_ha})"
+
+# Clean shutdown. HA/docker send SIGTERM to this shell (PID 1) on stop; without
+# a trap the app + nginx are never told to stop and get SIGKILLed, so Mnesia
+# never commits its disc tables (often-empty ones included) -> {:no_exists, _}
+# on the next boot. Forward SIGTERM to the app so the release halts cleanly
+# (MnesiaGuard then :mnesia.stop()s and flushes), and wait for it to finish.
+cleanup() {
+  echo "home-elixir: stopping cleanly"
+  [ -n "${NGINX:-}" ] && kill "$NGINX" 2>/dev/null
+  [ -n "${APP:-}" ] && kill -TERM "$APP" 2>/dev/null
+  for _ in $(seq 1 25); do
+    { [ -z "${APP:-}" ] || ! kill -0 "$APP" 2>/dev/null; } && break
+    sleep 1
+  done
+  [ -n "${APP:-}" ] && kill -KILL "$APP" 2>/dev/null
+  exit 0
+}
+trap cleanup SIGTERM SIGINT
 
 # ---- run app + nginx, keep alive ----
 /opt/home-elixir/bin/home_elixir start &

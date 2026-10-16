@@ -40,9 +40,6 @@ defmodule HomeElixir.FlowState do
   def start do
     ensure_mnesia_code()
 
-    # Only in disc mode — pointing the dir at a real location makes Mnesia try
-    # a disc schema even on nonode@nohost, which leaves it half-started.
-    # Charlist, not binary: Mnesia's lists:concat rejects binaries.
     if disc?() do
       Application.put_env(:mnesia, :dir, mnesia_dir())
     end
@@ -54,7 +51,7 @@ defmodule HomeElixir.FlowState do
       end
     end
 
-    :mnesia.start()
+    start_mnesia!()
 
     opts =
       if disc?() do
@@ -68,6 +65,44 @@ defmodule HomeElixir.FlowState do
       {:aborted, {:already_exists, _}} -> :ok
       {:aborted, reason} -> raise "FlowState: mnesia create_table failed: #{inspect(reason)}"
     end
+
+    # Late disc load is async; block until the table is actually readable.
+    case :mnesia.wait_for_tables([@table], 10_000) do
+      :ok -> :ok
+      other -> raise "FlowState: mnesia table #{@table} not ready: #{inspect(other)}"
+    end
+  end
+
+  # Clean shutdown — flushes disc tables so the next boot recovers cleanly.
+  def stop do
+    if :application.started_applications() |> Enum.member?({:mnesia, "mnesia"}) do
+      :mnesia.stop()
+    end
+
+    :ok
+  end
+
+  # Start Mnesia; if the disc schema is corrupted (DETS badarg after an unclean
+  # kill), nuke the dir and retry fresh.
+  defp start_mnesia! do
+    try do
+      :mnesia.start()
+    catch
+      :exit, reason ->
+        if disc?() and dets_corruption?(reason) do
+          require Logger
+          Logger.warning("FlowState: mnesia disc schema corrupted, resetting: #{inspect(reason)}")
+          File.rm_rf!(mnesia_dir())
+          :mnesia.create_schema([node()])
+          :mnesia.start()
+        else
+          :erlang.raise(:error, __STACKTRACE__, "FlowState: mnesia.start failed: #{inspect(reason)}")
+        end
+    end
+  end
+
+  defp dets_corruption?(reason) do
+    inspect(reason) =~ "dets" or inspect(reason) =~ "schema.DAT"
   end
 
   # Mnesia is not a managed app (it must not auto-start before this runs), so

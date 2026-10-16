@@ -92,6 +92,11 @@ defmodule HomeElixir.Application do
     end
   end
 
+  @impl true
+  def terminate(_type, _state) do
+    HomeElixir.FlowState.stop()
+  end
+
   defp parse_ip(host) do
     host |> String.split(".") |> Enum.map(&String.to_integer/1) |> List.to_tuple()
   end
