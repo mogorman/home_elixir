@@ -41,6 +41,11 @@ auth_field=""
 admin_pw="$(opt admin_password)"
 [ -n "$admin_pw" ] && auth_field=", \"auth_users\": [[\"admin\", \"${admin_pw}\", \"admin\"]]"
 
+# Optional web base URL (external URL for OAuth redirects). Empty -> app default.
+url_field=""
+web_url="$(opt web_base_url)"
+[ -n "$web_url" ] && url_field=", \"web_base_url\": \"${web_url}\""
+
 cat > /config/config.json <<EOF
 {
   "home_elixir": {
@@ -48,7 +53,7 @@ cat > /config/config.json <<EOF
     "web_port": 4000,
     "flows_dir": "/config/flows",
     "node_name": "home_elixir",
-    "node_cookie": "home_elixir"${ha_field}${auth_field}
+    "node_cookie": "home_elixir"${ha_field}${auth_field}${url_field}
   },
   "mnesia": { "dir": "/config/mnesia" }
 }

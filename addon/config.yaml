@@ -27,5 +27,7 @@ map:
   - addon_config:rw
 options:
   admin_password: ""
+  web_base_url: ""
 schema:
   admin_password: str?
+  web_base_url: str?
