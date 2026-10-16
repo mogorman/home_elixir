@@ -19,12 +19,13 @@ COPY --from=release /opt/home-elixir /opt/home-elixir
 
 # Elixir toolchain for runtime dep installation (mix deps.get/compile).
 COPY --from=elixir-tools /usr/local/lib/elixir /usr/local/lib/elixir
+COPY --from=elixir-tools /usr/local/lib/erlang /usr/local/lib/erlang
 COPY --from=elixir-tools /usr/local/bin/elixir /usr/local/bin/elixir
 COPY --from=elixir-tools /usr/local/bin/mix /usr/local/bin/mix
 COPY --from=elixir-tools /usr/local/bin/rebar3 /usr/local/bin/rebar3
 COPY --from=elixir-tools /root/.mix /root/.mix
 # Pin erl to the standard OTP (not the release's VM which expects release boot files).
-RUN printf '#!/bin/sh\nexec /usr/local/lib/elixir/bin/erl "$@"\n' > /usr/local/bin/erl && chmod +x /usr/local/bin/erl
+RUN printf '#!/bin/sh\nexec /usr/local/lib/erlang/bin/erl "$@"\n' > /usr/local/bin/erl && chmod +x /usr/local/bin/erl
 
 # bashio (Supervisor option/port discovery) + the app's nginx front.
 COPY vendor/lib/bashio /usr/local/lib/bashio
