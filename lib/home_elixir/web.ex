@@ -107,8 +107,12 @@ defmodule HomeElixir.Web do
   def dispatch(%{method: "GET", request_path: "/archived"} = conn, _opts),
     do: html(conn, list_page(cur(conn), :archived))
 
-  def dispatch(%{method: "GET", request_path: "/api/flows"} = conn, _opts),
-    do: json(conn, visible_flows(conn, HomeElixir.FlowStore.list()))
+  def dispatch(%{method: "GET", request_path: "/api/flows"} = conn, _opts) do
+    case HomeElixir.FlowStore.list() do
+      flows -> json(conn, visible_flows(conn, flows))
+      :timeout -> json(conn, %{"busy" => true, "message" => "Installing flow dependencies…"})
+    end
+  end
 
   def dispatch(%{method: "GET", request_path: "/api/me"} = conn, _opts) do
     case cur(conn) do
@@ -1341,8 +1345,12 @@ defmodule HomeElixir.Web do
         }
         async function refresh() {
           const all = await (await fetch("api/flows")).json();
-          const flows = MODE === "archived" ? all.filter((f) => f.archived) : all.filter((f) => !f.archived);
           const tbody = document.getElementById("flows");
+          if (all && all.busy) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">${all.message || "Loading…"}</td></tr>`;
+            return;
+          }
+          const flows = MODE === "archived" ? all.filter((f) => f.archived) : all.filter((f) => !f.archived);
           tbody.innerHTML = "";
           renderNode(buildTree(flows), 0, tbody);
           updateSortHeaders();

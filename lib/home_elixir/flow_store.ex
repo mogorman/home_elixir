@@ -27,7 +27,13 @@ defmodule HomeElixir.FlowStore do
   end
 
   @doc "All flow files in the flows dir, each with its name, path, module, and loaded state."
-  def list, do: call(:list)
+  def list do
+    try do
+      GenServer.call(server(), :list)
+    catch
+      :exit, {:timeout, {GenServer, :call, _}} -> :timeout
+    end
+  end
 
   @doc "Compile a flow from disk and start it (runs its `setup/0`, if any)."
   def load(name), do: call({:load, name}, @install_timeout)
