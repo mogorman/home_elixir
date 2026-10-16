@@ -27,14 +27,11 @@ if [ ! -f /config/.flows-seeded ]; then
 fi
 
 # HA: in-HA, connect to this HA with the supervisor token. No user option.
-# Derive the host IP from the SUPERVISOR env var when available; fall back
-# to 127.0.0.1 (works on older HA with host_network or same-namespace setups).
+# HA: with host_network=true, HA is at 127.0.0.1:8123.
 ha_field=""
 if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
   export HA_TOKEN="${SUPERVISOR_TOKEN}"
-  ha_host=$(printf '%s' "${SUPERVISOR:-}" | sed 's|.*//||' | cut -d: -f1 2>/dev/null)
-  [ -z "$ha_host" ] && ha_host="127.0.0.1"
-  ha_field=', "ha_url": "ws://'"${ha_host}"':8123/api/websocket"'
+  ha_field=', "ha_url": "ws://127.0.0.1:8123/api/websocket"'
 fi
 
 # Optional admin password (the app's single login). Empty -> the app generates

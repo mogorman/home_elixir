@@ -25,13 +25,17 @@ defmodule HomeElixir.HA.Transport.Mint do
     owner = Keyword.get(opts, :owner)
     url = Keyword.fetch!(opts, :url)
 
-    with {:ok, t_scheme, ws_scheme, host, port, path} <- parse_url(url),
-         {:ok, conn} <- Mint.HTTP.connect(t_scheme, host, port, connect_opts(t_scheme)),
-         {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, []) do
-      {:ok, %{owner: owner, conn: conn, ref: ref, ws: nil}, {:continue, :handshake}}
-    else
-      {:error, _conn, reason} -> {:stop, {:connect_error, reason}}
-      {:error, reason} -> {:stop, {:connect_error, reason}}
+    try do
+      with {:ok, t_scheme, ws_scheme, host, port, path} <- parse_url(url),
+           {:ok, conn} <- Mint.HTTP.connect(t_scheme, host, port, connect_opts(t_scheme)),
+           {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, []) do
+        {:ok, %{owner: owner, conn: conn, ref: ref, ws: nil}, {:continue, :handshake}}
+      else
+        {:error, _conn, reason} -> {:stop, {:connect_error, reason}}
+        {:error, reason} -> {:stop, {:connect_error, reason}}
+      end
+    rescue
+      e -> {:stop, {:connect_error, Exception.message(e)}}
     end
   end
 
