@@ -156,6 +156,19 @@ defmodule HomeElixir.Auth do
 
   # ---- login (callable from any process) ----
 
+  @doc "Auto-authenticate a user from HA ingress (X-Remote-User-Name). Creates them if new."
+  def ensure_ha_user(name) do
+    case read_user(name) do
+      {_name, _salt, _hash, role} -> {name, role}
+      _ ->
+        # New HA user — create with admin role (HA owner = add-on admin)
+        case create(name, :crypto.strong_rand_bytes(16) |> Base.encode64(), "admin") do
+          {:ok, _} -> {name, "admin"}
+          {:error, _} -> {name, "admin"}
+        end
+    end
+  end
+
   @doc "Verify a local username/password; returns `{:ok, {username, role}}`."
   def login(username, password) do
     case read_user(username) do

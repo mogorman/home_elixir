@@ -16,20 +16,34 @@ defmodule HomeElixir.AuthGuard do
     conn = Plug.Conn.fetch_cookies(conn)
     inner = HomeElixir.Web.init(opts)
 
-    # The app may be served under an ingress/proxy prefix (/api/ingress/<uuid>/).
-    # Judge public-ness and the 401-vs-login choice on the prefix-less path; the
-    # prefix is only re-added to the login redirect. Web re-detects + strips it
-    # when it renders.
     base = HomeElixir.Web.base_path(conn.request_path)
     rel = if base == "", do: conn.request_path, else: String.replace_prefix(conn.request_path, base, "")
 
     if public?(rel) do
       HomeElixir.Web.call(conn, inner)
     else
-      case HomeElixir.Auth.user_from_conn(conn) do
-        {:ok, user} -> HomeElixir.Web.call(conn |> assign(:user, user), inner)
+      user =
+        case HomeElixir.Auth.user_from_conn(conn) do
+          {:ok, user} -> user
+          _ -> ha_ingress_user(conn)
+        end
+
+      case user do
+        {name, role} -> HomeElixir.Web.call(conn |> assign(:user, {name, role}), inner)
         _ -> reject(conn, base, rel)
       end
+    end
+  end
+
+  # HA's ingress proxy adds X-Remote-User-Name to every request it forwards.
+  # Trust it (only reachable via the supervisor) and auto-authenticate.
+  defp ha_ingress_user(conn) do
+    case get_req_header(conn, "x-remote-user-name") do
+      [name | _] when name != "" ->
+        HomeElixir.Auth.ensure_ha_user(name)
+
+      _ ->
+        nil
     end
   end
 
