@@ -32,6 +32,9 @@ ha_field=""
 if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
   export HA_TOKEN="${SUPERVISOR_TOKEN}"
   ha_field=', "ha_url": "ws://127.0.0.1:8123/api/websocket"'
+  echo "[start] HA configured: ws://127.0.0.1:8123 (token ${#SUPERVISOR_TOKEN} chars)"
+else
+  echo "[start] HA not configured (no SUPERVISOR_TOKEN)"
 fi
 
 # Optional admin password (the app's single login). Empty -> the app generates
