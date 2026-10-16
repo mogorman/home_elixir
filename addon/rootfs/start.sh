@@ -26,18 +26,19 @@ if [ ! -f /config/.flows-seeded ]; then
   touch /config/.flows-seeded
 fi
 
-# HA: prefer the ha_token option (long-lived access token); fall back to
-# SUPERVISOR_TOKEN (won't work for the HA WebSocket, but keep for compat).
+# HA: connect through the Supervisor proxy (like Music Assistant).
+# SUPERVISOR_TOKEN authenticates against the Supervisor, which proxies to HA Core.
+# ha_token option (long-lived access token) overrides if set.
 ha_field=""
 ha_opt="$(opt ha_token)"
 if [ -n "$ha_opt" ]; then
   export HA_TOKEN="$ha_opt"
-  ha_field=', "ha_url": "ws://127.0.0.1:8123/api/websocket"'
-  echo "[start] HA configured with ha_token option (${#ha_opt} chars)"
+  ha_field=', "ha_url": "ws://supervisor/core/api/websocket"'
+  echo "[start] HA configured with ha_token option (${#ha_opt} chars) via supervisor proxy"
 elif [ -n "${SUPERVISOR_TOKEN:-}" ]; then
   export HA_TOKEN="${SUPERVISOR_TOKEN}"
-  ha_field=', "ha_url": "ws://127.0.0.1:8123/api/websocket"'
-  echo "[start] HA configured with SUPERVISOR_TOKEN (${#SUPERVISOR_TOKEN} chars) - WARNING: may not work for HA WebSocket"
+  ha_field=', "ha_url": "ws://supervisor/core/api/websocket"'
+  echo "[start] HA configured with SUPERVISOR_TOKEN (${#SUPERVISOR_TOKEN} chars) via supervisor proxy"
 else
   echo "[start] HA not configured (no ha_token or SUPERVISOR_TOKEN)"
 fi
