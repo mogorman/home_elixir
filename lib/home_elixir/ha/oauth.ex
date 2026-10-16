@@ -54,15 +54,16 @@ defmodule HomeElixir.HA.OAuth do
   # ---- internals ----
 
   defp client(base, state) do
-    # The authorize/token endpoints live on the HA origin (`base`); but the
-    # client_id is our own web origin — HA keys local OAuth clients by the
-    # calling app's URL and issues no secret for it.
+    # The authorize/token endpoints must be reachable by the BROWSER, so use
+    # the external HA URL (config :ha_external_url) when set; fall back to the
+    # internal rest_base for non-reverse-proxy setups.
     origin = HomeElixir.HA.web_base_url()
+    ext = Application.get_env(:home_elixir, :ha_external_url) || base
 
     %OAuth2.Client{
       strategy: HomeElixir.HA.OAuthStrategy,
-      authorize_url: base <> "/auth/authorize",
-      token_url: base <> "/auth/token",
+      authorize_url: ext <> "/auth/authorize",
+      token_url: ext <> "/auth/token",
       client_id: origin,
       client_secret: "",
       redirect_uri: origin <> "/oauth/callback",

@@ -46,6 +46,11 @@ url_field=""
 web_url="$(opt web_base_url)"
 [ -n "$web_url" ] && url_field=", \"web_base_url\": \"${web_url}\""
 
+# Optional external HA URL (for OAuth authorize/token reachable by browser).
+ha_ext_field=""
+ha_ext="$(opt ha_external_url)"
+[ -n "$ha_ext" ] && ha_ext_field=", \"ha_external_url\": \"${ha_ext}\""
+
 cat > /config/config.json <<EOF
 {
   "home_elixir": {
@@ -53,7 +58,7 @@ cat > /config/config.json <<EOF
     "web_port": 4000,
     "flows_dir": "/config/flows",
     "node_name": "home_elixir",
-    "node_cookie": "home_elixir"${ha_field}${auth_field}${url_field}
+    "node_cookie": "home_elixir"${ha_field}${auth_field}${url_field}${ha_ext_field}
   },
   "mnesia": { "dir": "/config/mnesia" }
 }

@@ -1,6 +1,6 @@
 ---
 name: HomeElixir
-version: 0.1.12
+version: 0.1.13
 slug: home-elixir
 description: Node-RED-style Elixir flow engine for Home Assistant
 url: https://github.com/mogorman/home_elixir
@@ -28,6 +28,8 @@ map:
 options:
   admin_password: ""
   web_base_url: ""
+  ha_external_url: ""
 schema:
   admin_password: str?
   web_base_url: str?
+  ha_external_url: str?
