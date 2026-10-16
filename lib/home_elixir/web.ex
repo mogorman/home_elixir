@@ -59,12 +59,18 @@ defmodule HomeElixir.Web do
     end
   end
 
+  # Behind HA ingress the supervisor strips the prefix, so absolute paths
+  # (/login, /) escape to the HA root. Use relative paths instead.
+  def ingress?(conn), do: get_req_header(conn, "x-ingress") != []
+  def home_path(conn), do: if(ingress?(conn), do: ".", else: "/")
+  def login_path(conn), do: if(ingress?(conn), do: "login", else: "/login")
+
   # ---- GET ----
 
   # Public (bypasses the guard): shown when not logged in, redirects when logged in.
   def dispatch(%{method: "GET", request_path: "/login"} = conn, _opts) do
     case HomeElixir.Auth.user_from_conn(conn) do
-      {:ok, _} -> redirect(conn, to: "/")
+      {:ok, _} -> redirect(conn, to: home_path(conn))
       _ -> html(conn, login_page())
     end
   end
@@ -507,17 +513,17 @@ defmodule HomeElixir.Web do
 
         conn
         |> put_resp_cookie(HomeElixir.Auth.cookie_name(), session, cookie_opts())
-        |> redirect(to: "/")
+        |> redirect(to: home_path(conn))
 
       err ->
         Logger.warning("oauth: token ok but identity failed: #{inspect(err)}")
-        redirect(conn, to: "/login")
+        redirect(conn, to: login_path(conn))
     end
   end
 
   defp finish_oauth(conn, {:error, reason}) do
     Logger.warning("oauth: complete_login failed: #{inspect(reason)}")
-    redirect(conn, to: "/login")
+    redirect(conn, to: login_path(conn))
   end
 
   defp logout_endpoint(conn) do
@@ -1903,7 +1909,7 @@ defmodule HomeElixir.Web do
           document.getElementById("error").textContent = "";
           fetch("api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) })
             .then(async (r) => {
-              if (r.ok) { location.href = __BASE__ + "/"; }
+              if (r.ok) { location.href = __BASE__ || "."; }
               else { const e = await r.json().catch(() => ({})); document.getElementById("error").textContent = e.error || "login failed"; }
             })
             .catch(() => (document.getElementById("error").textContent = "network error"));
@@ -2065,7 +2071,7 @@ defmodule HomeElixir.Web do
         return real(input, init).then((res) => {
           const url = typeof input === "string" ? input : (input && input.url) || "";
           if (res.status === 401 && url.indexOf("api/") === 0 && url.indexOf("api/login") < 0) {
-            location.href = __BASE__ + "/login";
+            location.href = __BASE__ ? __BASE__ + "/login" : "login";
           }
           return res;
         });
@@ -2217,7 +2223,7 @@ defmodule HomeElixir.Web do
         label();
         var lo = document.getElementById("logout");
         if (lo) lo.onclick = function () {
-          fetch("api/logout", { method: "POST" }).then(function () { location.href = __BASE__ + "/login"; });
+          fetch("api/logout", { method: "POST" }).then(function () { location.href = __BASE__ ? __BASE__ + "/login" : "login"; });
         };
       })();
     </script>

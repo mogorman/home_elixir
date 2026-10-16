@@ -89,6 +89,7 @@ server {
     access_log /proc/1/fd/1;
     location / {
         include /etc/nginx/includes/proxy_params.conf;
+        proxy_set_header X-Ingress true;
         proxy_pass http://backend;
     }
 }

@@ -43,9 +43,21 @@ defmodule HomeElixir.AuthGuard do
       |> put_resp_content_type("application/json")
       |> send_resp(401, ~s|{"error":"unauthorized"}|)
     else
+      # Behind HA ingress the supervisor strips the /api/ingress/<uuid> prefix,
+      # so an absolute /login redirect escapes to the HA root. Use a relative
+      # redirect so the browser stays within the ingress path.
+      location =
+        if ingress?(conn) do
+          "login"
+        else
+          base <> "/login"
+        end
+
       conn
-      |> put_resp_header("location", base <> "/login")
+      |> put_resp_header("location", location)
       |> send_resp(302, "")
     end
   end
+
+  defp ingress?(conn), do: get_req_header(conn, "x-ingress") != []
 end
