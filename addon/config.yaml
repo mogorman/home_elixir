@@ -1,0 +1,36 @@
+---
+name: HomeElixir
+version: 0.1.0
+slug: home-elixir
+description: Node-RED-style Elixir flow engine for Home Assistant
+url: https://github.com/mogorman/home_elixir
+# Pre-built, self-contained image (release + nginx + init). HA pulls this
+# instead of building; CI rebuilds + re-pushes per tag (see Phase 3).
+image: ghcr.io/mogorman/home-elixir:0.1.0
+arch:
+  - amd64
+homeassistant: "2023.3.0"
+ingress: true
+ingress_port: 8090
+panel_icon: mdi:swap-horizontal
+hassio_api: true
+homeassistant_api: true
+host_network: true
+ports:
+  80/tcp: 8080
+ports_description:
+  80/tcp: Web interface (direct access)
+map:
+  - addon_config:rw
+options:
+  ha_url: ""
+  ssl: false
+  certfile: fullchain.pem
+  keyfile: privkey.pem
+  leave_front_door_open: false
+schema:
+  ha_url: str?
+  ssl: bool
+  certfile: str
+  keyfile: str
+  leave_front_door_open: bool

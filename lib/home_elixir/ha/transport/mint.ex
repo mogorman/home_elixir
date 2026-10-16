@@ -26,7 +26,7 @@ defmodule HomeElixir.HA.Transport.Mint do
     url = Keyword.fetch!(opts, :url)
 
     with {:ok, t_scheme, ws_scheme, host, port, path} <- parse_url(url),
-         {:ok, conn} <- Mint.HTTP.connect(t_scheme, host, port, protocols: [:http1]),
+         {:ok, conn} <- Mint.HTTP.connect(t_scheme, host, port, connect_opts(t_scheme)),
          {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, []) do
       {:ok, %{owner: owner, conn: conn, ref: ref, ws: nil}, {:continue, :handshake}}
     else
@@ -166,6 +166,35 @@ defmodule HomeElixir.HA.Transport.Mint do
           %{st | ws: ws}
       end
     end)
+  end
+
+  # TLS (wss://) must verify the peer against a CA bundle. A self-contained
+  # release doesn't ship OTP's built-in cacerts, so load the system bundle.
+  defp connect_opts(:https) do
+    [protocols: [:http1], transport_opts: [cacerts: system_cacerts()]]
+  end
+
+  defp connect_opts(_), do: [protocols: [:http1]]
+
+  defp system_cacerts do
+    case Enum.find(
+           [
+             "/etc/ssl/certs/ca-certificates.crt",
+             "/etc/pki/tls/certs/ca-bundle.crt",
+             "/etc/ssl/cert.pem"
+           ],
+           &File.exists?/1
+         ) do
+      nil ->
+        []
+
+      path ->
+        path
+        |> File.read!()
+        |> :public_key.pem_decode()
+        |> Enum.filter(fn {tag, _, _} -> tag == :Certificate end)
+        |> Enum.map(fn {_, der, _} -> der end)
+    end
   end
 
   defp parse_url(url) do

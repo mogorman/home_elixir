@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Home Assistant Community Apps: Bashio
+# Bashio is a bash function library for use with Home Assistant apps.
+#
+# It contains a set of commonly used operations and can be used
+# to be included in app scripts to reduce code duplication across apps.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Returns a JSON object with hardware information about the system.
+#
+# Arguments:
+#   $1 Cache key to store results in (optional)
+#   $2 jq Filter to apply on the result (optional)
+# ------------------------------------------------------------------------------
+function bashio::hardware() {
+    local cache_key=${1:-'hardware.info'}
+    local filter=${2:-}
+    local info
+    local response
+
+    bashio::log.trace "${FUNCNAME[0]}" "$@"
+
+    if bashio::cache.exists "${cache_key}"; then
+        # The base key holds the unfiltered blob, so only serve it from the
+        # cache when no filter is requested; a filtered call must recompute.
+        if [[ "${cache_key}" != 'hardware.info' ]] ||
+            ! bashio::var.has_value "${filter}"; then
+            bashio::cache.get "${cache_key}"
+            return "${__BASHIO_EXIT_OK}"
+        fi
+    fi
+
+    if bashio::cache.exists 'hardware.info'; then
+        info=$(bashio::cache.get 'hardware.info')
+    else
+        info=$(bashio::api.supervisor GET /hardware/info false)
+        if [ "$?" -ne "${__BASHIO_EXIT_OK}" ]; then
+            bashio::log.error "Failed to get hardware info from Supervisor API"
+            return "${__BASHIO_EXIT_NOK}"
+        fi
+        bashio::cache.set 'hardware.info' "${info}"
+    fi
+
+    response="${info}"
+    if bashio::var.has_value "${filter}"; then
+        response=$(bashio::jq "${info}" "${filter}")
+        if [ "$?" -ne "${__BASHIO_EXIT_OK}" ]; then
+            bashio::log.error "Failed to execute the jq filter"
+            return "${__BASHIO_EXIT_NOK}"
+        fi
+    fi
+
+    # Never overwrite the base blob with a filtered result: the
+    # base blob is already cached above, so only cache under a distinct
+    # caller-provided key.
+    if [[ "${cache_key}" != 'hardware.info' ]]; then
+        bashio::cache.set "${cache_key}" "${response}"
+    fi
+    printf "%s" "${response}"
+
+    return "${__BASHIO_EXIT_OK}"
+}
+
+# ------------------------------------------------------------------------------
+# Returns a JSON object with the audio devices (PulseAudio) known to the
+# system.
+#
+# Arguments:
+#   $1 Cache key to store results in (optional)
+#   $2 jq Filter to apply on the result (optional)
+# ------------------------------------------------------------------------------
+function bashio::hardware.audio() {
+    local cache_key=${1:-'hardware.audio'}
+    local filter=${2:-}
+    local info
+    local response
+
+    bashio::log.trace "${FUNCNAME[0]}" "$@"
+
+    if bashio::cache.exists "${cache_key}"; then
+        # The base key holds the unfiltered blob, so only serve it from the
+        # cache when no filter is requested; a filtered call must recompute.
+        if [[ "${cache_key}" != 'hardware.audio' ]] ||
+            ! bashio::var.has_value "${filter}"; then
+            bashio::cache.get "${cache_key}"
+            return "${__BASHIO_EXIT_OK}"
+        fi
+    fi
+
+    if bashio::cache.exists 'hardware.audio'; then
+        info=$(bashio::cache.get 'hardware.audio')
+    else
+        info=$(bashio::api.supervisor GET /hardware/audio false)
+        if [ "$?" -ne "${__BASHIO_EXIT_OK}" ]; then
+            bashio::log.error "Failed to get audio hardware from Supervisor API"
+            return "${__BASHIO_EXIT_NOK}"
+        fi
+        bashio::cache.set 'hardware.audio' "${info}"
+    fi
+
+    response="${info}"
+    if bashio::var.has_value "${filter}"; then
+        response=$(bashio::jq "${info}" "${filter}")
+        if [ "$?" -ne "${__BASHIO_EXIT_OK}" ]; then
+            bashio::log.error "Failed to execute the jq filter"
+            return "${__BASHIO_EXIT_NOK}"
+        fi
+    fi
+
+    # Never overwrite the base blob with a filtered result: the
+    # base blob is already cached above, so only cache under a distinct
+    # caller-provided key.
+    if [[ "${cache_key}" != 'hardware.audio' ]]; then
+        bashio::cache.set "${cache_key}" "${response}"
+    fi
+    printf "%s" "${response}"
+
+    return "${__BASHIO_EXIT_OK}"
+}
+
+# ------------------------------------------------------------------------------
+# Returns a list of available serial devices on the host system.
+# ------------------------------------------------------------------------------
+function bashio::hardware.serial() {
+    bashio::log.trace "${FUNCNAME[0]}"
+    bashio::hardware 'hardware.info.serial' '.serial[]'
+}
+
+# ------------------------------------------------------------------------------
+# Returns a list of available input devices on the host system.
+# ------------------------------------------------------------------------------
+function bashio::hardware.input() {
+    bashio::log.trace "${FUNCNAME[0]}"
+    bashio::hardware 'hardware.info.input' '.input[]'
+}
+
+# ------------------------------------------------------------------------------
+# Returns a list of available disk devices on the host system.
+# ------------------------------------------------------------------------------
+function bashio::hardware.disk() {
+    bashio::log.trace "${FUNCNAME[0]}"
+    bashio::hardware 'hardware.info.disk' '.disk[]'
+}
+
+# ------------------------------------------------------------------------------
+# Returns a list of available GPIO on the host system.
+# ------------------------------------------------------------------------------
+function bashio::hardware.gpio() {
+    bashio::log.trace "${FUNCNAME[0]}"
+    bashio::hardware 'hardware.info.gpio' '.gpio[]'
+}
+
+# ------------------------------------------------------------------------------
+# Returns a list of available USB devices on the host system.
+# ------------------------------------------------------------------------------
+function bashio::hardware.usb() {
+    bashio::log.trace "${FUNCNAME[0]}"
+    bashio::hardware 'hardware.info.usb' '.usb[]'
+}

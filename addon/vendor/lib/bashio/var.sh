@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Home Assistant Community Apps: Bashio
+# Bashio is a bash function library for use with Home Assistant apps.
+#
+# It contains a set of commonly used operations and can be used
+# to be included in app scripts to reduce code duplication across apps.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Checks if a given value is true.
+#
+# Arguments:
+#   $1 value
+# ------------------------------------------------------------------------------
+function bashio::var.true() {
+    local value=${1:-null}
+
+    bashio::log.trace "${FUNCNAME[0]}" "$@"
+
+    if [[ "${value}" = "true" ]]; then
+        return "${__BASHIO_EXIT_OK}"
+    fi
+
+    return "${__BASHIO_EXIT_NOK}"
+}
+
+# ------------------------------------------------------------------------------
+# Checks if a given value is false.
+#
+# Arguments:
+#   $1 value
+# ------------------------------------------------------------------------------
+function bashio::var.false() {
+    local value=${1:-null}
+
+    bashio::log.trace "${FUNCNAME[0]}" "$@"
+
+    if [[ "${value}" = "false" ]]; then
+        return "${__BASHIO_EXIT_OK}"
+    fi
+
+    return "${__BASHIO_EXIT_NOK}"
+}
+
+# ------------------------------------------------------------------------------
+# Checks if a global variable is defined.
+#
+# Arguments:
+#   $1 Name of the variable
+# ------------------------------------------------------------------------------
+bashio::var.defined() {
+    local variable=${1}
+
+    bashio::log.trace "${FUNCNAME[0]}" "$@"
+
+    [[ "${!variable-X}" = "${!variable-Y}" ]]
+}
+
+# ------------------------------------------------------------------------------
+# Checks if a value has actual value.
+#
+# Arguments:
+#   $1 Value
+# ------------------------------------------------------------------------------
+function bashio::var.has_value() {
+    local value=${1}
+
+    bashio::log.trace "${FUNCNAME[0]}" "$@"
+
+    if [[ -n "${value}" ]]; then
+        return "${__BASHIO_EXIT_OK}"
+    fi
+
+    return "${__BASHIO_EXIT_NOK}"
+}
+
+# ------------------------------------------------------------------------------
+# Checks if a value is empty.
+#
+# Arguments:
+#   $1 Value
+# ------------------------------------------------------------------------------
+function bashio::var.is_empty() {
+    local value=${1}
+
+    bashio::log.trace "${FUNCNAME[0]}" "$@"
+
+    if [[ -z "${value}" ]]; then
+        return "${__BASHIO_EXIT_OK}"
+    fi
+
+    return "${__BASHIO_EXIT_NOK}"
+}
+
+# ------------------------------------------------------------------------------
+# Checks if a value equals.
+#
+# Arguments:
+#   $1 Value
+#   $2 Equals value
+# ------------------------------------------------------------------------------
+function bashio::var.equals() {
+    local value=${1}
+    local equals=${2}
+
+    bashio::log.trace "${FUNCNAME[0]}" "$@"
+
+    if [[ "${value}" = "${equals}" ]]; then
+        return "${__BASHIO_EXIT_OK}"
+    fi
+
+    return "${__BASHIO_EXIT_NOK}"
+}
+
+# ------------------------------------------------------------------------------
+# Creates JSON based on function arguments.
+#
+# Arguments:
+#   $@ Bash array of key/value pairs, prefix integer or boolean values with ^
+# ------------------------------------------------------------------------------
+function bashio::var.json() {
+    local data=("$@")
+    local number_of_items=${#data[@]}
+    local json=''
+    local separator
+    local counter
+    local item
+
+    if [[ ${number_of_items} -eq 0 ]]; then
+        bashio::log.error "Length of input array needs to be at least 2"
+        return "${__BASHIO_EXIT_NOK}"
+    fi
+
+    if [[ $((number_of_items % 2)) -eq 1 ]]; then
+        bashio::log.error "Length of input array needs to be even (key/value pairs)"
+        return "${__BASHIO_EXIT_NOK}"
+    fi
+
+    counter=0
+    for i in "${data[@]}"; do
+        separator=","
+        if [ $((++counter % 2)) -eq 0 ]; then
+            separator=":"
+
+            if [[ "${i:0:1}" == "^" ]]; then
+                item="${i:1}"
+            else
+                item=$(bashio::var.json_string "${i}")
+            fi
+        else
+            # Object keys are always JSON strings and must be escaped, so a key
+            # containing a quote or backslash cannot break out of the JSON.
+            item=$(bashio::var.json_string "${i}")
+        fi
+
+        json="$json$separator$item"
+    done
+
+    echo "{${json:1}}"
+    return "${__BASHIO_EXIT_OK}"
+}
+
+# ------------------------------------------------------------------------------
+# Escapes a string for use in a JSON object.
+#
+# Arguments:
+#   $1 String to escape
+# ------------------------------------------------------------------------------
+function bashio::var.json_string() {
+    local string="${1}"
+    local json_string
+
+    # https://stackoverflow.com/a/50380697/12156188
+    if json_string=$(echo -n "${string}" | jq -Rs .); then
+        echo "${json_string}"
+        return "${__BASHIO_EXIT_OK}"
+    fi
+
+    bashio::log.error "Failed to escape string"
+    return "${__BASHIO_EXIT_NOK}"
+}
+
+# ------------------------------------------------------------------------------
+# Converts a bash array to a JSON array.
+#
+# Arguments:
+#   $@ Bash array
+# ------------------------------------------------------------------------------
+function bashio::var.json_array() {
+    local array=("$@")
+    local json_array
+
+    # https://stackoverflow.com/a/67489301/2755656
+    if json_array=$(jq -cn '$ARGS.positional' --args -- "${array[@]}"); then
+        echo "${json_array}"
+        return "${__BASHIO_EXIT_OK}"
+    fi
+
+    bashio::log.error "Failed to convert array"
+    return "${__BASHIO_EXIT_NOK}"
+}

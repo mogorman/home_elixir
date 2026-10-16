@@ -4,6 +4,12 @@ defmodule HomeElixir.Application do
 
   @impl true
   def start(_type, _args) do
+    # Start TLS before anything opens a wss:// connection. Mint uses :ssl but
+    # does not declare it (it also works plain), and a prod release only starts
+    # the apps it is told to — so :ssl would be bundled-but-not-running and the
+    # first TLS handshake would raise :ssl_not_started. Cheap to start always.
+    Application.ensure_all_started(:ssl)
+
     # Start Mnesia + the flow-state table before any flow loads, so flows can
     # persist state from their first event.
     HomeElixir.FlowState.start()

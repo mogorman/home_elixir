@@ -33,7 +33,10 @@ defmodule HomeElixir.MixProject do
        # fresh install). But its ebin IS shipped in the release (not started),
        # because FlowState.ensure_mnesia_code/0 locates it under the OTP root,
        # which is the release dir at runtime (see copy_mnesia_ebin/1).
-       extra_applications: [:logger],
+       # :ssl/:public_key/:crypto are started so Mint can open TLS (wss://)
+       # connections — e.g. a remote Home Assistant. Mint uses :ssl but does not
+       # declare it (it also works plain), so the release must list it here.
+       extra_applications: [:logger, :ssl, :public_key, :crypto],
       mod: {HomeElixir.Application, []}
     ]
   end

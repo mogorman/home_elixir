@@ -1,0 +1,18 @@
+# Builds the portable HomeElixir release (standard glibc Elixir, no Nix paths).
+# Produces an image containing /opt/home-elixir. Push it per-arch in CI as
+# ghcr.io/<owner>/home-elixir-release:<version>; the add-on Dockerfile consumes it.
+ARG ELIXIR_IMAGE=elixir:1.20.4
+FROM ${ELIXIR_IMAGE} AS build
+WORKDIR /build
+
+COPY mix.exs mix.lock ./
+RUN mix local.hex --force && mix local.rebar --force && mix deps.get && mix deps.compile
+
+COPY . .
+ENV MIX_ENV=prod
+# mix release only bundles the app (not the top-level flows/); add the default
+# flows so the add-on can seed them into /config on first start.
+RUN mix release --path /opt/home-elixir && cp -a /build/flows /opt/home-elixir/flows
+
+FROM scratch
+COPY --from=build /opt/home-elixir /opt/home-elixir

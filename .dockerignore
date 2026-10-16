@@ -1,0 +1,16 @@
+.git
+.openchamber
+_build
+deps
+result
+rel
+priv/mnesia
+addon
+nix
+nixos
+scripts
+test
+flake.nix
+flake.lock
+home-elixir.nix
+README.md
