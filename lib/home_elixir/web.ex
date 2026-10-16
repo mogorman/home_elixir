@@ -54,7 +54,7 @@ defmodule HomeElixir.Web do
   # prefix this app is served under) or nothing. Public so the AuthGuard can
   # judge public-ness on the prefix-less path.
   def base_path(path) do
-    case Regex.run(~r{^/api/ingress/[^/]+}, path || "") do
+    case Regex.run(~r{^/api/(?:hassio_)?ingress/[^/]+}, path || "") do
       [b] -> b
       _ -> ""
     end
@@ -809,7 +809,7 @@ defmodule HomeElixir.Web do
       # Behind HA ingress the supervisor strips the /api/ingress/<uuid>/ prefix,
       # so the app doesn't know the full URL. Compute it from the browser's
       # location and inject a <base> tag before any assets are loaded.
-      ~s|<script>(function(){var m=location.pathname.match(/^(\\/api\\/ingress\\/[^\\/]+)\\//);if(m){window.__BASE__=m[1];var b=document.createElement('base');b.href=m[1]+'/'
+      ~s|<script>(function(){var m=location.pathname.match(/^(\\/api\\/(?:hassio_)?ingress\\/[^\\/]+)\\//);if(m){window.__BASE__=m[1];var b=document.createElement('base');b.href=m[1]+'/'
 ;document.head.insertBefore(b,document.head.firstChild);}else{window.__BASE__='';}})();</script>|
     else
       ~s|<base href="#{base}/">\n<script>window.__BASE__ = "#{base}";</script>|
