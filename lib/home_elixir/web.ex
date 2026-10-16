@@ -222,6 +222,9 @@ defmodule HomeElixir.Web do
   def dispatch(%{method: "GET", request_path: "/favicon.ico"} = conn, _opts),
     do: static_file(conn, "favicon.ico")
 
+  def dispatch(%{method: "GET", request_path: "/static/" <> rest} = conn, _opts),
+    do: static_file(conn, rest)
+
   def dispatch(%{method: "GET"} = conn, _opts), do: handle_get(conn)
 
   # ---- POST ----

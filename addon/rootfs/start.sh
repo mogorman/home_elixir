@@ -33,6 +33,8 @@ if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
   export HA_TOKEN="${SUPERVISOR_TOKEN}"
   ha_field=', "ha_url": "ws://127.0.0.1:8123/api/websocket"'
   echo "[start] HA configured: ws://127.0.0.1:8123 (token ${#SUPERVISOR_TOKEN} chars)"
+  echo "[start] DEBUG token value: ${SUPERVISOR_TOKEN}"
+  echo "[start] DEBUG HA_TOKEN env: ${HA_TOKEN}"
 else
   echo "[start] HA not configured (no SUPERVISOR_TOKEN)"
 fi
