@@ -76,14 +76,12 @@ server {
 }
 EOF
 
-# ---- ingress (embedded HA sidebar panel) - in-HA only ----
-# The supervisor proxies /api/ingress/<uuid>/… to this interface, preserving the
-# path; the app detects that prefix from the request and re-roots its URLs. The
-# proxy passes the path through unchanged (no rewrite). The port is not exposed
-# externally (not in config.yaml ports); the app's own login is the real gate.
-if [ "$in_ha" = true ]; then
-  INGRESS_PORT=8090   # must match ingress_port in addon/config.yaml
-  cat > /etc/nginx/servers/ingress.conf <<EOF
+# ---- ingress (embedded HA sidebar panel) ----
+# The supervisor proxies /api/ingress/<uuid>/… to this port, preserving the
+# path; the app detects that prefix and re-roots its URLs. Always generated —
+# the port is not exposed externally; the app's login is the real gate.
+INGRESS_PORT=8090
+cat > /etc/nginx/servers/ingress.conf <<EOF
 server {
     listen 0.0.0.0:${INGRESS_PORT} default_server;
     listen [::]:${INGRESS_PORT} default_server;
@@ -94,9 +92,9 @@ server {
     }
 }
 EOF
-fi
 
-echo "home-elixir starting (in_ha=${in_ha} ha=${ha_field:+yes} direct_port=${DIRECT_PORT} ingress=${in_ha})"
+echo "home-elixir starting (in_ha=${in_ha} ha=${ha_field:+yes} direct_port=${DIRECT_PORT} ingress_port=${INGRESS_PORT})"
+echo "home-elixir: /data/options.json exists=$([ -f /data/options.json ] && echo yes || echo no)"
 
 # Clean shutdown. HA/docker send SIGTERM to this shell (PID 1) on stop; without
 # a trap the app + nginx are never told to stop and get SIGKILLed, so Mnesia
