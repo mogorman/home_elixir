@@ -169,6 +169,37 @@ defmodule HomeElixir.WebAuthTest do
     refute File.exists?(Path.join(tmp, "beta.ex"))
   end
 
+  # ---- ingress / proxy base path (/api/ingress/<uuid>/) ----
+
+  test "unauthenticated ingress panel root redirects to the prefixed login" do
+    r = get("/api/ingress/abc123/")
+    assert r.status == 302
+    assert header(r, "location") == "/api/ingress/abc123/login"
+  end
+
+  test "unauthenticated ingress api path 401s (not a login redirect)" do
+    assert get("/api/ingress/abc123/api/flows").status == 401
+  end
+
+  test "authenticated ingress panel renders with the base href + const" do
+    r = get("/api/ingress/abc123/", session_cookie("admin", "admin"))
+    assert r.status == 200
+    assert r.body =~ ~s|<base href="/api/ingress/abc123/">|
+    assert r.body =~ ~s|window.__BASE__ = "/api/ingress/abc123"|
+  end
+
+  test "authenticated ingress api routes on the prefix-less path" do
+    r = get("/api/ingress/abc123/api/me", session_cookie("admin", "admin"))
+    assert r.status == 200
+    assert Jason.decode!(r.body) == %{"name" => "admin", "role" => "admin"}
+  end
+
+  test "direct (no prefix) requests still get a root base href" do
+    r = get("/", session_cookie("admin", "admin"))
+    assert r.status == 200
+    assert r.body =~ ~s|<base href="/">|
+  end
+
   # ---- OAuth routes (public) ----
 
   defp with_ha_env(fun) do

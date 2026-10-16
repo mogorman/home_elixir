@@ -27,15 +27,42 @@ defmodule HomeElixir.Web do
   import Plug.Conn
   require Logger
 
-  @hljs "/static/hljs"
-  @bootstrap "/static/bootstrap/bootstrap.min.css"
+  @hljs "static/hljs"
+  @bootstrap "static/bootstrap/bootstrap.min.css"
 
   def init(_opts), do: []
+
+  # Entry point (behaviour). Serves the app under an optional base path so it
+  # works both at the site root (direct port) and under a reverse proxy / HA
+  # ingress prefix (`/api/ingress/<uuid>/`). The prefix is detected from the
+  # request, stripped for routing, and stashed in `assigns[:base]` so emitted
+  # URLs (and `<base href>`) can be re-rooted. Everything below routes on the
+  # prefix-less path via `dispatch/2`.
+  def call(conn, opts) do
+    base = base_path(conn.request_path)
+    rel = if base == "", do: conn.request_path, else: String.replace_prefix(conn.request_path, base, "")
+    rel = if rel == "" or rel == nil, do: "/", else: rel
+
+    conn
+    |> Map.put(:request_path, rel)
+    |> assign(:base, base)
+    |> dispatch(opts)
+  end
+
+  # Detects a leading ingress/proxy base: `/api/ingress/<uuid>` (the only
+  # prefix this app is served under) or nothing. Public so the AuthGuard can
+  # judge public-ness on the prefix-less path.
+  def base_path(path) do
+    case Regex.run(~r{^/api/ingress/[^/]+}, path || "") do
+      [b] -> b
+      _ -> ""
+    end
+  end
 
   # ---- GET ----
 
   # Public (bypasses the guard): shown when not logged in, redirects when logged in.
-  def call(%{method: "GET", request_path: "/login"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/login"} = conn, _opts) do
     case HomeElixir.Auth.user_from_conn(conn) do
       {:ok, _} -> redirect(conn, to: "/")
       _ -> html(conn, login_page())
@@ -44,7 +71,7 @@ defmodule HomeElixir.Web do
 
   # Public OAuth entry: begin the HA local-OAuth flow and send the browser to
   # HA's authorize page. Bounces back to /login when HA is not configured.
-  def call(%{method: "GET", request_path: "/oauth/start"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/oauth/start"} = conn, _opts) do
     case HomeElixir.HA.OAuth.start_login() do
       {:ok, url, _state} -> redirect(conn, to: url)
       {:error, _reason} -> redirect(conn, to: "/login")
@@ -53,7 +80,7 @@ defmodule HomeElixir.Web do
 
   # Public OAuth callback: exchange the code for a token, resolve the user via
   # HA, set the session cookie, and redirect home.
-  def call(%{method: "GET", request_path: "/oauth/callback"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/oauth/callback"} = conn, _opts) do
     q = URI.decode_query(conn.query_string)
 
     case q do
@@ -68,16 +95,16 @@ defmodule HomeElixir.Web do
     end
   end
 
-  def call(%{method: "GET", request_path: "/"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/"} = conn, _opts),
     do: html(conn, list_page(cur(conn), :flows))
 
-  def call(%{method: "GET", request_path: "/archived"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/archived"} = conn, _opts),
     do: html(conn, list_page(cur(conn), :archived))
 
-  def call(%{method: "GET", request_path: "/api/flows"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/api/flows"} = conn, _opts),
     do: json(conn, visible_flows(conn, HomeElixir.FlowStore.list()))
 
-  def call(%{method: "GET", request_path: "/api/me"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/api/me"} = conn, _opts) do
     case cur(conn) do
       {name, role} -> json(conn, %{name: name, role: role})
       _ -> json(conn, %{name: nil, role: nil})
@@ -85,29 +112,29 @@ defmodule HomeElixir.Web do
   end
 
   # User management (admin only).
-  def call(%{method: "GET", request_path: "/admin"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/admin"} = conn, _opts) do
     if is_admin?(conn), do: html(conn, admin_page(cur(conn))), else: forbidden(conn)
   end
 
-  def call(%{method: "GET", request_path: "/api/admin/users"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/api/admin/users"} = conn, _opts) do
     if is_admin?(conn), do: json(conn, HomeElixir.Auth.list_users()), else: forbidden(conn)
   end
 
-  def call(%{method: "GET", request_path: "/api/entity_tree"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/api/entity_tree"} = conn, _opts),
     do: json(conn, HomeElixir.EntityBrowser.tree())
 
-  def call(%{method: "GET", request_path: "/controls"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/controls"} = conn, _opts),
     do: html(conn, controls_page(cur(conn)))
 
-  def call(%{method: "GET", request_path: "/api/ui"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/api/ui"} = conn, _opts),
     do: json(conn, visible_ui(conn))
 
   # Live UI updates over a web socket (pushes state-badge changes to the browser).
-  def call(%{method: "GET", request_path: "/api/ui/ws"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/api/ui/ws"} = conn, _opts) do
     if websocket?(conn), do: upgrade_to_ui_ws(conn), else: text(conn, 400, "web socket only")
   end
 
-  def call(%{method: "GET", request_path: "/api/flows/" <> rest} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/api/flows/" <> rest} = conn, _opts) do
     # Flow names may be path-style ("LivingRoom/counter"), so only the last
     # segment is the sub-route.
     parts = String.split(rest, "/")
@@ -140,10 +167,10 @@ defmodule HomeElixir.Web do
     end
   end
 
-  def call(%{method: "GET", request_path: "/edit"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/edit"} = conn, _opts),
     do: html(conn, editor_page(nil, new_flow_template(), cur(conn)))
 
-  def call(%{method: "GET", request_path: "/edit/" <> name} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/edit/" <> name} = conn, _opts) do
     if flow_name_valid?(name) do
       case flow_access(conn, name) do
         :ok -> html(conn, editor_page(name, read_flow(name), cur(conn)))
@@ -155,17 +182,17 @@ defmodule HomeElixir.Web do
   end
 
   # Full log view is admin-only; per-flow log panels use the filtered /api/logs.
-  def call(%{method: "GET", request_path: "/logs"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/logs"} = conn, _opts) do
     if is_admin?(conn), do: html(conn, logs_page(cur(conn))), else: forbidden(conn)
   end
 
-  def call(%{method: "GET", request_path: "/api/logs"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/api/logs"} = conn, _opts) do
     lines = HomeElixir.Log.lines(parse_since(conn.query_string))
     json(conn, log_entries(lines, conn))
   end
 
   # In-browser IEx: admin only (it can run arbitrary code on the app node).
-  def call(%{method: "GET", request_path: "/terminal"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/terminal"} = conn, _opts) do
     if is_admin?(conn) do
       if websocket?(conn),
         do: upgrade_to_terminal(conn),
@@ -175,15 +202,15 @@ defmodule HomeElixir.Web do
     end
   end
 
-  def call(%{method: "GET", request_path: "/favicon.ico"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/favicon.ico"} = conn, _opts),
     do: static_file(conn, "favicon.ico")
 
-  def call(%{method: "GET", request_path: "/static/" <> rest} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/static/" <> rest} = conn, _opts),
     do: static_file(conn, rest)
 
   # ---- POST ----
 
-  def call(%{method: "POST"} = conn, _opts) do
+  def dispatch(%{method: "POST"} = conn, _opts) do
     case conn.request_path |> String.split("/") do
       ["", "api", "login"] ->
         login_endpoint(conn)
@@ -316,7 +343,7 @@ defmodule HomeElixir.Web do
     end
   end
 
-  def call(conn, _opts), do: not_found(conn)
+  def dispatch(conn, _opts), do: not_found(conn)
 
   # ---- handlers ----
 
@@ -730,10 +757,15 @@ defmodule HomeElixir.Web do
     |> send_resp(400, Jason.encode!(%{error: msg}))
   end
 
-  # This Plug version has no Conn.redirect/2; a 302 is all we need.
+  # This Plug version has no Conn.redirect/2; a 302 is all we need. Internal
+  # targets are re-rooted under the base path (ingress/proxy prefix); absolute
+  # external URLs (e.g. the HA OAuth authorize page) pass through unchanged.
   defp redirect(conn, to: to) do
+    base = conn.assigns[:base] || ""
+    loc = if String.starts_with?(to, "http"), do: to, else: base <> to
+
     conn
-    |> put_resp_header("location", to)
+    |> put_resp_header("location", loc)
     |> send_resp(302, "")
   end
 
@@ -745,10 +777,28 @@ defmodule HomeElixir.Web do
   end
 
   defp html(conn, body) do
+    tag = base_tag(conn.assigns[:base] || "")
+    body = inject_base(body, tag)
+
     conn
     |> put_resp_content_type("text/html")
     |> put_resp_header("cache-control", "no-cache, no-store, must-revalidate")
     |> send_resp(200, body)
+  end
+
+  # A `<base>` + the JS base constant, injected right after every page's `<head>`
+  # so relative URLs (links, scripts, fetch, location) and websockets re-root
+  # under the ingress/proxy prefix, or the site root when there is none.
+  # `__BASE__` has no trailing slash (websockets prepend it before the path).
+  defp base_tag(base) do
+    ~s|<base href="#{base}/">\n<script>window.__BASE__ = "#{base}";</script>|
+  end
+
+  defp inject_base(body, tag) do
+    case :binary.split(body, "<head>") do
+      [head, rest] -> head <> "<head>" <> tag <> rest
+      _ -> body
+    end
   end
 
   defp json(conn, data),
@@ -810,9 +860,9 @@ defmodule HomeElixir.Web do
       <meta charset="utf-8">
       <title>Home Elixir IEx</title>
       <link href="#{@bootstrap}" rel="stylesheet">
-      <link rel="stylesheet" href="/static/xterm/xterm.min.css">
-      <script src="/static/xterm/xterm.min.js"></script>
-      <script src="/static/xterm/addon-fit.min.js"></script>
+      <link rel="stylesheet" href="static/xterm/xterm.min.css">
+      <script src="static/xterm/xterm.min.js"></script>
+      <script src="static/xterm/addon-fit.min.js"></script>
       #{theme_script()}
       <style>
         html, body { height: 100%; margin: 0; }
@@ -830,7 +880,7 @@ defmodule HomeElixir.Web do
         term.open(document.getElementById("terminal"));
         fit.fit();
         const proto = location.protocol === "https:" ? "wss://" : "ws://";
-        const ws = new WebSocket(proto + location.host + "/terminal");
+        const ws = new WebSocket(proto + location.host + __BASE__ + "/terminal");
         ws.binaryType = "arraybuffer";
         ws.onmessage = (e) => term.write(e.data instanceof ArrayBuffer ? new Uint8Array(e.data) : e.data);
         ws.onclose = () => term.write("\\r\\n\\x1b[90m[connection closed]\\x1b[0m\\r\\n");
@@ -865,7 +915,7 @@ defmodule HomeElixir.Web do
       if archived? do
         ""
       else
-        ~s|<a href="/edit" class="btn btn-sm btn-primary">New flow</a><button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>|
+        ~s|<a href="edit" class="btn btn-sm btn-primary">New flow</a><button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>|
       end
 
     """
@@ -939,7 +989,7 @@ defmodule HomeElixir.Web do
           errDlg.showModal();
         }
         async function act(name, action) {
-          const r = await fetch(`/api/flows/${name}/${action}`, { method: "POST" });
+          const r = await fetch(`api/flows/${name}/${action}`, { method: "POST" });
           if (!r.ok) fail(name + " " + action, r);
           refresh();
         }
@@ -951,8 +1001,8 @@ defmodule HomeElixir.Web do
         }
         // Clone, then open the clone's editor. On failure, show the error and stay.
         async function cloneFlow(f) {
-          const r = await fetch(`/api/flows/${f.name}/clone`, { method: "POST" });
-          if (r.ok) location.href = "/edit/" + cloneName(f.name);
+          const r = await fetch(`api/flows/${f.name}/clone`, { method: "POST" });
+          if (r.ok) location.href = __BASE__ + "/edit/" + cloneName(f.name);
           else fail(f.name + " clone", r);
         }
         const confirmDlg = document.getElementById("confirm-dlg");
@@ -970,10 +1020,10 @@ defmodule HomeElixir.Web do
         };
         async function loadUsers() {
           if (!IS_ADMIN) return;
-          try { ALL_USERS = (await (await fetch("/api/admin/users")).json()).map((u) => u.name); } catch (_) {}
+          try { ALL_USERS = (await (await fetch("api/admin/users")).json()).map((u) => u.name); } catch (_) {}
         }
         async function reloadAll() {
-          const r = await fetch("/api/flows/reload", { method: "POST" });
+          const r = await fetch("api/flows/reload", { method: "POST" });
           if (!r.ok) fail("reload all", r);
           refresh();
         }
@@ -1073,7 +1123,7 @@ defmodule HomeElixir.Web do
             panel.name = name;
             panel.logs = [];
             try {
-              const items = await (await fetch("/api/logs?since=0")).json();
+              const items = await (await fetch("api/logs?since=0")).json();
               for (const it of items) {
                 if (it.id > panel.sinceId) panel.sinceId = it.id;
                 if (panel.name === name && it.line.includes("[" + logTag(name) + "]")) panel.logs.push(it.line);
@@ -1111,7 +1161,7 @@ defmodule HomeElixir.Web do
           const logs = td.querySelector("#panel-logs");
           for (const line of panel.logs) logs.appendChild(logDiv(line));
           logs.scrollTop = logs.scrollHeight;
-          fetch(`/api/flows/${f.name}/ui`).then((r) => r.json()).then((els) => {
+          fetch(`api/flows/${f.name}/ui`).then((r) => r.json()).then((els) => {
             const box = document.getElementById("panel-ui");
             if (!box) return;
             box.innerHTML = "";
@@ -1158,7 +1208,7 @@ defmodule HomeElixir.Web do
         permSelect.onchange = async () => {
           if (!permName) return;
           const name = permName;
-          const r = await fetch(`/api/flows/${name}/owner`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner: permSelect.value || null }) });
+          const r = await fetch(`api/flows/${name}/owner`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner: permSelect.value || null }) });
           if (!r.ok) fail(name + " owner", r);
           permDlg.close();
           refresh();
@@ -1213,7 +1263,7 @@ defmodule HomeElixir.Web do
             actions.appendChild(sw);
 
             const items =
-              '<a class="dropdown-item" href="/edit/' + f.name + '">Edit</a>' +
+              '<a class="dropdown-item" href="edit/' + f.name + '">Edit</a>' +
               '<button class="dropdown-item" data-a="reload">Reload</button>' +
               (IS_ADMIN ? '<button class="dropdown-item" data-a="perms">Permissions</button>' : "") +
               '<button class="dropdown-item" data-a="clone">Clone</button>' +
@@ -1277,7 +1327,7 @@ defmodule HomeElixir.Web do
           }
         }
         async function refresh() {
-          const all = await (await fetch("/api/flows")).json();
+          const all = await (await fetch("api/flows")).json();
           const flows = MODE === "archived" ? all.filter((f) => f.archived) : all.filter((f) => !f.archived);
           const tbody = document.getElementById("flows");
           tbody.innerHTML = "";
@@ -1304,7 +1354,7 @@ defmodule HomeElixir.Web do
       <script>
         #{control_js()}
         async function refresh() {
-          const els = await (await fetch("/api/ui")).json();
+          const els = await (await fetch("api/ui")).json();
           const box = document.getElementById("controls");
           box.innerHTML = "";
           if (!els.length) {
@@ -1457,7 +1507,7 @@ defmodule HomeElixir.Web do
       <link id="hljs-theme" href="#{@hljs}/styles/github-dark.min.css" rel="stylesheet">
       <script src="#{@hljs}/highlight.min.js"></script>
       <script src="#{@hljs}/languages/elixir.min.js"></script>
-      <script src="/static/cron/cronstrue.min.js"></script>
+      <script src="static/cron/cronstrue.min.js"></script>
       <script>
         #{control_js()}
         const FLOW = #{source_json};
@@ -1535,31 +1585,31 @@ defmodule HomeElixir.Web do
         async function doSave() {
           status.textContent = "saving…";
           const headers = FLOWNAME ? { "X-Flow-Name": FLOWNAME } : {};
-          const r = await fetch("/api/flows/save", { method: "POST", headers, body: editor.value });
+          const r = await fetch("api/flows/save", { method: "POST", headers, body: editor.value });
           status.textContent = await r.text();
           if (r.ok) savedSource = editor.value;
         }
         async function doRevert() {
           if (!FLOWNAME) { status.textContent = "save first"; return; }
           status.textContent = "reverting…";
-          const r = await fetch(`/api/flows/${FLOWNAME}/loaded_source`);
+          const r = await fetch(`api/flows/${FLOWNAME}/loaded_source`);
           if (!r.ok) { status.textContent = "no loaded state to revert to"; return; }
           const { source } = await r.json();
           editor.value = source;
           render();
-          const s = await fetch("/api/flows/save", { method: "POST", headers: { "X-Flow-Name": FLOWNAME }, body: editor.value });
+          const s = await fetch("api/flows/save", { method: "POST", headers: { "X-Flow-Name": FLOWNAME }, body: editor.value });
           status.textContent = await s.text();
           if (s.ok) savedSource = editor.value;
         }
         async function doCheck() {
           status.textContent = "checking…";
-          const r = await fetch("/api/flows/check", { method: "POST", body: editor.value });
+          const r = await fetch("api/flows/check", { method: "POST", body: editor.value });
           status.textContent = await r.text();
         }
         async function doReload() {
           if (!FLOWNAME) { status.textContent = "save first"; return; }
           status.textContent = "reloading…";
-          const r = await fetch(`/api/flows/${FLOWNAME}/reload`, { method: "POST" });
+          const r = await fetch(`api/flows/${FLOWNAME}/reload`, { method: "POST" });
           const t = await r.text();
           status.textContent = r.ok ? "reloaded" : t;
           refreshControls();
@@ -1570,7 +1620,7 @@ defmodule HomeElixir.Web do
         document.getElementById("reload").onclick = doReload;
         async function refreshControls() {
           if (!FLOWNAME) return;
-          const els = await (await fetch(`/api/flows/${FLOWNAME}/ui`)).json();
+          const els = await (await fetch(`api/flows/${FLOWNAME}/ui`)).json();
           const box = document.getElementById("ctrl");
           box.innerHTML = "";
           if (!els.length) { box.innerHTML = '<span class="text-secondary small">no ui elements</span>'; return; }
@@ -1600,7 +1650,7 @@ defmodule HomeElixir.Web do
         async function resyncFlowLogs() {
           flowSyncing = true;
           try {
-            const items = await (await fetch("/api/logs?since=" + flowLastId)).json();
+            const items = await (await fetch("api/logs?since=" + flowLastId)).json();
             for (const it of items) {
               if (it.line.includes("[" + FLOWLOG + "]")) appendFlowLine(it.line);
               flowLastId = it.id;
@@ -1685,7 +1735,7 @@ defmodule HomeElixir.Web do
         entSearch.addEventListener("input", renderEnt);
         async function loadEntities() {
           entStatus.textContent = "loading…";
-          try { entData = await (await fetch("/api/entity_tree")).json(); }
+          try { entData = await (await fetch("api/entity_tree")).json(); }
           catch (e) { entData = null; entStatus.textContent = "error"; renderEnt(); return; }
           entStatus.textContent = entData.connected ? "" : "HA not connected";
           renderEnt();
@@ -1800,7 +1850,7 @@ defmodule HomeElixir.Web do
         async function resync() {
           syncing = true;
           try {
-            const items = await (await fetch("/api/logs?since=" + lastId)).json();
+            const items = await (await fetch("api/logs?since=" + lastId)).json();
             for (const it of items) { appendLine(it.line); lastId = it.id; }
           } catch (e) {}
           syncing = false;
@@ -1818,16 +1868,16 @@ defmodule HomeElixir.Web do
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
-      <link rel="icon" href="/static/favicon.ico">
+      <link rel="icon" href="static/favicon.ico">
       <title>Log in — home_elixir</title>
       <link href="#{@bootstrap}" rel="stylesheet">
       #{theme_script()}
     </head>
     <body class="p-3 d-flex align-items-center" style="min-height: 100vh">
       <div class="card mx-auto" style="width: min(420px, 94vw)">
-        <div class="card-header fw-semibold d-flex align-items-center gap-2"><img src="/static/favicon.ico" width="22" height="22" alt="">home_elixir</div>
+        <div class="card-header fw-semibold d-flex align-items-center gap-2"><img src="static/favicon.ico" width="22" height="22" alt="">home_elixir</div>
         <div class="card-body">
-          <a href="/oauth/start" class="btn btn-primary btn-lg w-100">Log in with Home Assistant</a>
+          <a href="oauth/start" class="btn btn-primary btn-lg w-100">Log in with Home Assistant</a>
           <div class="text-center text-secondary my-3"><hr class="d-inline-block" style="width:2.2rem">or<hr class="d-inline-block" style="width:2.2rem"></div>
           <details>
             <summary class="text-secondary small">Use username &amp; password</summary>
@@ -1851,9 +1901,9 @@ defmodule HomeElixir.Web do
           const username = document.getElementById("username").value.trim();
           const password = document.getElementById("password").value;
           document.getElementById("error").textContent = "";
-          fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) })
+          fetch("api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) })
             .then(async (r) => {
-              if (r.ok) { location.href = "/"; }
+              if (r.ok) { location.href = __BASE__ + "/"; }
               else { const e = await r.json().catch(() => ({})); document.getElementById("error").textContent = e.error || "login failed"; }
             })
             .catch(() => (document.getElementById("error").textContent = "network error"));
@@ -1910,7 +1960,7 @@ defmodule HomeElixir.Web do
           return j;
         }
         async function refresh() {
-          const users = await (await fetch("/api/admin/users")).json();
+          const users = await (await fetch("api/admin/users")).json();
           const tbody = document.getElementById("users");
           tbody.innerHTML = "";
           for (const u of users) {
@@ -1932,7 +1982,7 @@ defmodule HomeElixir.Web do
               }
               sel.onchange = async () => {
                 try {
-                  await api("/api/admin/users/" + u.name + "/role", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: sel.value }) });
+                  await api("api/admin/users/" + u.name + "/role", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: sel.value }) });
                   refresh();
                 } catch (e) { err(e.message); refresh(); }
               };
@@ -1957,7 +2007,7 @@ defmodule HomeElixir.Web do
               del.textContent = "Delete";
               del.onclick = async () => {
                 if (!confirm("Delete user " + u.name + "?")) return;
-                try { await api("/api/admin/users/" + u.name + "/delete", { method: "POST" }); refresh(); }
+                try { await api("api/admin/users/" + u.name + "/delete", { method: "POST" }); refresh(); }
                 catch (e) { err(e.message); }
               };
               wrap.appendChild(del);
@@ -1974,7 +2024,7 @@ defmodule HomeElixir.Web do
           const role = document.getElementById("new-role").value;
           if (!name || !password) return;
           try {
-            await api("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, password, role }) });
+            await api("api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, password, role }) });
             document.getElementById("new-name").value = "";
             document.getElementById("new-pass").value = "";
             document.getElementById("new-role").value = "user";
@@ -1990,7 +2040,7 @@ defmodule HomeElixir.Web do
           const password = document.getElementById("reset-pass").value;
           if (!password) return;
           try {
-            await api("/api/admin/users/" + resetTarget + "/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+            await api("api/admin/users/" + resetTarget + "/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
             document.getElementById("reset-dlg").close();
           } catch (e) { err(e.message); }
         };
@@ -2014,14 +2064,14 @@ defmodule HomeElixir.Web do
       window.fetch = function (input, init) {
         return real(input, init).then((res) => {
           const url = typeof input === "string" ? input : (input && input.url) || "";
-          if (res.status === 401 && url.indexOf("/api/") === 0 && url.indexOf("/api/login") < 0) {
-            location.href = "/login";
+          if (res.status === 401 && url.indexOf("api/") === 0 && url.indexOf("api/login") < 0) {
+            location.href = __BASE__ + "/login";
           }
           return res;
         });
       };
       // Idle safety net: catch a session that lapses while the page sits open.
-      setInterval(() => { window.fetch("/api/me"); }, 30000);
+      setInterval(() => { window.fetch("api/me"); }, 30000);
     })();
     function setSnapshot(el, value) {
       el.innerHTML = "";
@@ -2061,7 +2111,7 @@ defmodule HomeElixir.Web do
       b.className = "btn " + (btnClass || "btn-primary");
       b.textContent = e.label || e.node;
       b.onclick = async () => {
-        await fetch("/api/ui/click", { method: "POST", headers: { "Content-Type": "application/json" },
+        await fetch("api/ui/click", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: e.name, node: e.node, payload: e.payload }) });
       };
       return b;
@@ -2069,7 +2119,7 @@ defmodule HomeElixir.Web do
     // Reconnect-with-backoff web socket. `handlers` maps a push `type` to a fn(msg).
     function connectUI(handlers, onOpen, retryMs) {
       const proto = location.protocol === "https:" ? "wss://" : "ws://";
-      const ws = new WebSocket(proto + location.host + "/api/ui/ws");
+      const ws = new WebSocket(proto + location.host + __BASE__ + "/api/ui/ws");
       if (onOpen) ws.onopen = () => onOpen();
       ws.onmessage = (e) => {
         try { const m = JSON.parse(e.data); if (handlers[m.type]) handlers[m.type](m); } catch (_) {}
@@ -2098,7 +2148,7 @@ defmodule HomeElixir.Web do
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
-      <link rel="icon" href="/static/favicon.ico">
+      <link rel="icon" href="static/favicon.ico">
       <title>#{title} — home_elixir</title>
       <link href="#{@bootstrap}" rel="stylesheet">
       #{theme_script()}
@@ -2132,14 +2182,14 @@ defmodule HomeElixir.Web do
     """
     <nav class="navbar navbar-expand-lg bg-body-tertiary rounded-3 mb-3 px-3">
       <div class="container-fluid">
-        <a class="navbar-brand fw-semibold d-flex align-items-center gap-2" href="/"><img src="/static/favicon.ico" width="24" height="24" alt="">home_elixir</a>
+        <a class="navbar-brand fw-semibold d-flex align-items-center gap-2" href="./"><img src="static/favicon.ico" width="24" height="24" alt="">home_elixir</a>
         <ul class="navbar-nav gap-1 flex-wrap">
-          <li class="nav-item"><a class="nav-link#{a.(:flows)}" href="/">Flows</a></li>
-          <li class="nav-item"><a class="nav-link#{a.(:archived)}" href="/archived">Archived</a></li>
-          <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="/controls">Controls</a></li>
-          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:logs)}" href="/logs">Logs</a></li>|, else: ""}
-          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:iex)}" href="/terminal">IEx</a></li>|, else: ""}
-          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:admin)}" href="/admin">Admin</a></li>|, else: ""}
+          <li class="nav-item"><a class="nav-link#{a.(:flows)}" href="./">Flows</a></li>
+          <li class="nav-item"><a class="nav-link#{a.(:archived)}" href="archived">Archived</a></li>
+          <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="controls">Controls</a></li>
+          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:logs)}" href="logs">Logs</a></li>|, else: ""}
+          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:iex)}" href="terminal">IEx</a></li>|, else: ""}
+          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:admin)}" href="admin">Admin</a></li>|, else: ""}
         </ul>
         #{user_menu_html(user)}
         <button id="theme-toggle" class="btn btn-outline-secondary btn-sm ms-2"></button>
@@ -2167,7 +2217,7 @@ defmodule HomeElixir.Web do
         label();
         var lo = document.getElementById("logout");
         if (lo) lo.onclick = function () {
-          fetch("/api/logout", { method: "POST" }).then(function () { location.href = "/login"; });
+          fetch("api/logout", { method: "POST" }).then(function () { location.href = __BASE__ + "/login"; });
         };
       })();
     </script>
