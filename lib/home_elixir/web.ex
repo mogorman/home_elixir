@@ -68,20 +68,8 @@ defmodule HomeElixir.Web do
 
   # ---- GET ----
 
-  # Static files: match /static/... and sub-prefixed paths like /edit/static/...
-  # (relative URLs from sub-pages resolve against the page path under ingress).
-  # This clause is first so it takes priority over /edit/:name etc.
-  def dispatch(%{method: "GET", request_path: path} = conn, opts) do
-    if String.contains?(path, "/static/") do
-      rest = :binary.split(path, "/static/", [global: false]) |> Enum.at(1)
-      static_file(conn, rest)
-    else
-      dispatch_get(conn, opts)
-    end
-  end
-
   # Public (bypasses the guard): shown when not logged in, redirects when logged in.
-  def dispatch_get(%{method: "GET", request_path: "/login"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/login"} = conn, _opts) do
     case HomeElixir.Auth.user_from_conn(conn) do
       {:ok, _} -> redirect(conn, to: home_path(conn))
       _ -> html(conn, login_page())
@@ -90,7 +78,7 @@ defmodule HomeElixir.Web do
 
   # Public OAuth entry: begin the HA local-OAuth flow and send the browser to
   # HA's authorize page. Bounces back to /login when HA is not configured.
-  def dispatch_get(%{method: "GET", request_path: "/oauth/start"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/oauth/start"} = conn, _opts) do
     case HomeElixir.HA.OAuth.start_login() do
       {:ok, url, _state} -> redirect(conn, to: url)
       {:error, _reason} -> redirect(conn, to: "/login")
@@ -99,7 +87,7 @@ defmodule HomeElixir.Web do
 
   # Public OAuth callback: exchange the code for a token, resolve the user via
   # HA, set the session cookie, and redirect home.
-  def dispatch_get(%{method: "GET", request_path: "/oauth/callback"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/oauth/callback"} = conn, _opts) do
     q = URI.decode_query(conn.query_string)
 
     case q do
@@ -114,20 +102,20 @@ defmodule HomeElixir.Web do
     end
   end
 
-  def dispatch_get(%{method: "GET", request_path: "/"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/"} = conn, _opts),
     do: html(conn, list_page(cur(conn), :flows))
 
-  def dispatch_get(%{method: "GET", request_path: "/archived"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/archived"} = conn, _opts),
     do: html(conn, list_page(cur(conn), :archived))
 
-  def dispatch_get(%{method: "GET", request_path: "/api/flows"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/api/flows"} = conn, _opts) do
     case HomeElixir.FlowStore.list() do
       flows -> json(conn, visible_flows(conn, flows))
       :timeout -> json(conn, %{"busy" => true, "message" => "Installing flow dependencies…"})
     end
   end
 
-  def dispatch_get(%{method: "GET", request_path: "/api/me"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/api/me"} = conn, _opts) do
     case cur(conn) do
       {name, role} -> json(conn, %{name: name, role: role})
       _ -> json(conn, %{name: nil, role: nil})
@@ -135,29 +123,29 @@ defmodule HomeElixir.Web do
   end
 
   # User management (admin only).
-  def dispatch_get(%{method: "GET", request_path: "/admin"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/admin"} = conn, _opts) do
     if is_admin?(conn), do: html(conn, admin_page(cur(conn))), else: forbidden(conn)
   end
 
-  def dispatch_get(%{method: "GET", request_path: "/api/admin/users"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/api/admin/users"} = conn, _opts) do
     if is_admin?(conn), do: json(conn, HomeElixir.Auth.list_users()), else: forbidden(conn)
   end
 
-  def dispatch_get(%{method: "GET", request_path: "/api/entity_tree"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/api/entity_tree"} = conn, _opts),
     do: json(conn, HomeElixir.EntityBrowser.tree())
 
-  def dispatch_get(%{method: "GET", request_path: "/controls"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/controls"} = conn, _opts),
     do: html(conn, controls_page(cur(conn)))
 
-  def dispatch_get(%{method: "GET", request_path: "/api/ui"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/api/ui"} = conn, _opts),
     do: json(conn, visible_ui(conn))
 
   # Live UI updates over a web socket (pushes state-badge changes to the browser).
-  def dispatch_get(%{method: "GET", request_path: "/api/ui/ws"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/api/ui/ws"} = conn, _opts) do
     if websocket?(conn), do: upgrade_to_ui_ws(conn), else: text(conn, 400, "web socket only")
   end
 
-  def dispatch_get(%{method: "GET", request_path: "/api/flows/" <> rest} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/api/flows/" <> rest} = conn, _opts) do
     # Flow names may be path-style ("LivingRoom/counter"), so only the last
     # segment is the sub-route.
     parts = String.split(rest, "/")
@@ -190,32 +178,38 @@ defmodule HomeElixir.Web do
     end
   end
 
-  def dispatch_get(%{method: "GET", request_path: "/edit"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/edit"} = conn, _opts),
     do: html(conn, editor_page(nil, new_flow_template(), cur(conn)))
 
-  def dispatch_get(%{method: "GET", request_path: "/edit/" <> name} = conn, _opts) do
-    if flow_name_valid?(name) do
-      case flow_access(conn, name) do
-        :ok -> html(conn, editor_page(name, read_flow(name), cur(conn)))
-        _ -> forbidden(conn)
-      end
+  def dispatch(%{method: "GET", request_path: "/edit/" <> name} = conn, _opts) do
+    # Relative static URLs from the editor page resolve as /edit/static/...
+    if String.contains?(name, "/static/") do
+      rest = :binary.split(name, "/static/", [global: false]) |> Enum.at(1)
+      static_file(conn, rest)
     else
-      not_found(conn)
+      if flow_name_valid?(name) do
+        case flow_access(conn, name) do
+          :ok -> html(conn, editor_page(name, read_flow(name), cur(conn)))
+          _ -> forbidden(conn)
+        end
+      else
+        not_found(conn)
+      end
     end
   end
 
   # Full log view is admin-only; per-flow log panels use the filtered /api/logs.
-  def dispatch_get(%{method: "GET", request_path: "/logs"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/logs"} = conn, _opts) do
     if is_admin?(conn), do: html(conn, logs_page(cur(conn))), else: forbidden(conn)
   end
 
-  def dispatch_get(%{method: "GET", request_path: "/api/logs"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/api/logs"} = conn, _opts) do
     lines = HomeElixir.Log.lines(parse_since(conn.query_string))
     json(conn, log_entries(lines, conn))
   end
 
   # In-browser IEx: admin only (it can run arbitrary code on the app node).
-  def dispatch_get(%{method: "GET", request_path: "/terminal"} = conn, _opts) do
+  def dispatch(%{method: "GET", request_path: "/terminal"} = conn, _opts) do
     if is_admin?(conn) do
       if websocket?(conn),
         do: upgrade_to_terminal(conn),
@@ -225,10 +219,10 @@ defmodule HomeElixir.Web do
     end
   end
 
-  def dispatch_get(%{method: "GET", request_path: "/favicon.ico"} = conn, _opts),
+  def dispatch(%{method: "GET", request_path: "/favicon.ico"} = conn, _opts),
     do: static_file(conn, "favicon.ico")
 
-  def dispatch_get(%{method: "GET"} = conn, _opts), do: handle_get(conn)
+  def dispatch(%{method: "GET"} = conn, _opts), do: handle_get(conn)
 
   # ---- POST ----
 
