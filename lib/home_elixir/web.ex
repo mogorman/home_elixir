@@ -219,6 +219,15 @@ defmodule HomeElixir.Web do
   def dispatch(%{method: "GET", request_path: "/static/" <> rest} = conn, _opts),
     do: static_file(conn, rest)
 
+  # Relative static URLs from sub-pages resolve with the page path as prefix
+  # (e.g. /edit/static/foo.css). Extract everything after /static/.
+  def dispatch(%{method: "GET", request_path: path} = conn, _opts) do
+    case :binary.split(path, "/static/", [global: false]) do
+      [_prefix, rest] -> static_file(conn, rest)
+      _ -> handle_get(conn)
+    end
+  end
+
   # ---- POST ----
 
   def dispatch(%{method: "POST"} = conn, _opts) do
@@ -354,7 +363,7 @@ defmodule HomeElixir.Web do
     end
   end
 
-  def dispatch(conn, _opts), do: not_found(conn)
+  defp handle_get(conn), do: not_found(conn)
 
   # ---- handlers ----
 
