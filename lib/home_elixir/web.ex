@@ -806,11 +806,10 @@ defmodule HomeElixir.Web do
     base = conn.assigns[:base] || ""
 
     if ingress?(conn) do
-      # Behind HA ingress the supervisor strips the /api/ingress/<uuid>/ prefix,
-      # so the app doesn't know the full URL. Compute it from the browser's
-      # location and inject a <base> tag before any assets are loaded.
-      ~s|<script>(function(){var m=location.pathname.match(/^(\\/api\\/(?:hassio_)?ingress\\/[^\\/]+)\\//);if(m){window.__BASE__=m[1];var b=document.createElement('base');b.href=m[1]+'/'
-;document.head.insertBefore(b,document.head.firstChild);}else{window.__BASE__='';}})();</script>|
+      # HA strips the ingress prefix server-side, so compute it from the browser
+      # URL. document.write is synchronous with parsing, so the <base> is in
+      # effect before subsequent <link>/<script> tags resolve their URLs.
+      ~s|<script>(function(){var m=location.pathname.match(/^(\\/api\\/(?:hassio_)?ingress\\/[^\\/]+)\\//);window.__BASE__=m?m[1]:'';if(m)document.write('<base href="'+m[1]+'/">')})();</script>|
     else
       ~s|<base href="#{base}/">\n<script>window.__BASE__ = "#{base}";</script>|
     end
