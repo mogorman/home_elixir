@@ -1,0 +1,34 @@
+<%= base %>
+  <div id="logs" class="rounded border p-2"
+       style="font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.5;
+              white-space: pre-wrap; height: 78vh; overflow: auto;"></div>
+  <script>
+    <%= control_js %>
+    const box = document.getElementById("logs");
+    let lastId = 0, syncing = false;
+    function logDiv(line) {
+      const d = document.createElement("div");
+      d.textContent = line;
+      if (line.startsWith("error")) d.className = "text-danger";
+      else if (line.startsWith("warning")) d.className = "text-warning-emphasis";
+      return d;
+    }
+    function appendLine(line) {
+      box.appendChild(logDiv(line));
+      while (box.children.length > 800) box.removeChild(box.firstChild);
+      box.scrollTop = box.scrollHeight;
+    }
+    function onLog(msg) {
+      if (syncing) return;
+      if (msg.id > lastId) { appendLine(msg.line); lastId = msg.id; }
+    }
+    async function resync() {
+      syncing = true;
+      try {
+        const items = await (await fetch("api/logs?since=" + lastId)).json();
+        for (const it of items) { appendLine(it.line); lastId = it.id; }
+      } catch (e) {}
+      syncing = false;
+    }
+    connectUI({ log: onLog }, resync);
+  </script>

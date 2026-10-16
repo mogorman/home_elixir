@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="static/favicon.ico">
+  <title>Log in — home_elixir</title>
+  <link href="<%= bootstrap %>" rel="stylesheet">
+  <%= theme_script %>
+</head>
+<body class="p-3 d-flex align-items-center" style="min-height: 100vh">
+  <div class="card mx-auto" style="width: min(420px, 94vw)">
+    <div class="card-header fw-semibold d-flex align-items-center gap-2"><img src="static/favicon.ico" width="22" height="22" alt="">home_elixir</div>
+    <div class="card-body">
+      <a href="oauth/start" class="btn btn-primary btn-lg w-100">Log in with Home Assistant</a>
+      <div class="text-center text-secondary my-3"><hr class="d-inline-block" style="width:2.2rem">or<hr class="d-inline-block" style="width:2.2rem"></div>
+      <details>
+        <summary class="text-secondary small">Use username &amp; password</summary>
+        <div class="mt-2">
+          <div class="mb-2">
+            <label class="form-label">Username</label>
+            <input id="username" class="form-control" autocomplete="username" spellcheck="false">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Password</label>
+            <input id="password" type="password" class="form-control" autocomplete="current-password">
+          </div>
+          <button id="login" class="btn btn-outline-secondary w-100">Log in</button>
+        </div>
+      </details>
+      <div id="error" class="text-danger small mt-2"></div>
+    </div>
+  </div>
+  <script>
+    function doLogin() {
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+      document.getElementById("error").textContent = "";
+      fetch("api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) })
+        .then(async (r) => {
+          if (r.ok) { location.href = __BASE__ || "."; }
+          else { const e = await r.json().catch(() => ({})); document.getElementById("error").textContent = e.error || "login failed"; }
+        })
+        .catch(() => (document.getElementById("error").textContent = "network error"));
+    }
+    document.getElementById("login").onclick = doLogin;
+    for (const id of ["username", "password"])
+      document.getElementById(id).addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+  </script>
+</body>
+</html>

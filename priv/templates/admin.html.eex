@@ -1,0 +1,128 @@
+<%= base %>
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span class="fw-semibold">Users</span>
+      <form id="create" class="d-flex gap-1 align-items-center">
+        <input id="new-name" class="form-control form-control-sm" style="width: 9rem" placeholder="username" spellcheck="false">
+        <input id="new-pass" class="form-control form-control-sm" style="width: 9rem" placeholder="password" type="text" spellcheck="false">
+        <select id="new-role" class="form-select form-select-sm" style="width: 6rem">
+          <option value="user">user</option>
+          <option value="admin">admin</option>
+        </select>
+        <button class="btn btn-sm btn-primary">Add user</button>
+      </form>
+    </div>
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>name</th><th>role</th><th class="text-end">actions</th></tr></thead>
+      <tbody id="users"></tbody>
+    </table>
+  </div>
+  <div class="alert alert-secondary small mt-3">
+    "Reset password" works for any user, including your own (no current password needed).
+    Deleting a user revokes their live session and blocks that account from logging in again.
+  </div>
+  <dialog id="reset-dlg" class="border rounded-3" style="max-width:420px">
+    <h6 class="fw-semibold mb-2">Reset password</h6>
+    <input id="reset-pass" class="form-control form-control-sm mb-2" placeholder="new password" type="text" spellcheck="false">
+    <form method="dialog" class="text-end">
+      <button id="reset-cancel" class="btn btn-sm btn-secondary">Cancel</button>
+      <button id="reset-ok" class="btn btn-sm btn-primary">Save</button>
+    </form>
+  </dialog>
+  <script>
+    let resetTarget = null;
+    function err(msg) { alert(msg); }
+    async function api(url, opts) {
+      const r = await fetch(url, opts);
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || r.statusText);
+      return j;
+    }
+    async function refresh() {
+      const users = await (await fetch("api/admin/users")).json();
+      const tbody = document.getElementById("users");
+      tbody.innerHTML = "";
+      for (const u of users) {
+        const tr = document.createElement("tr");
+        const tdName = document.createElement("td");
+        tdName.className = "fw-semibold";
+        tdName.textContent = u.name;
+        tr.appendChild(tdName);
+
+        const tdRole = document.createElement("td");
+        if (u.name !== "admin") {
+          const sel = document.createElement("select");
+          sel.className = "form-select form-select-sm";
+          for (const r of ["user", "admin"]) {
+            const opt = document.createElement("option");
+            opt.value = r; opt.textContent = r;
+            if (r === u.role) opt.selected = true;
+            sel.appendChild(opt);
+          }
+          sel.onchange = async () => {
+            try {
+              await api("api/admin/users/" + u.name + "/role", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: sel.value }) });
+              refresh();
+            } catch (e) { err(e.message); refresh(); }
+          };
+          tdRole.appendChild(sel);
+        } else {
+          tdRole.textContent = "admin";
+        }
+        tr.appendChild(tdRole);
+
+        const td = document.createElement("td");
+        td.className = "text-end";
+        const wrap = document.createElement("div");
+        wrap.className = "d-flex gap-1 justify-content-end";
+        const reset = document.createElement("button");
+        reset.className = "btn btn-sm btn-outline-secondary";
+        reset.textContent = "Reset password";
+        reset.onclick = () => openReset(u.name);
+        wrap.appendChild(reset);
+        if (u.role !== "admin") {
+          const del = document.createElement("button");
+          del.className = "btn btn-sm btn-outline-danger";
+          del.textContent = "Delete";
+          del.onclick = async () => {
+            if (!confirm("Delete user " + u.name + "?")) return;
+            try { await api("api/admin/users/" + u.name + "/delete", { method: "POST" }); refresh(); }
+            catch (e) { err(e.message); }
+          };
+          wrap.appendChild(del);
+        }
+        td.appendChild(wrap);
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      }
+    }
+    document.getElementById("create").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = document.getElementById("new-name").value.trim();
+      const password = document.getElementById("new-pass").value;
+      const role = document.getElementById("new-role").value;
+      if (!name || !password) return;
+      try {
+        await api("api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, password, role }) });
+        document.getElementById("new-name").value = "";
+        document.getElementById("new-pass").value = "";
+        document.getElementById("new-role").value = "user";
+        refresh();
+      } catch (er) { err(er.message); }
+    });
+    function openReset(name) {
+      resetTarget = name;
+      document.getElementById("reset-pass").value = "";
+      document.getElementById("reset-dlg").showModal();
+    }
+    document.getElementById("reset-ok").onclick = async () => {
+      const password = document.getElementById("reset-pass").value;
+      if (!password) return;
+      try {
+        await api("api/admin/users/" + resetTarget + "/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+        document.getElementById("reset-dlg").close();
+      } catch (e) { err(e.message); }
+    };
+    document.getElementById("reset-cancel").onclick = () => document.getElementById("reset-dlg").close();
+    refresh();
+  </script>

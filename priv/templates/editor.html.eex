@@ -1,0 +1,422 @@
+<%= base %>
+  <style>
+    .cm { position: relative; border: 1px solid var(--bs-border-color); height: 46vh;
+          min-height: 280px; background: var(--bs-tertiary-bg); }
+    .cm pre, .cm textarea { margin: 0; padding: 12px; position: absolute; inset: 0;
+          width: 100%; height: 100%; box-sizing: border-box;
+          font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+          font-size: 13px; line-height: 20px;
+          white-space: pre; overflow: auto; tab-size: 2; letter-spacing: 0;
+          text-size-adjust: 100%; -webkit-text-size-adjust: 100%; }
+    @media (max-width: 768px) {
+      .cm pre, .cm textarea { font-size: 16px; line-height: 24px; }
+    }
+    .cm pre { pointer-events: none; z-index: 1; }
+    .cm pre .hljs { display: block; padding: 0; margin: 0; background: transparent;
+          overflow: visible; font: inherit; }
+    .cm textarea { z-index: 2; background: transparent; color: transparent;
+          caret-color: var(--bs-body-color); border: 0; resize: none; outline: none; }
+    .cm-gutter { position: absolute; left: 0; top: 0; bottom: 0; width: 3.4rem;
+          overflow: hidden; box-sizing: border-box; z-index: 1;
+          background: var(--bs-tertiary-bg); border-right: 1px solid var(--bs-border-color);
+          user-select: none; }
+    #gutter { padding: 12px 8px 12px 0; font-family: ui-monospace, "SFMono-Regular",
+          Menlo, Consolas, monospace; font-size: 13px; line-height: 20px;
+          text-align: right; color: var(--bs-secondary-color); white-space: pre; }
+    @media (max-width: 768px) { #gutter { font-size: 16px; line-height: 24px; } }
+    .cm pre, .cm textarea { left: 3.4rem; }
+    .flowlogs { font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.5;
+          white-space: pre-wrap; height: 240px; overflow: auto; }
+    .ent-row { cursor: pointer; border-bottom: 1px solid var(--bs-border-color); }
+    .ent-row:hover { background: var(--bs-tertiary-bg); }
+    #entities-card summary { cursor: pointer; }
+    #ent-overlay { position: fixed; inset: 0; z-index: 1070; display: flex;
+           align-items: center; justify-content: center; background: rgba(0, 0, 0, .45); }
+    #entities-card { width: min(940px, 94vw); height: min(72vh, 680px);
+           display: flex; flex-direction: column; overflow: hidden; }
+    #entities-card .card-header { flex: 0 0 auto; }
+     #entities-card .card-body { flex: 1 1 auto; overflow: auto; }
+     #cron-overlay { position: fixed; inset: 0; z-index: 1070; display: flex;
+           align-items: center; justify-content: center; background: rgba(0, 0, 0, .45); }
+     #cron-card { width: min(560px, 94vw); }
+  </style>
+  <div class="card">
+    <div class="card-body">
+      <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+        <span id="hint" class="text-secondary small"></span>
+        <label class="ms-2 small">Name
+          <input id="name" class="form-control form-control-sm d-inline-block" style="width: 11rem" spellcheck="false">
+        </label>
+        <button id="check" class="btn btn-sm btn-outline-secondary">Check</button>
+        <button id="reload" class="btn btn-sm btn-outline-secondary">Reload</button>
+        <button id="entities-btn" class="btn btn-sm btn-outline-secondary">Entities</button>
+        <button id="cron-btn" class="btn btn-sm btn-outline-secondary">Cron</button>
+        <button id="revert" class="btn btn-sm btn-outline-secondary">Revert</button>
+        <button id="save" class="btn btn-sm btn-primary">Save</button>
+        <span id="status" class="text-success small"></span>
+      </div>
+      <div class="cm">
+        <div class="cm-gutter"><div id="gutter"></div></div>
+        <pre class="cm-hl" aria-hidden="true"><code id="hl" class="hljs language-elixir"></code></pre>
+        <textarea id="editor" wrap="off" spellcheck="false" autocomplete="off"></textarea>
+      </div>
+    </div>
+  </div>
+  <div id="ent-overlay" class="d-none">
+    <div id="entities-card" class="card">
+      <div class="card-header d-flex align-items-center gap-2 flex-wrap">
+        <span class="fw-semibold">Entities</span>
+        <input id="ent-search" class="form-control form-control-sm" style="max-width: 22rem"
+               placeholder="Search name or entity_id…" spellcheck="false">
+        <button id="ent-refresh" class="btn btn-sm btn-outline-secondary">Refresh</button>
+        <span id="ent-status" class="text-secondary small"></span>
+        <button id="ent-close" class="btn btn-sm btn-outline-secondary ms-auto" aria-label="Close">×</button>
+      </div>
+      <div class="card-body p-0">
+        <div id="ent-tree"></div>
+      </div>
+    </div>
+  </div>
+  <div id="cron-overlay" class="d-none">
+    <div id="cron-card" class="card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <span class="fw-semibold">Cron</span>
+        <button id="cron-close" class="btn btn-sm btn-outline-secondary ms-auto" aria-label="Close">×</button>
+      </div>
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-2">
+          <input id="cron-in" class="form-control font-monospace" spellcheck="false" style="flex: 1">
+          <button id="cron-copy" class="btn btn-sm btn-outline-secondary">Copy</button>
+        </div>
+        <div id="cron-out" class="mt-2 text-secondary"></div>
+        <div id="cron-presets" class="d-flex flex-wrap gap-1 mt-2"></div>
+        <div class="text-secondary small mt-2">
+          5-field: <code>min hour dom month dow</code> — used by a <code>Schedule</code> node's <code>cron:</code> config.
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="panels" class="row g-3 d-none">
+    <div class="col-12 col-lg-6">
+      <div class="card h-100">
+        <div class="card-header fw-semibold">Controls</div>
+        <div class="card-body"><div id="ctrl" class="d-flex flex-wrap gap-2"></div></div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="card h-100">
+        <div class="card-header fw-semibold">Flow logs</div>
+        <div class="card-body p-0"><div id="flowlogs" class="flowlogs"></div></div>
+      </div>
+    </div>
+  </div>
+  <link id="hljs-theme" href="<%= hljs %>/styles/github-dark.min.css" rel="stylesheet">
+  <script src="<%= hljs %>/highlight.min.js"></script>
+  <script src="<%= hljs %>/languages/elixir.min.js"></script>
+  <script src="static/cron/cronstrue.min.js"></script>
+  <script>
+    <%= control_js %>
+    const FLOW = <%= source_json %>;
+    const FLOWNAME = <%= name_json %>;
+    const FLOWLOG = FLOWNAME ? FLOWNAME.split("/").pop() : "";
+    const editor = document.getElementById("editor");
+    const hl = document.getElementById("hl");
+    const pre = document.querySelector(".cm pre");
+    const gutter = document.querySelector(".cm-gutter");
+    const gutterNums = document.getElementById("gutter");
+    const hint = document.getElementById("hint");
+    const status = document.getElementById("status");
+    const nameInput = document.getElementById("name");
+    editor.value = FLOW;
+    let savedSource = FLOW;
+    function snake(n) {
+      return n.replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+              .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2").toLowerCase();
+    }
+    function moduleSegment(name) {
+      const seg = name.replace(/[^A-Za-z0-9]+/g, "_").split("_").filter(Boolean)
+        .map((s) => s[0].toUpperCase() + s.slice(1).toLowerCase()).join("");
+      return seg || "MyFlow";
+    }
+    function currentModule() {
+      const m = editor.value.match(/defmodule\s+([A-Za-z0-9_.]+)/);
+      return m ? m[1] : null;
+    }
+    function setCurrentModule(mod) {
+      const m = editor.value.match(/defmodule\s+[A-Za-z0-9_.]+/);
+      if (!m) return;
+      editor.value = editor.value.slice(0, m.index) + "defmodule " + mod +
+                     editor.value.slice(m.index + m[0].length);
+    }
+    function render() {
+      let html;
+      const escaped = editor.value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      if (typeof hljs === "undefined") {
+        html = escaped;
+      } else {
+        try {
+          html = hljs.highlight(editor.value, { language: "elixir" }).value;
+        } catch (e) {
+          html = escaped;
+        }
+      }
+      if (editor.value.endsWith("\n")) html += " ";
+      hl.innerHTML = html;
+      gutterNums.textContent = editor.value.split("\n").map((_, i) => i + 1).join("\n");
+      syncScroll();
+      const mod = currentModule();
+      hint.textContent = mod ? ("saves as " + snake(mod.split(".").pop()) + ".ex")
+                             : "add a defmodule to save";
+      if (mod && document.activeElement !== nameInput) {
+        const n = snake(mod.split(".").pop());
+        if (nameInput.value !== n) nameInput.value = n;
+      }
+    }
+    nameInput.addEventListener("input", () => {
+      setCurrentModule("HomeElixir.Flows." + moduleSegment(nameInput.value));
+      render();
+    });
+    editor.addEventListener("input", render);
+    window.addEventListener("beforeunload", (e) => {
+      if (editor.value !== savedSource) { e.preventDefault(); e.returnValue = ""; }
+    });
+    function syncScroll() {
+      pre.scrollTop = editor.scrollTop;
+      pre.scrollLeft = editor.scrollLeft;
+      gutter.scrollTop = editor.scrollTop;
+    }
+    editor.addEventListener("scroll", syncScroll);
+    render();
+    async function doSave() {
+      status.textContent = "saving…";
+      const headers = FLOWNAME ? { "X-Flow-Name": FLOWNAME } : {};
+      const r = await fetch("api/flows/save", { method: "POST", headers, body: editor.value });
+      status.textContent = await r.text();
+      if (r.ok) savedSource = editor.value;
+    }
+    async function doRevert() {
+      if (!FLOWNAME) { status.textContent = "save first"; return; }
+      status.textContent = "reverting…";
+      const r = await fetch(`api/flows/${FLOWNAME}/loaded_source`);
+      if (!r.ok) { status.textContent = "no loaded state to revert to"; return; }
+      const { source } = await r.json();
+      editor.value = source;
+      render();
+      const s = await fetch("api/flows/save", { method: "POST", headers: { "X-Flow-Name": FLOWNAME }, body: editor.value });
+      status.textContent = await s.text();
+      if (s.ok) savedSource = editor.value;
+    }
+    async function doCheck() {
+      status.textContent = "checking…";
+      const r = await fetch("api/flows/check", { method: "POST", body: editor.value });
+      status.textContent = await r.text();
+    }
+    async function doReload() {
+      if (!FLOWNAME) { status.textContent = "save first"; return; }
+      status.textContent = "reloading…";
+      const r = await fetch(`api/flows/${FLOWNAME}/reload`, { method: "POST" });
+      const t = await r.text();
+      status.textContent = r.ok ? "reloaded" : t;
+      refreshControls();
+    }
+    document.getElementById("save").onclick = doSave;
+    document.getElementById("revert").onclick = doRevert;
+    document.getElementById("check").onclick = doCheck;
+    document.getElementById("reload").onclick = doReload;
+    async function refreshControls() {
+      if (!FLOWNAME) return;
+      const els = await (await fetch(`api/flows/${FLOWNAME}/ui`)).json();
+      const box = document.getElementById("ctrl");
+      box.innerHTML = "";
+      if (!els.length) { box.innerHTML = '<span class="text-secondary small">no ui elements</span>'; return; }
+      for (const e of els) box.appendChild(renderControl(e, "btn-sm btn-primary"));
+    }
+    const flowlogBox = document.getElementById("flowlogs");
+    let flowLastId = 0, flowSyncing = false;
+    function flowLogDiv(line) {
+      const d = document.createElement("div");
+      d.textContent = line;
+      if (line.startsWith("error")) d.className = "text-danger";
+      else if (line.startsWith("warning")) d.className = "text-warning-emphasis";
+      return d;
+    }
+    function appendFlowLine(line) {
+      flowlogBox.appendChild(flowLogDiv(line));
+      while (flowlogBox.children.length > 300) flowlogBox.removeChild(flowlogBox.firstChild);
+      flowlogBox.scrollTop = flowlogBox.scrollHeight;
+    }
+    function onFlowLog(msg) {
+      if (flowSyncing) return;
+      if (msg.id > flowLastId) {
+        if (msg.line.includes("[" + FLOWLOG + "]")) appendFlowLine(msg.line);
+        flowLastId = msg.id;
+      }
+    }
+    async function resyncFlowLogs() {
+      flowSyncing = true;
+      try {
+        const items = await (await fetch("api/logs?since=" + flowLastId)).json();
+        for (const it of items) {
+          if (it.line.includes("[" + FLOWLOG + "]")) appendFlowLine(it.line);
+          flowLastId = it.id;
+        }
+      } catch (e) {}
+      flowSyncing = false;
+    }
+    if (FLOWNAME) {
+      document.getElementById("panels").classList.remove("d-none");
+      refreshControls();
+      connectUI({ state: updateBadge, log: onFlowLog },
+        () => { refreshControls(); resyncFlowLogs(); });
+    }
+    function setHljsTheme(t) {
+      document.getElementById("hljs-theme").href = "<%= hljs %>/styles/" + (t === "dark" ? "github-dark.min.css" : "github.min.css");
+    }
+    setHljsTheme(document.documentElement.getAttribute("data-bs-theme"));
+    document.addEventListener("themechange", function (e) { setHljsTheme(e.detail); });
+    const entOverlay = document.getElementById("ent-overlay");
+    const entTree = document.getElementById("ent-tree");
+    const entSearch = document.getElementById("ent-search");
+    const entStatus = document.getElementById("ent-status");
+    let entData = null;
+    function openEnt() {
+      entOverlay.classList.remove("d-none");
+      entSearch.focus();
+      if (!entData) loadEntities();
+    }
+    function closeEnt() { entOverlay.classList.add("d-none"); }
+    document.getElementById("entities-btn").onclick = () =>
+      entOverlay.classList.contains("d-none") ? openEnt() : closeEnt();
+    document.getElementById("ent-close").onclick = closeEnt;
+    entOverlay.addEventListener("click", (e) => { if (e.target === entOverlay) closeEnt(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !entOverlay.classList.contains("d-none")) closeEnt();
+    });
+    document.getElementById("ent-refresh").onclick = () => loadEntities();
+
+    const cronOverlay = document.getElementById("cron-overlay");
+    const cronIn = document.getElementById("cron-in");
+    const cronOut = document.getElementById("cron-out");
+    function cronRender() {
+      const e = cronIn.value.trim();
+      if (!e) { cronOut.textContent = ""; cronOut.className = "mt-2 text-secondary"; return; }
+      try { cronOut.textContent = cronstrue.toString(e); cronOut.className = "mt-2"; }
+      catch (err) { cronOut.textContent = "Invalid: " + err.message; cronOut.className = "mt-2 text-danger"; }
+    }
+    function openCron() {
+      const m = editor.value.match(/cron:\s*"([^"]+)"/);
+      cronIn.value = m ? m[1] : "*/2 * * * *";
+      cronOverlay.classList.remove("d-none");
+      cronRender(); cronIn.focus(); cronIn.select();
+    }
+    function closeCron() { cronOverlay.classList.add("d-none"); }
+    document.getElementById("cron-btn").onclick = () =>
+      cronOverlay.classList.contains("d-none") ? openCron() : closeCron();
+    document.getElementById("cron-close").onclick = closeCron;
+    cronOverlay.addEventListener("click", (e) => { if (e.target === cronOverlay) closeCron(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !cronOverlay.classList.contains("d-none")) closeCron();
+    });
+    cronIn.addEventListener("input", cronRender);
+    document.getElementById("cron-copy").onclick = async (e) => {
+      try { await navigator.clipboard.writeText(cronIn.value.trim());
+        e.target.textContent = "Copied"; setTimeout(() => (e.target.textContent = "Copy"), 1200);
+      } catch (_) {}
+    };
+    for (const [label, val] of [
+      ["Every 1 min", "* * * * *"], ["Every 2 min", "*/2 * * * *"], ["Every 5 min", "*/5 * * * *"],
+      ["Hourly", "0 * * * *"], ["Daily 9am", "0 9 * * *"], ["Weekdays 9am", "0 9 * * 1-5"],
+      ["Monday 3pm", "0 15 * * 1"], ["1st of month", "0 0 1 * *"]
+    ]) {
+      const b = document.createElement("button");
+      b.className = "btn btn-sm btn-outline-secondary";
+      b.textContent = label;
+      b.onclick = () => { cronIn.value = val; cronRender(); cronIn.focus(); };
+      document.getElementById("cron-presets").appendChild(b);
+    }
+    entSearch.addEventListener("input", renderEnt);
+    async function loadEntities() {
+      entStatus.textContent = "loading…";
+      try { entData = await (await fetch("api/entity_tree")).json(); }
+      catch (e) { entData = null; entStatus.textContent = "error"; renderEnt(); return; }
+      entStatus.textContent = entData.connected ? "" : "HA not connected";
+      renderEnt();
+    }
+    function entRow(e, crumb) {
+      const d = document.createElement("div");
+      d.className = "ent-row d-flex align-items-center gap-2 px-3 py-1";
+      if (crumb) {
+        const c = document.createElement("span");
+        c.className = "text-secondary small";
+        c.textContent = crumb;
+        d.appendChild(c);
+      }
+      const code = document.createElement("code");
+      code.textContent = e.id;
+      if (e.cls) code.title = e.cls;
+      const name = document.createElement("span");
+      name.className = "text-secondary small";
+      name.textContent = e.name;
+      const st = document.createElement("span");
+      st.className = "badge bg-secondary ms-auto";
+      st.textContent = (e.state == null ? "-" : e.state) + (e.unit ? " " + e.unit : "");
+      d.appendChild(code);
+      d.appendChild(name);
+      d.appendChild(st);
+      d.onclick = () => insertEntity(e.id);
+      return d;
+    }
+    function renderEnt() {
+      entTree.innerHTML = "";
+      if (!entData) return;
+      if (!entData.connected) {
+        entTree.innerHTML = '<div class="text-secondary small p-3">Home Assistant is not connected.</div>';
+        return;
+      }
+      const q = entSearch.value.trim().toLowerCase();
+      if (q) {
+        const all = [];
+        for (const a of entData.areas) {
+          for (const dv of (a.devices || [])) for (const e of dv.entities) all.push([e, a.name + " / " + dv.name]);
+          for (const e of (a.entities || [])) all.push([e, a.name]);
+        }
+        const matches = all.filter(([e]) => e.id.toLowerCase().includes(q) || (e.name || "").toLowerCase().includes(q));
+        if (!matches.length) {
+          entTree.innerHTML = '<div class="text-secondary small p-3">No matching entities.</div>';
+          return;
+        }
+        for (const [e, crumb] of matches) entTree.appendChild(entRow(e, crumb));
+        return;
+      }
+      for (const a of entData.areas) {
+        const areaCount = (a.devices || []).reduce((n, dv) => n + dv.entities.length, 0) + (a.entities || []).length;
+        const areaDet = document.createElement("details");
+        const aSum = document.createElement("summary");
+        aSum.className = "px-3 py-1 fw-semibold";
+        aSum.textContent = a.name + " (" + areaCount + ")";
+        areaDet.appendChild(aSum);
+        const body = document.createElement("div");
+        for (const dv of (a.devices || [])) {
+          const dDet = document.createElement("details");
+          const dSum = document.createElement("summary");
+          dSum.className = "px-3 py-1 ms-3";
+          dSum.textContent = dv.name + " (" + dv.entities.length + ")";
+          dDet.appendChild(dSum);
+          const dBod = document.createElement("div");
+          for (const e of dv.entities) dBod.appendChild(entRow(e));
+          dDet.appendChild(dBod);
+          body.appendChild(dDet);
+        }
+        for (const e of (a.entities || [])) body.appendChild(entRow(e));
+        areaDet.appendChild(body);
+        entTree.appendChild(areaDet);
+      }
+    }
+    function insertEntity(id) {
+      const s = editor.selectionStart, e = editor.selectionEnd;
+      editor.value = editor.value.slice(0, s) + id + editor.value.slice(e);
+      editor.selectionStart = editor.selectionEnd = s + id.length;
+      render();
+      closeEnt();
+    }
+  </script>

@@ -1,0 +1,401 @@
+<%= base %>
+  <style>
+    .flows-table thead th {
+      text-transform: uppercase;
+      font-size: .72rem;
+      letter-spacing: .03em;
+      font-weight: 600;
+      color: var(--bs-secondary-color);
+      background: var(--bs-tertiary-bg);
+    }
+    .status-dot { display: inline-block; width: .7rem; height: .7rem;
+      border-radius: 50%; background: var(--bs-secondary-color); vertical-align: middle; }
+    .status-dot.is-green { background: var(--bs-success); }
+    .status-dot.is-yellow { background: var(--bs-warning); }
+    .status-dot.is-red { background: var(--bs-danger); }
+    .status-dot.is-broken { background: transparent; border: 2px solid var(--bs-danger); box-sizing: border-box; }
+    .card { overflow: visible; }
+    .dropdown-menu { z-index: 1080; }
+  </style>
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span class="fw-semibold"><%= title %></span>
+      <div class="d-flex gap-1"><%= header_buttons %></div>
+    </div>
+    <table class="table table-hover align-middle mb-0 flows-table">
+      <thead><tr>
+        <th class="sortable" data-label="name" data-sort="name" style="cursor:pointer">name</th>
+        <th class="sortable" data-label="status" data-sort="loaded" style="cursor:pointer">status</th>
+        <th class="sortable" data-label="last triggered" data-sort="last_triggered" style="cursor:pointer">last triggered</th>
+        <th class="text-end">actions</th>
+      </tr></thead>
+      <tbody id="flows"></tbody>
+    </table>
+  </div>
+  <dialog id="error-dlg" class="border rounded-3" style="max-width:640px">
+    <h6 class="fw-semibold mb-2">Operation failed</h6>
+    <pre class="mb-0" style="white-space:pre-wrap;max-height:400px;overflow:auto"></pre>
+    <form method="dialog" class="mt-3 text-end"><button class="btn btn-sm btn-secondary">Close</button></form>
+  </dialog>
+  <dialog id="confirm-dlg" class="border rounded-3" style="max-width:440px">
+    <h6 class="fw-semibold mb-2">Delete flow</h6>
+    <p class="mb-0">Delete <span class="dlg-name fw-semibold"></span>? This removes its file and cannot be undone.</p>
+    <div class="mt-3 text-end d-flex gap-2">
+      <button id="confirm-cancel" class="btn btn-sm btn-secondary">Cancel</button>
+      <button id="confirm-ok" class="btn btn-sm btn-danger">Delete</button>
+    </div>
+  </dialog>
+  <dialog id="perm-dlg" class="border rounded-3" style="max-width:360px">
+    <h6 class="fw-semibold mb-2">Visibility</h6>
+    <p class="small text-secondary mb-2">Who can see and run <span class="perm-name fw-semibold"></span></p>
+    <select id="perm-select" class="form-select form-select-sm mb-3"></select>
+    <div class="text-end"><button id="perm-close" class="btn btn-sm btn-secondary">Done</button></div>
+  </dialog>
+  <script>
+    <%= control_js %>
+    const IS_ADMIN = <%= is_admin %>;
+    const MODE = "<%= mode_string %>";
+    let ALL_USERS = [];
+    const errDlg = document.getElementById("error-dlg");
+    async function fail(what, r) {
+      const e = await r.json().catch(() => ({}));
+      errDlg.querySelector("pre").textContent = what + "\n" + (e.error || r.statusText);
+      errDlg.showModal();
+    }
+    async function act(name, action) {
+      const r = await fetch(`api/flows/${name}/${action}`, { method: "POST" });
+      if (!r.ok) fail(name + " " + action, r);
+      refresh();
+    }
+    function cloneName(name) {
+      const parts = name.split("/");
+      parts[parts.length - 1] += "_clone";
+      return parts.join("/");
+    }
+    async function cloneFlow(f) {
+      const r = await fetch(`api/flows/${f.name}/clone`, { method: "POST" });
+      if (r.ok) location.href = __BASE__ + "/edit/" + cloneName(f.name);
+      else fail(f.name + " clone", r);
+    }
+    const confirmDlg = document.getElementById("confirm-dlg");
+    let confirmName = null;
+    function confirmDelete(name) {
+      confirmName = name;
+      confirmDlg.querySelector(".dlg-name").textContent = name;
+      confirmDlg.showModal();
+    }
+    document.getElementById("confirm-cancel").onclick = () => confirmDlg.close();
+    document.getElementById("confirm-ok").onclick = async () => {
+      const name = confirmName;
+      confirmDlg.close();
+      if (name) act(name, "delete");
+    };
+    async function loadUsers() {
+      if (!IS_ADMIN) return;
+      try { ALL_USERS = (await (await fetch("api/admin/users")).json()).map((u) => u.name); } catch (_) {}
+    }
+    async function reloadAll() {
+      const r = await fetch("api/flows/reload", { method: "POST" });
+      if (!r.ok) fail("reload all", r);
+      refresh();
+    }
+    const expanded = new Set();
+    const sortOrder = [];
+    const sortDir = {};
+    function sortBy(key) {
+      if (sortOrder[0] === key) {
+        if (sortDir[key] === "asc") {
+          sortDir[key] = "desc";
+        } else {
+          sortOrder.length = 0;
+        }
+      } else if (sortOrder[1] === key) {
+        sortOrder[0] = key;
+        sortOrder[1] = null;
+      } else {
+        sortDir[key] = "asc";
+        sortOrder[1] = sortOrder[0] || null;
+        sortOrder[0] = key;
+      }
+      refresh();
+    }
+    function folderAllLoaded(folder) {
+      for (const f of folder.flows) if (!f.loaded) return false;
+      for (const sub of Object.values(folder.folders)) if (!folderAllLoaded(sub)) return false;
+      return true;
+    }
+    function entryVal(e, key) {
+      if (e.kind === "flow") {
+        if (key === "loaded") return e.f.loaded ? 1 : 0;
+        if (key === "name") return modLabel(e.f);
+        return e.f[key];
+      }
+      return key === "loaded" ? (folderAllLoaded(e.folder) ? 1 : 0) : e.name;
+    }
+    function cmpEntries(a, b) {
+      for (const key of sortOrder.filter(Boolean)) {
+        const va = entryVal(a, key), vb = entryVal(b, key);
+        const d = typeof va === "number" ? va - vb : va < vb ? -1 : va > vb ? 1 : 0;
+        if (d) return sortDir[key] === "desc" ? -d : d;
+      }
+      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+    }
+    function updateSortHeaders() {
+      for (const th of document.querySelectorAll("th.sortable")) {
+        const i = sortOrder.indexOf(th.dataset.sort);
+        const arrow = i === 0 ? (sortDir[th.dataset.sort] === "desc" ? " ▼" : " ▲")
+          : i === 1 ? (sortDir[th.dataset.sort] === "desc" ? " ↓" : " ↑")
+          : "";
+        th.textContent = th.dataset.label + arrow;
+      }
+    }
+    function buildTree(flows) {
+      const root = { path: "", folders: {}, flows: [] };
+      for (const f of flows) {
+        const parts = f.name.split("/");
+        let node = root;
+        for (let i = 0; i < parts.length - 1; i++) {
+          const p = parts[i];
+          if (!node.folders[p]) node.folders[p] = { path: node.path ? node.path + "/" + p : p, folders: {}, flows: [] };
+          node = node.folders[p];
+        }
+        node.flows.push(f);
+      }
+      return root;
+    }
+    function folderCount(node) {
+      let n = node.flows.length;
+      for (const f of Object.values(node.folders)) n += folderCount(f);
+      return n;
+    }
+    const panel = { name: null, logs: [], sinceId: 0 };
+    function logTag(name) { return name.split("/").pop(); }
+    function logDiv(line) {
+      const d = document.createElement("div");
+      d.textContent = line;
+      if (line.startsWith("error")) d.className = "text-danger";
+      else if (line.startsWith("warning")) d.className = "text-warning-emphasis";
+      return d;
+    }
+    async function togglePanel(name) {
+      if (panel.name === name) {
+        panel.name = null;
+      } else {
+        panel.name = name;
+        panel.logs = [];
+        try {
+          const items = await (await fetch("api/logs?since=0")).json();
+          for (const it of items) {
+            if (it.id > panel.sinceId) panel.sinceId = it.id;
+            if (panel.name === name && it.line.includes("[" + logTag(name) + "]")) panel.logs.push(it.line);
+          }
+          panel.logs = panel.logs.slice(-300);
+        } catch (_) {}
+      }
+      refresh();
+    }
+    function onLog(msg) {
+      if (!panel.name || msg.id <= panel.sinceId) return;
+      panel.sinceId = msg.id;
+      if (!msg.line.includes("[" + logTag(panel.name) + "]")) return;
+      panel.logs.push(msg.line);
+      panel.logs = panel.logs.slice(-300);
+      const box = document.getElementById("panel-logs");
+      if (box) {
+        box.appendChild(logDiv(msg.line));
+        while (box.children.length > 300) box.removeChild(box.firstChild);
+        box.scrollTop = box.scrollHeight;
+      }
+    }
+    function panelRow(f) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 4;
+      td.innerHTML =
+        '<div class="d-flex gap-3 p-2 flex-column flex-md-row">' +
+        '<div class="border rounded p-2 flex-grow-1"><div class="fw-semibold small mb-2">controls</div>' +
+        '<div id="panel-ui" class="d-flex flex-wrap gap-2 align-items-center">loading…</div></div>' +
+        '<div class="border rounded p-2 flex-grow-1"><div class="fw-semibold small mb-2">logs</div>' +
+        '<div id="panel-logs" style="font-family:ui-monospace,monospace;font-size:12px;white-space:pre-wrap;height:220px;overflow:auto"></div></div>' +
+        '</div>';
+      tr.appendChild(td);
+      const logs = td.querySelector("#panel-logs");
+      for (const line of panel.logs) logs.appendChild(logDiv(line));
+      logs.scrollTop = logs.scrollHeight;
+      fetch(`api/flows/${f.name}/ui`).then((r) => r.json()).then((els) => {
+        const box = document.getElementById("panel-ui");
+        if (!box) return;
+        box.innerHTML = "";
+        if (!els.length) {
+          box.innerHTML = '<span class="text-secondary small">no ui elements</span>';
+          return;
+        }
+        for (const e of els) box.appendChild(renderControl(e, "btn-sm btn-primary"));
+      });
+      return tr;
+    }
+    function timeAgo(ms) {
+      if (ms == null) return "never";
+      const min = Math.floor((Date.now() - ms) / 60000);
+      if (min < 1) return "just now";
+      if (min < 60) return min + (min === 1 ? " minute" : " minutes") + " ago";
+      const hr = Math.floor(min / 60);
+      if (hr < 24) return hr + (hr === 1 ? " hour" : " hours") + " ago";
+      const day = Math.floor(hr / 24);
+      if (day < 7) return day + (day === 1 ? " day" : " days") + " ago";
+      return new Date(ms).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    }
+    function fillOwnerOptions(sel, owner) {
+      sel.innerHTML = "";
+      const cur = owner === null || owner === undefined ? "" : String(owner);
+      const opts = [["public", "All users"], ["", "Admin only"]].concat(ALL_USERS.map((u) => [u, "user: " + u]));
+      for (const [val, label] of opts) {
+        const o = document.createElement("option");
+        o.value = val;
+        o.textContent = label;
+        if (val === cur) o.selected = true;
+        sel.appendChild(o);
+      }
+    }
+    const permDlg = document.getElementById("perm-dlg");
+    const permSelect = document.getElementById("perm-select");
+    let permName = null;
+    function openPerms(f) {
+      permName = f.name;
+      permDlg.querySelector(".perm-name").textContent = f.name.split("/").pop();
+      fillOwnerOptions(permSelect, f.owner);
+      permDlg.showModal();
+    }
+    permSelect.onchange = async () => {
+      if (!permName) return;
+      const name = permName;
+      const r = await fetch(`api/flows/${name}/owner`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner: permSelect.value || null }) });
+      if (!r.ok) fail(name + " owner", r);
+      permDlg.close();
+      refresh();
+    };
+    document.getElementById("perm-close").onclick = () => permDlg.close();
+    function closeMenus(except) {
+      document.querySelectorAll(".dropdown-menu.show").forEach((m) => { if (m !== except) m.classList.remove("show"); });
+    }
+    document.addEventListener("click", () => closeMenus());
+    function modLabel(f) {
+      if (f.module) return String(f.module).replace(/^Elixir\.HomeElixir\.Flows\./, "").split(".").pop();
+      return f.name.split("/").pop();
+    }
+    function mkBtn(label, cls) {
+      const b = document.createElement("button");
+      b.className = "btn btn-sm " + cls;
+      b.textContent = label;
+      return b;
+    }
+    function flowRow(f, depth, label) {
+      const tr = document.createElement("tr");
+      if (MODE !== "archived") {
+        tr.style.cursor = "pointer";
+        tr.onclick = (ev) => { if (!ev.target.closest("button, a, select, input, .dropdown")) togglePanel(f.name); };
+      }
+      tr.innerHTML =
+        `<td class="fw-semibold" style="padding-left:${12 + depth * 20}px">${modLabel(f)}</td>` +
+        `<td><span class="status-dot ${f.status === "grey" ? "" : "is-" + f.status}" title="${f.status}"></span></td>` +
+        `<td class="text-secondary">${timeAgo(f.last_triggered)}</td>`;
+      const actions = document.createElement("div");
+      actions.className = "d-flex gap-2 justify-content-end align-items-center";
+
+      if (MODE === "archived") {
+        const restore = mkBtn("Restore", "btn-outline-secondary");
+        restore.onclick = () => act(f.name, "unarchive");
+        const del = mkBtn("Delete", "btn-outline-danger");
+        del.onclick = () => confirmDelete(f.name);
+        actions.append(restore, del);
+      } else {
+        const sw = document.createElement("div");
+        sw.className = "form-check form-switch mb-0";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.className = "form-check-input";
+        cb.checked = !!f.loaded;
+        cb.onchange = () => act(f.name, cb.checked ? "load" : "unload");
+        sw.appendChild(cb);
+        actions.appendChild(sw);
+
+        const items =
+          '<a class="dropdown-item" href="edit/' + f.name + '">Edit</a>' +
+          '<button class="dropdown-item" data-a="reload">Reload</button>' +
+          (IS_ADMIN ? '<button class="dropdown-item" data-a="perms">Permissions</button>' : "") +
+          '<button class="dropdown-item" data-a="clone">Clone</button>' +
+          '<button class="dropdown-item" data-a="archive">Archive</button>' +
+          '<hr class="dropdown-divider">' +
+          '<button class="dropdown-item text-danger" data-a="delete">Delete</button>';
+
+        const dd = document.createElement("div");
+        dd.className = "dropdown";
+        dd.innerHTML = '<button class="btn btn-sm btn-outline-secondary" aria-label="menu">⋮</button><div class="dropdown-menu dropdown-menu-end" data-bs-popper>' + items + '</div>';
+        actions.appendChild(dd);
+
+        const menuList = dd.querySelector(".dropdown-menu");
+        dd.querySelector("button").onclick = (ev) => { ev.stopPropagation(); closeMenus(menuList); menuList.classList.toggle("show"); };
+        menuList.querySelectorAll("[data-a]").forEach((el) => {
+          el.onclick = () => {
+            closeMenus();
+            const a = el.dataset.a;
+            if (a === "delete") confirmDelete(f.name);
+            else if (a === "perms") openPerms(f);
+            else if (a === "clone") cloneFlow(f);
+            else act(f.name, a);
+          };
+        });
+      }
+      tr.appendChild(actions);
+      return tr;
+    }
+    function folderRow(folder, depth) {
+      const open = expanded.has(folder.path);
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 4;
+      td.style.cursor = "pointer";
+      td.innerHTML = `<span class="fw-semibold" style="padding-left:${12 + depth * 20}px">${open ? "▾" : "▸"} ${folder.path.split("/").pop()} <span class="text-secondary fw-normal">(${folderCount(folder)})</span></span>`;
+      td.onclick = () => { open ? expanded.delete(folder.path) : expanded.add(folder.path); refresh(); };
+      tr.appendChild(td);
+      return tr;
+    }
+    function renderNode(node, depth, tbody) {
+      const entries = [];
+      for (const name of Object.keys(node.folders)) entries.push({ kind: "folder", name, folder: node.folders[name] });
+      for (const f of node.flows) entries.push({ kind: "flow", name: modLabel(f), f });
+      if (sortOrder.length) {
+        entries.sort(cmpEntries);
+      } else {
+        entries.sort((a, b) => (a.kind === b.kind ? (a.name < b.name ? -1 : 1) : a.kind === "folder" ? -1 : 1));
+      }
+      for (const e of entries) {
+        if (e.kind === "folder") {
+          tbody.appendChild(folderRow(e.folder, depth));
+          if (expanded.has(e.folder.path)) renderNode(e.folder, depth + 1, tbody);
+        } else {
+          tbody.appendChild(flowRow(e.f, depth, e.name));
+          if (e.f.name === panel.name) tbody.appendChild(panelRow(e.f));
+        }
+      }
+    }
+    async function refresh() {
+      const all = await (await fetch("api/flows")).json();
+      const tbody = document.getElementById("flows");
+      if (all && all.busy) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">${all.message || "Loading…"}</td></tr>`;
+        return;
+      }
+      const flows = MODE === "archived" ? all.filter((f) => f.archived) : all.filter((f) => !f.archived);
+      tbody.innerHTML = "";
+      renderNode(buildTree(flows), 0, tbody);
+      updateSortHeaders();
+    }
+    const reloadAllBtn = document.getElementById("reload-all");
+    if (reloadAllBtn) reloadAllBtn.onclick = reloadAll;
+    for (const th of document.querySelectorAll("th.sortable")) th.onclick = () => sortBy(th.dataset.sort);
+    if (IS_ADMIN) loadUsers().then(refresh);
+    else refresh();
+    connectUI({ flow_changed: refresh, state: updateBadge, log: onLog });
+    setInterval(refresh, 30000);
+  </script>

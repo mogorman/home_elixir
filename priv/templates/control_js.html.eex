@@ -1,0 +1,81 @@
+// Session-lapse guard. If auth is lost while a page is open (cookie expiry,
+// logout in another tab, or an admin deleting/role-changing the account —
+// each drops the live session), the next /api/* call 401s. Send the browser
+// back to /login instead of leaving a blank, half-dead page.
+(function () {
+  const real = window.fetch;
+  window.fetch = function (input, init) {
+    return real(input, init).then((res) => {
+      const url = typeof input === "string" ? input : (input && input.url) || "";
+      if (res.status === 401 && url.indexOf("api/") === 0 && url.indexOf("api/login") < 0) {
+        location.href = __BASE__ ? __BASE__ + "/login" : "login";
+      }
+      return res;
+    });
+  };
+  // Idle safety net: catch a session that lapses while the page sits open.
+  setInterval(() => { window.fetch("api/me"); }, 30000);
+})();
+function setSnapshot(el, value) {
+  el.innerHTML = "";
+  if (value) {
+    const img = document.createElement("img");
+    img.src = value; img.className = "img-fluid rounded"; img.style.maxWidth = "220px";
+    el.appendChild(img);
+  } else {
+    const s = document.createElement("span");
+    s.className = "text-secondary small"; s.textContent = "no snapshot yet";
+    el.appendChild(s);
+  }
+}
+function renderControl(e, btnClass) {
+  if (e.type === "state") {
+    const b = document.createElement("span");
+    const on = e.value === true || e.value === "on";
+    const off = e.value === false || e.value === "off";
+    b.className = "badge " + (on ? "bg-success" : off ? "bg-secondary" : "bg-info text-dark");
+    b.textContent = (e.label || e.node) + ": " + (e.value === null || e.value === undefined ? "-" : e.value);
+    b.dataset.flow = e.name;
+    b.dataset.node = e.node;
+    b.dataset.label = e.label || e.node;
+    return b;
+  }
+  if (e.type === "image") {
+    const wrap = document.createElement("span");
+    wrap.className = "d-inline-flex align-items-center";
+    wrap.dataset.flow = e.name;
+    wrap.dataset.node = e.node;
+    wrap.dataset.label = e.label || e.node;
+    wrap.dataset.snapshot = "1";
+    setSnapshot(wrap, e.value);
+    return wrap;
+  }
+  const b = document.createElement("button");
+  b.className = "btn " + (btnClass || "btn-primary");
+  b.textContent = e.label || e.node;
+  b.onclick = async () => {
+    await fetch("api/ui/click", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: e.name, node: e.node, payload: e.payload }) });
+  };
+  return b;
+}
+// Reconnect-with-backoff web socket. `handlers` maps a push `type` to a fn(msg).
+function connectUI(handlers, onOpen, retryMs) {
+  const proto = location.protocol === "https:" ? "wss://" : "ws://";
+  const ws = new WebSocket(proto + location.host + __BASE__ + "/api/ui/ws");
+  if (onOpen) ws.onopen = () => onOpen();
+  ws.onmessage = (e) => {
+    try { const m = JSON.parse(e.data); if (handlers[m.type]) handlers[m.type](m); } catch (_) {}
+  };
+  ws.onclose = () => setTimeout(() => connectUI(handlers, onOpen, retryMs), retryMs || 2000);
+  return ws;
+}
+// Update one badge from a pushed {flow, node, value} update. Pushes carry
+// the flow's short name, so also match the last segment of path-style names.
+function updateBadge(u) {
+  const el = [...document.querySelectorAll('[data-node="' + u.node + '"]')].find(
+    (b) => b.dataset.flow === u.flow || b.dataset.flow.split("/").pop() === u.flow);
+  if (!el) return;
+  if (el.dataset.snapshot) { setSnapshot(el, u.value); return; }
+  el.textContent = el.dataset.label + ": " + (u.value === null || u.value === undefined ? "-" : u.value);
+}
