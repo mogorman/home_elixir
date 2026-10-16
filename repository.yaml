@@ -1,0 +1,4 @@
+name: HomeElixir
+maintainer: mogorman <mogorman@users.noreply.github.com>
+url: https://github.com/mogorman/home_elixir
+description: Node-RED-style Elixir flow engine for Home Assistant
