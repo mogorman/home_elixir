@@ -86,6 +86,7 @@ server {
     listen 0.0.0.0:${INGRESS_PORT} default_server;
     listen [::]:${INGRESS_PORT} default_server;
     include /etc/nginx/includes/server_params.conf;
+    access_log /proc/1/fd/1;
     location / {
         include /etc/nginx/includes/proxy_params.conf;
         proxy_pass http://backend;
@@ -119,6 +120,10 @@ trap cleanup SIGTERM SIGINT
 APP=$!
 nginx &
 NGINX=$!
+sleep 2
+echo "home-elixir: nginx pid=${NGINX} listening check:"
+echo "  port ${DIRECT_PORT}: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${DIRECT_PORT}/ 2>/dev/null || echo 'no response')"
+echo "  port ${INGRESS_PORT}: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${INGRESS_PORT}/ 2>/dev/null || echo 'no response')"
 while true; do
   if ! kill -0 "$APP" 2>/dev/null; then
     echo "home-elixir exited; exiting so the supervisor restarts the container"
