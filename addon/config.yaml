@@ -5,8 +5,9 @@ slug: home-elixir
 description: Node-RED-style Elixir flow engine for Home Assistant
 url: https://github.com/mogorman/home_elixir
 # Pre-built, self-contained image (release + nginx + init). HA pulls this
-# instead of building; CI rebuilds + re-pushes per tag (see Phase 3).
-image: ghcr.io/mogorman/home-elixir:0.1.0
+# instead of building; the tag comes from `version` above (no tag here).
+# CI rebuilds + re-pushes per version (see Phase 3).
+image: ghcr.io/mogorman/home-elixir
 arch:
   - amd64
 homeassistant: "2023.3.0"
