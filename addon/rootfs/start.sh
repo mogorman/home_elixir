@@ -26,17 +26,20 @@ if [ ! -f /config/.flows-seeded ]; then
   touch /config/.flows-seeded
 fi
 
-# HA: in-HA, connect to this HA with the supervisor token. No user option.
-# HA: with host_network=true, HA is at 127.0.0.1:8123.
+# HA: prefer the ha_token option (long-lived access token); fall back to
+# SUPERVISOR_TOKEN (won't work for the HA WebSocket, but keep for compat).
 ha_field=""
-if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
+ha_opt="$(opt ha_token)"
+if [ -n "$ha_opt" ]; then
+  export HA_TOKEN="$ha_opt"
+  ha_field=', "ha_url": "ws://127.0.0.1:8123/api/websocket"'
+  echo "[start] HA configured with ha_token option (${#ha_opt} chars)"
+elif [ -n "${SUPERVISOR_TOKEN:-}" ]; then
   export HA_TOKEN="${SUPERVISOR_TOKEN}"
   ha_field=', "ha_url": "ws://127.0.0.1:8123/api/websocket"'
-  echo "[start] HA configured: ws://127.0.0.1:8123 (token ${#SUPERVISOR_TOKEN} chars)"
-  echo "[start] DEBUG token value: ${SUPERVISOR_TOKEN}"
-  echo "[start] DEBUG HA_TOKEN env: ${HA_TOKEN}"
+  echo "[start] HA configured with SUPERVISOR_TOKEN (${#SUPERVISOR_TOKEN} chars) - WARNING: may not work for HA WebSocket"
 else
-  echo "[start] HA not configured (no SUPERVISOR_TOKEN)"
+  echo "[start] HA not configured (no ha_token or SUPERVISOR_TOKEN)"
 fi
 
 # Optional admin password (the app's single login). Empty -> the app generates

@@ -184,7 +184,8 @@ defmodule HomeElixir.HA.Client do
 
   @impl true
   def handle_info({:ha_transport, :connected}, state) do
-    IO.puts("[ha] DEBUG sending auth token: #{state.token}")
+    require Logger
+    Logger.info("[ha] connecting to #{state.url}, token=#{state.token}")
     send_transport(state, %{type: "auth", access_token: state.token})
     {:noreply, %{state | status: :authenticating}}
   end
