@@ -184,7 +184,7 @@ defmodule HomeElixir.Web do
   def dispatch(%{method: "GET", request_path: "/edit/" <> name} = conn, _opts) do
     # Relative static URLs from the editor page resolve as /edit/static/...
     if String.contains?(name, "/static/") do
-      rest = :binary.split(name, "/static/", [global: false]) |> Enum.at(1)
+      rest = String.split(name, "/static/", parts: 2) |> Enum.at(1)
       static_file(conn, rest)
     else
       if flow_name_valid?(name) do

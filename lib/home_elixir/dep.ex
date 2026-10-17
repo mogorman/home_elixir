@@ -214,6 +214,14 @@ defmodule HomeElixir.Dep do
       end
     end
 
+    # In a release VM, append_path alone isn't enough for lazy loading;
+    # explicitly load every beam so the modules are resident.
+    for ebin <- ebins,
+        beam <- Path.wildcard(Path.join(ebin, "*.beam")) do
+      mod = Path.rootname(Path.basename(beam)) |> String.to_atom()
+      Code.ensure_loaded(mod)
+    end
+
     :ok
   end
 end
