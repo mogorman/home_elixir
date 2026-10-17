@@ -94,7 +94,11 @@ defmodule HomeElixir.FlowsHA do
     client = HA.client()
     # Archived flows get no switch (their entity is removed below); restoring
     # re-creates it.
-    flows = FlowStore.list() |> Enum.reject(& &1.archived)
+    flows =
+      case FlowStore.list() do
+        :timeout -> []
+        list -> Enum.reject(list, & &1.archived)
+      end
     desired = MapSet.new(flows, fn f -> node_id(f.name) end)
 
     # Remove HA switches for flows that no longer exist: read the Flows device's

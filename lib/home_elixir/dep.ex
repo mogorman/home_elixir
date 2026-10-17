@@ -79,7 +79,8 @@ defmodule HomeElixir.Dep do
   # ---- internals ----
 
   # `{:name, "version"}` pairs declared in a flow file's `Dep.install([...])`.
-  defp dep_specs(src) do
+  @doc false
+  def dep_specs(src) do
     for [_, inner] <- Regex.scan(~r/Dep\.install\(\s*\[([^\]]*)\]/s, src),
         [_, name, ver] <- Regex.scan(~r/\{:(\w+)\s*,\s*"([^"]+)"\}/, inner) do
       {String.to_atom(name), ver}

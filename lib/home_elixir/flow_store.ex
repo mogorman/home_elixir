@@ -396,8 +396,13 @@ defmodule HomeElixir.FlowStore do
       case resolve(name) do
         {:ok, path} ->
           # Recompile from source so an edited flow is picked up on (re)load.
+          # Install declared deps first so the compile can reference them.
           reply =
             try do
+              src = File.read!(path)
+              deps = HomeElixir.Dep.dep_specs(src)
+              if deps != [], do: HomeElixir.Dep.install(deps)
+
               mod = compile_atom(path)
 
               case Registry.load(mod) do
