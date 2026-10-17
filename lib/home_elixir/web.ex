@@ -432,7 +432,9 @@ defmodule HomeElixir.Web do
   end
 
   # A rename must not clobber a different flow that already has the new name.
+  # Saving the same name (old == new) is just an update, not a collision.
   defp rename_collision?(nil, _new), do: :ok
+  defp rename_collision?(old, new) when old == new, do: :ok
 
   defp rename_collision?(_old, new),
     do:
