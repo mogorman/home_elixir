@@ -638,10 +638,12 @@ defmodule HomeElixir.Web do
     end
   end
 
-  # OAuth callback success: resolve the token's user and open a session.
+  # OAuth callback success: resolve the token's user and open a session. The
+  # token itself becomes the shared HA auth (flows + WS client use it).
   defp finish_oauth(conn, {:ok, token}) do
     case HomeElixir.Auth.login_ha_token(token) do
       {:ok, {uid, role}} ->
+        HomeElixir.HA.activate(token)
         session = HomeElixir.Auth.create_session(uid, role)
 
         conn

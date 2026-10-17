@@ -26,21 +26,15 @@ if [ ! -f /config/.flows-seeded ]; then
   touch /config/.flows-seeded
 fi
 
-# HA: connect through the Supervisor proxy (like Music Assistant).
-# SUPERVISOR_TOKEN authenticates against the Supervisor, which proxies to HA Core.
-# ha_token option (long-lived access token) overrides if set.
+# HA: connect through the Supervisor proxy (like Music Assistant). The app
+# reads SUPERVISOR_TOKEN from its environment and uses it for the WebSocket
+# and REST proxies — it is the only token the proxy accepts.
 ha_field=""
-ha_opt="$(opt ha_token)"
-if [ -n "$ha_opt" ]; then
-  export HA_TOKEN="$ha_opt"
+if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
   ha_field=', "ha_url": "ws://supervisor/core/api/websocket"'
-  echo "[start] HA configured with ha_token option (${#ha_opt} chars) via supervisor proxy"
-elif [ -n "${SUPERVISOR_TOKEN:-}" ]; then
-  export HA_TOKEN="${SUPERVISOR_TOKEN}"
-  ha_field=', "ha_url": "ws://supervisor/core/api/websocket"'
-  echo "[start] HA configured with SUPERVISOR_TOKEN (${#SUPERVISOR_TOKEN} chars) via supervisor proxy"
+  echo "[start] HA configured via supervisor proxy (SUPERVISOR_TOKEN)"
 else
-  echo "[start] HA not configured (no ha_token or SUPERVISOR_TOKEN)"
+  echo "[start] HA not configured (no SUPERVISOR_TOKEN)"
 fi
 
 # Optional admin password (the app's single login). Empty -> the app generates

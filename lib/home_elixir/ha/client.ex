@@ -93,6 +93,9 @@ defmodule HomeElixir.HA.Client do
   @doc "Current connection status: `:connecting`, `:authenticating`, `:connected` or `:disconnected`."
   def status(client), do: GenServer.call(client, :status)
 
+  @doc "The access token this client authenticates with."
+  def token(client), do: GenServer.call(client, :token)
+
   @doc "The pid of the active transport (for diagnostics/tests); `nil` when down."
   def transport_pid(client), do: GenServer.call(client, :transport_pid)
 
@@ -118,6 +121,8 @@ defmodule HomeElixir.HA.Client do
 
   @impl true
   def handle_call(:status, _from, state), do: {:reply, state.status, state}
+
+  def handle_call(:token, _from, state), do: {:reply, state.token, state}
 
   def handle_call({:channels_for, to}, _from, state) do
     pairs =
@@ -185,7 +190,7 @@ defmodule HomeElixir.HA.Client do
   @impl true
   def handle_info({:ha_transport, :connected}, state) do
     require Logger
-    Logger.info("[ha] connecting to #{state.url}, token=#{state.token}")
+    Logger.info("[ha] connecting to #{state.url}")
     send_transport(state, %{type: "auth", access_token: state.token})
     {:noreply, %{state | status: :authenticating}}
   end

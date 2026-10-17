@@ -23,9 +23,24 @@ defmodule HomeElixir.HA do
     System.get_env("HA_URL") || Application.get_env(:home_elixir, :ha_url)
   end
 
-  @doc "The configured HA auth token (env `HA_TOKEN` or config `:ha_token`), or `nil`."
+  @doc """
+  The HA auth token used for all HA API calls (the shared WS client and REST).
+  First match wins:
+
+    1. env `SUPERVISOR_TOKEN` — present only when running as an HA add-on; the
+       only token the supervisor's Core proxy accepts
+    2. the token from the most recent web login (HA OAuth), stored in global
+       config
+    3. env `HA_TOKEN` (the NixOS module)
+    4. config `:ha_token` (e.g. config/secret.exs)
+
+  `nil` when nothing is configured.
+  """
   def token do
-    System.get_env("HA_TOKEN") || Application.get_env(:home_elixir, :ha_token)
+    System.get_env("SUPERVISOR_TOKEN")
+    || HomeElixir.Config.global_config() |> Map.get("ha_token")
+    || System.get_env("HA_TOKEN")
+    || Application.get_env(:home_elixir, :ha_token)
   end
 
   @doc "The public web origin (config `:web_base_url`), or `nil`."
@@ -34,8 +49,10 @@ defmodule HomeElixir.HA do
   end
 
   @doc """
-  The HA REST base URL (`scheme://host[:port]`) for HTTP API calls, derived from
-  the configured endpoint (which may be a `wss://`/`ws://` WebSocket URL).
+  The HA REST base URL (`scheme://host[:port][/prefix]`) for HTTP API calls,
+  derived from the configured endpoint (which may be a `wss://`/`ws://`
+  WebSocket URL). Keeps any proxy path prefix: `ws://supervisor/core/api/websocket`
+  becomes `http://supervisor/core`, so callers append `/api/...` as usual.
   `nil` when no HA endpoint is configured.
   """
   def rest_base do
@@ -44,12 +61,99 @@ defmodule HomeElixir.HA do
         nil
 
       url ->
-        url
-        |> String.replace_prefix("wss://", "https://")
-        |> String.replace_prefix("ws://", "http://")
-        |> URI.parse()
-        |> then(&"#{&1.scheme}://#{&1.host}#{if &1.port, do: ":#{&1.port}", else: ""}")
+        rest_origin(url) <> rest_prefix(url)
     end
+  end
+
+  @doc """
+  The REST path prefix implied by the configured endpoint (`"/core"` for the
+  supervisor Core proxy, `""` for a direct Core URL), or `nil` when no endpoint
+  is configured.
+  """
+  def rest_prefix do
+    case config_url() do
+      nil ->
+        nil
+
+      url ->
+        rest_prefix(url)
+    end
+  end
+
+  # A WS path like "/core/api/websocket" means REST lives under "/core/api/...";
+  # a direct "/api/websocket" means REST lives under "/api/...".
+  defp rest_prefix(url) do
+    url
+    |> URI.parse()
+    |> then(& &1.path)
+    |> then(&if is_binary(&1), do: &1, else: "")
+    |> String.split("/")
+    |> Enum.reject(&(&1 == ""))
+    |> drop_trailing("websocket")
+    |> drop_trailing("api")
+    |> then(fn
+      [] -> ""
+      segs -> "/" <> Enum.join(segs, "/")
+    end)
+  end
+
+  defp drop_trailing([], _seg), do: []
+  defp drop_trailing(list, seg), do: if(List.last(list) == seg, do: Enum.drop(list, -1), else: list)
+
+  defp rest_origin(url) do
+    url
+    |> String.replace_prefix("wss://", "https://")
+    |> String.replace_prefix("ws://", "http://")
+    |> URI.parse()
+    |> then(fn uri ->
+      # URI.parse fills the scheme's default port; only an explicit non-default
+      # port belongs in the base.
+      default = if uri.scheme == "https", do: 443, else: 80
+      port = if uri.port && uri.port != default, do: ":#{uri.port}", else: ""
+      "#{uri.scheme}://#{uri.host}#{port}"
+    end)
+  end
+
+  @doc """
+  Store `token` as the shared HA auth (beats the static config until the next
+  login) and make sure the shared WS client runs with the current token
+  (start it when absent, restart it when it holds a different one). Called on
+  a successful web login.
+  """
+  def activate(token) do
+    HomeElixir.Config.put_global(:ha_token, token)
+    ensure_client()
+    :ok
+  end
+
+  @doc "Ensure the shared WS client is running with the current token."
+  def ensure_client do
+    url = config_url()
+    token = token()
+
+    if Application.get_env(:home_elixir, :auto_start_ha, true) && url && token do
+      case client() do
+        nil ->
+          start_client(url, token)
+
+        pid ->
+          if HomeElixir.HA.Client.token(pid) != token do
+            Supervisor.terminate_child(HomeElixir.Supervisor, pid)
+            start_client(url, token)
+          end
+
+          :ok
+      end
+    else
+      :ok
+    end
+  end
+
+  defp start_client(url, token) do
+    Supervisor.start_child(
+      HomeElixir.Supervisor,
+      {HomeElixir.HA.Client, [name: client_name(), url: url, token: token]}
+    )
   end
 
   @doc """

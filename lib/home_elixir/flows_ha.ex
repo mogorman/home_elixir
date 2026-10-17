@@ -187,7 +187,7 @@ defmodule HomeElixir.FlowsHA do
     if is_binary(base) and is_binary(token) do
       with {scheme, host, port} <- parse_rest(base),
            {:ok, 200, body} <-
-             http_get(scheme, host, port, "/api/states", [
+             http_get(scheme, host, port, HA.rest_prefix() <> "/api/states", [
                {"authorization", "Bearer " <> token}
              ]),
            {:ok, states} <- Jason.decode(body) do
