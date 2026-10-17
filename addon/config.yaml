@@ -14,7 +14,7 @@ homeassistant_api: true
 # Embedded sidebar panel (ingress); the app serves under /api/ingress/<uuid>/.
 ingress: true
 ingress_port: 8090
-panel_icon: mdi:swap-horizontal
+panel_icon: https://cdn.jsdelivr.net/gh/mogorman/home_elixir@main/addon/icon.png
 panel_title: HomeElixir
 ports:
   8080/tcp: 8080
