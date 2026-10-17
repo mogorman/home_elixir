@@ -132,7 +132,9 @@ cleanup() {
 trap cleanup SIGTERM SIGINT
 
 # ---- run app + nginx, keep alive ----
-/opt/home-elixir/bin/home_elixir start &
+cd /app
+mix local.hex --force 2>/dev/null
+MIX_ENV=prod mix run --no-halt &
 APP=$!
 nginx &
 NGINX=$!

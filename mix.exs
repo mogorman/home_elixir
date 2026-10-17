@@ -14,7 +14,7 @@ defmodule HomeElixir.MixProject do
       # :releases from the project config.
       releases: [
         home_elixir: [
-          mode: :prod,
+          mode: :dev,
           steps: [:assemble, &HomeElixir.MixProject.copy_mnesia_ebin/1]
         ]
       ]

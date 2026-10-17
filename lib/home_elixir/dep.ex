@@ -204,14 +204,12 @@ defmodule HomeElixir.Dep do
 
     Enum.each(ebins, &Code.append_path/1)
 
-    # Load every beam module first (release VM won't lazy-load from added paths).
     for ebin <- ebins,
         beam <- Path.wildcard(Path.join(ebin, "*.beam")) do
       mod = Path.rootname(Path.basename(beam)) |> String.to_atom()
       Code.ensure_loaded(mod)
     end
 
-    # Now start the applications (their callback modules are loaded).
     for ebin <- ebins do
       case Path.wildcard(Path.join(ebin, "*.app")) do
         [app_file] ->

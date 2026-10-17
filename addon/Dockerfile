@@ -1,31 +1,14 @@
-# Consumes the Nix-free, standard-glibc HomeElixir release (built by CI from
-# Dockerfile.release) and layers the runtime. For a local build, pass:
-#   --build-arg RELEASE_IMAGE=home-elixir-release:local
-ARG RELEASE_IMAGE=ghcr.io/mogorman/home-elixir-release:0.1.0
-ARG RUNTIME_IMAGE=debian:trixie-slim
-ARG ELIXIR_IMAGE=elixir:1.20.4
+# The base image (built by Dockerfile.release) is a full Elixir env with the
+# app compiled at /app. We run it with `mix run --no-halt` (dev-mode VM allows
+# dynamic code loading for runtime dep installation).
+ARG RELEASE_IMAGE=localhost/home-elixir-release:local
+FROM ${RELEASE_IMAGE}
 
-FROM ${RELEASE_IMAGE} AS release
-FROM ${ELIXIR_IMAGE} AS elixir-tools
-RUN mix local.hex --force && mix local.rebar --force
-
-FROM ${RUNTIME_IMAGE}
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nginx bash jq curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# The self-contained release (standard glibc, portable).
-COPY --from=release /opt/home-elixir /opt/home-elixir
-
-# Elixir toolchain for runtime dep installation (mix deps.get/compile).
-COPY --from=elixir-tools /usr/local/lib/elixir /usr/local/lib/elixir
-COPY --from=elixir-tools /usr/local/lib/erlang /usr/local/lib/erlang
-COPY --from=elixir-tools /usr/local/bin/elixir /usr/local/bin/elixir
-COPY --from=elixir-tools /usr/local/bin/mix /usr/local/bin/mix
-COPY --from=elixir-tools /usr/local/bin/rebar3 /usr/local/bin/rebar3
-COPY --from=elixir-tools /root/.mix /root/.mix
-# Pin erl to the standard OTP (not the release's VM which expects release boot files).
-RUN printf '#!/bin/sh\nexec /usr/local/lib/erlang/bin/erl "$@"\n' > /usr/local/bin/erl && chmod +x /usr/local/bin/erl
+WORKDIR /app
 
 # bashio (Supervisor option/port discovery) + the app's nginx front.
 COPY vendor/lib/bashio /usr/local/lib/bashio
