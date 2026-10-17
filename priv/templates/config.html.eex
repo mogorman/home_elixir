@@ -1,0 +1,89 @@
+<%= base %>
+  <div class="card">
+    <div class="card-header"><span class="fw-semibold">Global config</span></div>
+    <div class="card-body">
+      <p class="text-secondary small mb-3">Values shared across all flows. A flow-specific
+      value (set in a flow's panel) overrides the global one. Secret-looking keys are masked.</p>
+      <div class="d-flex gap-2 mb-3">
+        <input id="new-key" class="form-control form-control-sm" placeholder="new key" style="max-width:220px">
+        <input id="new-val" class="form-control form-control-sm" placeholder="value">
+        <button id="add-btn" class="btn btn-sm btn-primary">Add</button>
+      </div>
+      <div id="cfg-list"></div>
+    </div>
+  </div>
+  <script>
+    <%= control_js %>
+    function btn(label, cls) {
+      const b = document.createElement("button");
+      b.className = "btn " + cls;
+      b.textContent = label;
+      return b;
+    }
+    async function fail(what, r) {
+      const e = await r.json().catch(() => ({}));
+      alert(what + ": " + (e.error || r.statusText));
+    }
+    function cfgRow(it) {
+      const row = document.createElement("div");
+      row.className = "d-flex align-items-center gap-2 mb-1 flex-wrap";
+      const label = document.createElement("span");
+      label.className = "small text-truncate" + (it.secret ? " font-mono" : "");
+      label.style.minWidth = "140px";
+      label.title = it.key;
+      label.textContent = it.key;
+      const input = document.createElement("input");
+      input.className = "form-control form-control-sm";
+      input.type = it.secret ? "password" : "text";
+      input.value = it.value == null ? "" : String(it.value);
+      input.dataset.revealed = "0";
+      const save = btn("Save", "btn-sm btn-outline-primary");
+      save.onclick = async () => {
+        const r = await fetch("api/config", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: it.key, value: input.value }) });
+        if (!r.ok) fail("save " + it.key, r); else loadConfig();
+      };
+      const del = btn("Delete", "btn-sm btn-outline-danger");
+      del.onclick = async () => {
+        const r = await fetch("api/config", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: it.key, value: null }) });
+        if (!r.ok) fail("delete " + it.key, r); else loadConfig();
+      };
+      const kids = [label, input, save, del];
+      if (it.secret) {
+        const reveal = btn("show", "btn-sm btn-outline-secondary");
+        reveal.onclick = () => {
+          const shown = input.dataset.revealed === "1";
+          input.type = shown ? "password" : "text";
+          input.dataset.revealed = shown ? "0" : "1";
+          reveal.textContent = shown ? "show" : "hide";
+        };
+        kids.push(reveal);
+      }
+      for (const k of kids) row.appendChild(k);
+      return row;
+    }
+    async function loadConfig() {
+      const box = document.getElementById("cfg-list");
+      let items;
+      try { items = await (await fetch("api/config")).json(); }
+      catch (_) { box.innerHTML = '<span class="text-danger">failed to load</span>'; return; }
+      box.innerHTML = "";
+      if (!items.length) { box.innerHTML = '<span class="text-secondary small">no global keys yet</span>'; return; }
+      for (const it of items) box.appendChild(cfgRow(it));
+    }
+    document.getElementById("add-btn").onclick = async () => {
+      const key = document.getElementById("new-key").value.trim();
+      const val = document.getElementById("new-val").value;
+      if (!key) return;
+      const r = await fetch("api/config", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: key, value: val }) });
+      if (r.ok) {
+        document.getElementById("new-key").value = "";
+        document.getElementById("new-val").value = "";
+        loadConfig();
+      } else fail("add " + key, r);
+    };
+    loadConfig();
+    connectUI({ flow_changed: loadConfig });
+  </script>

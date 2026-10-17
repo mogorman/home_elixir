@@ -218,22 +218,88 @@
         box.scrollTop = box.scrollHeight;
       }
     }
+    async function renderConfigBox(name, box) {
+      if (!box) return;
+      box.innerHTML = '<span class="text-secondary">loading…</span>';
+      let items;
+      try {
+        items = await (await fetch(`api/flows/${name}/config`)).json();
+      } catch (_) {
+        box.innerHTML = '<span class="text-danger">failed to load</span>';
+        return;
+      }
+      if (!items.length) {
+        box.innerHTML = '<span class="text-secondary">no config (load the flow to seed defaults)</span>';
+        return;
+      }
+      box.innerHTML = "";
+      for (const it of items) box.appendChild(configRow(name, it));
+    }
+    function configRow(name, it) {
+      const row = document.createElement("div");
+      row.className = "d-flex align-items-center gap-2 mb-1 flex-wrap";
+      const label = document.createElement("span");
+      label.className = "small text-truncate" + (it.secret ? " font-mono" : "");
+      label.style.minWidth = "100px";
+      label.title = it.key;
+      label.textContent = it.key;
+      const input = document.createElement("input");
+      input.className = "form-control form-control-sm";
+      input.type = it.secret ? "password" : "text";
+      input.value = it.value == null ? "" : String(it.value);
+      input.dataset.revealed = "0";
+      const badge = document.createElement("span");
+      badge.className = "badge " + (it.source === "global" ? "bg-secondary" : "bg-info text-dark");
+      badge.textContent = it.source;
+      const save = mkBtn("Save", "btn-sm btn-outline-primary");
+      save.onclick = async () => {
+        const r = await fetch(`api/flows/${name}/config`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: it.key, value: input.value, scope: it.source })
+        });
+        if (!r.ok) fail("config " + it.key, r); else refresh();
+      };
+      const reset = mkBtn("Reset", "btn-sm btn-outline-secondary");
+      reset.onclick = async () => {
+        const r = await fetch(`api/flows/${name}/config`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: it.key, value: null, scope: it.source })
+        });
+        if (!r.ok) fail("config " + it.key, r); else refresh();
+      };
+      const kids = [label, input, badge, save, reset];
+      if (it.secret) {
+        const reveal = mkBtn("show", "btn-sm btn-outline-secondary");
+        reveal.onclick = () => {
+          const shown = input.dataset.revealed === "1";
+          input.type = shown ? "password" : "text";
+          input.dataset.revealed = shown ? "0" : "1";
+          reveal.textContent = shown ? "show" : "hide";
+        };
+        kids.push(reveal);
+      }
+      for (const k of kids) row.appendChild(k);
+      return row;
+    }
     function panelRow(f) {
       const tr = document.createElement("tr");
       const td = document.createElement("td");
       td.colSpan = 4;
       td.innerHTML =
         '<div class="d-flex gap-3 p-2 flex-column flex-md-row">' +
-        '<div class="border rounded p-2 flex-grow-1"><div class="fw-semibold small mb-2">controls</div>' +
-        '<div id="panel-ui" class="d-flex flex-wrap gap-2 align-items-center">loading…</div></div>' +
-        '<div class="border rounded p-2 flex-grow-1"><div class="fw-semibold small mb-2">logs</div>' +
-        '<div id="panel-logs" style="font-family:ui-monospace,monospace;font-size:12px;white-space:pre-wrap;height:220px;overflow:auto"></div></div>' +
-        '</div>';
-      tr.appendChild(td);
-      const logs = td.querySelector("#panel-logs");
-      for (const line of panel.logs) logs.appendChild(logDiv(line));
-      logs.scrollTop = logs.scrollHeight;
-      fetch(`api/flows/${f.name}/ui`).then((r) => r.json()).then((els) => {
+         '<div class="border rounded p-2 flex-grow-1"><div class="fw-semibold small mb-2">controls</div>' +
+         '<div id="panel-ui" class="d-flex flex-wrap gap-2 align-items-center">loading…</div></div>' +
+         '<div class="border rounded p-2 flex-grow-1"><div class="fw-semibold small mb-2">config</div>' +
+         '<div id="panel-config" class="small">loading…</div></div>' +
+         '<div class="border rounded p-2 flex-grow-1"><div class="fw-semibold small mb-2">logs</div>' +
+         '<div id="panel-logs" style="font-family:ui-monospace,monospace;font-size:12px;white-space:pre-wrap;height:220px;overflow:auto"></div></div>' +
+         '</div>';
+       tr.appendChild(td);
+       const logs = td.querySelector("#panel-logs");
+       for (const line of panel.logs) logs.appendChild(logDiv(line));
+       logs.scrollTop = logs.scrollHeight;
+       renderConfigBox(f.name, td.querySelector("#panel-config"));
+       fetch(`api/flows/${f.name}/ui`).then((r) => r.json()).then((els) => {
         const box = document.getElementById("panel-ui");
         if (!box) return;
         box.innerHTML = "";

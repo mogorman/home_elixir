@@ -14,6 +14,9 @@ defmodule HomeElixir.Application do
     # persist state from their first event.
     HomeElixir.FlowState.start()
 
+    # Config table (layered flow/global config, seeded in flow `setup/0`).
+    HomeElixir.Config.start()
+
     children =
       [
         {HomeElixir.UI.Hub, []},

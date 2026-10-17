@@ -127,12 +127,22 @@ defmodule HomeElixir.Web do
     if is_admin?(conn), do: html(conn, admin_page(cur(conn))), else: forbidden(conn)
   end
 
+  # Global config editor (admin only).
+  def dispatch(%{method: "GET", request_path: "/config"} = conn, _opts) do
+    if is_admin?(conn), do: html(conn, config_page(cur(conn))), else: forbidden(conn)
+  end
+
   def dispatch(%{method: "GET", request_path: "/api/admin/users"} = conn, _opts) do
     if is_admin?(conn), do: json(conn, HomeElixir.Auth.list_users()), else: forbidden(conn)
   end
 
   def dispatch(%{method: "GET", request_path: "/api/entity_tree"} = conn, _opts),
     do: json(conn, HomeElixir.EntityBrowser.tree())
+
+  # Global config (admin only).
+  def dispatch(%{method: "GET", request_path: "/api/config"} = conn, _opts) do
+    if is_admin?(conn), do: json(conn, global_config_payload()), else: forbidden(conn)
+  end
 
   def dispatch(%{method: "GET", request_path: "/controls"} = conn, _opts),
     do: html(conn, controls_page(cur(conn)))
@@ -162,6 +172,9 @@ defmodule HomeElixir.Web do
           case List.last(parts) do
             "ui" ->
               json(conn, HomeElixir.FlowStore.flow_ui(name))
+
+            "config" ->
+              json(conn, flow_config_payload(name))
 
             "loaded_source" ->
               case HomeElixir.FlowStore.loaded_source(name) do
@@ -243,6 +256,9 @@ defmodule HomeElixir.Web do
       ["", "api", "admin", "users", name, action] ->
         if is_admin?(conn), do: admin_user_action(conn, name, action), else: forbidden(conn)
 
+      ["", "api", "config"] ->
+        global_config_set_endpoint(conn)
+
       # Flow names may be path-style ("LivingRoom/counter"), so the name is
       # everything between "flows" and the trailing action segment.
       ["", "api", "flows" | tail] when length(tail) >= 1 ->
@@ -314,6 +330,10 @@ defmodule HomeElixir.Web do
           else
             reply(conn, {:error, "forbidden"})
           end
+
+        # Set/reset a config value for this flow (or a global value, admin only).
+        {name, "config"} ->
+          flow_config_set_endpoint(conn, name)
 
         _ ->
           not_found(conn)
@@ -397,7 +417,14 @@ defmodule HomeElixir.Web do
             save_flow(new_name, source)
             if renaming?, do: HomeElixir.FlowStore.rename(old_name, new_name)
             HomeElixir.UI.Hub.push(:flow_changed, %{})
-            text(conn, 200, "saved " <> new_name <> ".ex (reload to apply)")
+
+            # Save enables the flow: reload restarts a running flow with the new
+            # source, or loads one that isn't running yet.
+            case HomeElixir.FlowStore.reload(new_name) do
+              :ok -> text(conn, 200, "saved " <> new_name <> ".ex (loaded)")
+              {:error, reason} ->
+                text(conn, 400, "saved " <> new_name <> ".ex, but could not load:\n" <> to_string(reason))
+            end
           rescue
             e ->
               text(
@@ -470,6 +497,97 @@ defmodule HomeElixir.Web do
       {:ok, msg} -> text(conn, 200, msg)
       {:error, msg} -> text(conn, 400, msg)
     end
+  end
+
+  # ---- config endpoints ----
+
+  # A flow's config for the UI: the union of its own keys and the global keys,
+  # each with its effective value, whether it's flow- or global-scoped, and a
+  # secret flag so the client can mask it.
+  defp flow_config_payload(name) do
+    flow = HomeElixir.Config.flow_config(name)
+    global = HomeElixir.Config.global_config()
+
+    (Map.keys(flow) ++ Map.keys(global))
+    |> Enum.uniq()
+    |> Enum.sort()
+    |> Enum.map(fn key ->
+      fv = Map.get(flow, key)
+      gv = Map.get(global, key)
+
+      %{
+        key: key,
+        value: if(is_nil(fv), do: gv, else: fv),
+        source: if(is_nil(fv), do: "global", else: "flow"),
+        secret: HomeElixir.Config.secret?(key),
+        flow_value: fv,
+        global_value: gv
+      }
+    end)
+  end
+
+  defp global_config_payload do
+    HomeElixir.Config.global_config()
+    |> Map.keys()
+    |> Enum.sort()
+    |> Enum.map(fn key ->
+      %{key: key, value: Map.get(HomeElixir.Config.global_config(), key), secret: HomeElixir.Config.secret?(key)}
+    end)
+  end
+
+  # Set (value) or reset (value null) a config key for a flow or globally.
+  defp flow_config_set_endpoint(conn, name) do
+    case Jason.decode(body(conn)) do
+      {:ok, %{"key" => key} = data} when is_binary(key) and key != "" ->
+        reply(conn, config_set(conn, name, key, data["value"], data["scope"] || "flow"))
+
+      _ ->
+        bad_request(conn, "key required")
+    end
+  end
+
+  defp config_set(conn, _name, key, value, "global") do
+    if is_admin?(conn) do
+      apply_config(:global, key, value)
+    else
+      {:error, "forbidden: global config is admin-only"}
+    end
+  end
+
+  defp config_set(conn, name, key, value, _scope) do
+    case flow_access(conn, name) do
+      :ok -> apply_config(name, key, value)
+      _ -> {:error, "forbidden"}
+    end
+  end
+
+  # Global config (admin only): set or reset a key.
+  defp global_config_set_endpoint(conn) do
+    if is_admin?(conn) do
+      case Jason.decode(body(conn)) do
+        {:ok, %{"key" => key} = data} when is_binary(key) and key != "" ->
+          apply_config(:global, key, data["value"])
+          json(conn, %{ok: true})
+
+        _ ->
+          bad_request(conn, "key required")
+      end
+    else
+      forbidden(conn)
+    end
+  end
+
+  # value nil means "reset" (remove the override so reads fall back).
+  defp apply_config(scope, key, nil) do
+    HomeElixir.Config.delete(scope, key)
+    HomeElixir.UI.Hub.push(:flow_changed, %{})
+    :ok
+  end
+
+  defp apply_config(scope, key, value) do
+    HomeElixir.Config.put(scope, key, value)
+    HomeElixir.UI.Hub.push(:flow_changed, %{})
+    :ok
   end
 
   defp click_endpoint(conn) do
@@ -952,6 +1070,16 @@ defmodule HomeElixir.Web do
     )
   end
 
+  defp config_page(user \\ nil) do
+    is_admin = user != nil and elem(user, 1) == "admin"
+
+    Template.render("config.html.eex",
+      base: base_html("Config", :config, user),
+      is_admin: is_admin,
+      control_js: Template.render("control_js.html.eex")
+    )
+  end
+
   defp login_page do
     Template.render("login.html.eex",
       bootstrap: @bootstrap,
@@ -988,6 +1116,7 @@ defmodule HomeElixir.Web do
           <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="controls">Controls</a></li>
           #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:logs)}" href="logs">Logs</a></li>|, else: ""}
           #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:iex)}" href="terminal">IEx</a></li>|, else: ""}
+          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:config)}" href="config">Config</a></li>|, else: ""}
           #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:admin)}" href="admin">Admin</a></li>|, else: ""}
         </ul>
         <span id="nav-loading" class="navbar-text me-2 d-flex align-items-center gap-1" style="display:none; opacity:0; transition: opacity 0.3s"><div class="spinner-border spinner-border-sm" role="status"></div><small id="nav-loading-text"></small></span>

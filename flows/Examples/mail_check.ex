@@ -9,8 +9,9 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
   nightly cron (a `Schedule` node, `0 0 * * *`) pokes the flow at local
   midnight purely to refresh the badge; correctness never depends on it.
 
-  LLM settings under `:home_elixir` in config/secret.exs (or env):
-  `:llm_url`, `:llm_model`, `:llm_api_key`.
+  LLM settings are editable in the UI (flow panel → config) and fall back to
+  `:home_elixir` in config/secret.exs / env vars: `:llm_url`, `:llm_model`,
+  `:llm_api_key`.
   """
   use HomeElixir.Flow
 
@@ -25,6 +26,19 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
 
   def setup do
     HomeElixir.Dep.install([{:req, "~> 0.5"}, {:req_llm, "~> 1.28"}])
+
+    # Declare editable keys + defaults. Only-if-absent, so a value the user later
+    # edits in the UI survives reloads. The API key is seeded from current config
+    # (secret.exs/env) so it's editable in the UI without breaking a working key.
+    HomeElixir.Config.seed(%{
+      llm_url: "http://localhost:42808/v1",
+      llm_model: "deepthought-first"
+    })
+
+    HomeElixir.Config.seed(
+      %{llm_api_key: Application.get_env(:home_elixir, :llm_api_key) || "set-in-config-ui"},
+      scope: :global
+    )
   end
 
   # ---- handler flow: the button click and the midnight poke arrive here ----
@@ -153,7 +167,7 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
   defp value(%{which: :snapshot}), do: FlowState.get(:snapshot)
 
   defp llm_config(key, default \\ nil) do
-    Application.get_env(:home_elixir, key, default)
+    HomeElixir.Config.get(key, default)
   end
 
   # Machine-local date (this Elixir build dropped Date.today/0 and

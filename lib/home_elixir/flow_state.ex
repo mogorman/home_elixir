@@ -160,6 +160,10 @@ defmodule HomeElixir.FlowState do
   # Prefer `as/2` for scoped, user-facing use.
   def set_flow(flow), do: Process.put(@flow_pid_key, flow)
 
+  # The current ambient flow, or nil if none is set. Public so other modules
+  # (e.g. HomeElixir.Config) can read the context without raising.
+  def current_flow, do: Process.get(@flow_pid_key)
+
   # Run `fun` with the ambient flow set to `flow`, restoring the previous value after.
   def as(flow, fun) do
     prev = Process.get(@flow_pid_key)
