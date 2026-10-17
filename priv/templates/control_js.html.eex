@@ -79,3 +79,62 @@ function updateBadge(u) {
   if (el.dataset.snapshot) { setSnapshot(el, u.value); return; }
   el.textContent = el.dataset.label + ": " + (u.value === null || u.value === undefined ? "-" : u.value);
 }
+// A config key row. `flowName` null -> global scope via api/config; a flow
+// name -> api/flows/<name>/config, writing the key at its current scope
+// (`it.source`, so a global-sourced key edits the global value).
+function cfgRow(it, flowName, onDone) {
+  const row = document.createElement("div");
+  row.className = "d-flex align-items-center gap-2 mb-1 flex-wrap";
+  const label = document.createElement("span");
+  label.className = "small text-truncate" + (it.secret ? " font-mono" : "");
+  label.style.minWidth = "140px";
+  label.title = it.key;
+  label.textContent = it.key;
+  const input = document.createElement("input");
+  input.className = "form-control form-control-sm";
+  input.type = it.secret ? "password" : "text";
+  input.value = it.value == null ? "" : String(it.value);
+  input.dataset.revealed = "0";
+  const url = flowName ? "api/flows/" + flowName + "/config" : "api/config";
+  const post = async (value) => {
+    const body = { key: it.key, value };
+    if (flowName) body.scope = it.source || "flow";
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body) });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      alert("config " + it.key + ": " + (e.error || r.statusText));
+    } else onDone();
+  };
+  const save = document.createElement("button");
+  save.className = "btn btn-sm btn-outline-primary";
+  save.textContent = "Save";
+  save.onclick = () => post(input.value);
+  const reset = document.createElement("button");
+  reset.className = "btn btn-sm btn-outline-secondary";
+  reset.textContent = "Reset";
+  reset.onclick = () => post(null);
+  const kids = [label, input];
+  if (flowName) {
+    const badge = document.createElement("span");
+    badge.className = "badge " + (it.source === "global" ? "bg-secondary" : "bg-info text-dark");
+    badge.title = it.source === "global" ? "set globally (applies to all flows)" : "set for this flow";
+    badge.textContent = it.source;
+    kids.push(badge);
+  }
+  kids.push(save, reset);
+  if (it.secret) {
+    const reveal = document.createElement("button");
+    reveal.className = "btn btn-sm btn-outline-secondary";
+    reveal.textContent = "show";
+    reveal.onclick = () => {
+      const shown = input.dataset.revealed === "1";
+      input.type = shown ? "password" : "text";
+      input.dataset.revealed = shown ? "0" : "1";
+      reveal.textContent = shown ? "show" : "hide";
+    };
+    kids.push(reveal);
+  }
+  for (const k of kids) row.appendChild(k);
+  return row;
+}

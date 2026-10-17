@@ -62,6 +62,14 @@
       </div>
     </div>
   </div>
+  <div id="cfg-card" class="card d-none">
+    <div class="card-header fw-semibold">Config</div>
+    <div class="card-body">
+      <p class="text-secondary small mb-2">This flow's config. A flow value (blue)
+      overrides the global one (grey); saving writes at the row's scope.</p>
+      <div id="flow-cfg" class="small">loading…</div>
+    </div>
+  </div>
   <div id="ent-overlay" class="d-none">
     <div id="entities-card" class="card">
       <div class="card-header d-flex align-items-center gap-2 flex-wrap">
@@ -231,6 +239,23 @@
       if (!els.length) { box.innerHTML = '<span class="text-secondary small">no ui elements</span>'; return; }
       for (const e of els) box.appendChild(renderControl(e, "btn-sm btn-primary"));
     }
+    async function loadFlowConfig() {
+      if (!FLOWNAME) return;
+      const box = document.getElementById("flow-cfg");
+      let items;
+      try {
+        items = await (await fetch(`api/flows/${FLOWNAME}/config`)).json();
+      } catch (_) {
+        box.innerHTML = '<span class="text-danger">failed to load</span>';
+        return;
+      }
+      box.innerHTML = "";
+      if (!items.length) {
+        box.innerHTML = '<span class="text-secondary small">no config (load the flow to seed defaults)</span>';
+        return;
+      }
+      for (const it of items) box.appendChild(cfgRow(it, FLOWNAME, loadFlowConfig));
+    }
     const flowlogBox = document.getElementById("flowlogs");
     let flowLastId = 0, flowSyncing = false;
     function flowLogDiv(line) {
@@ -265,9 +290,11 @@
     }
     if (FLOWNAME) {
       document.getElementById("panels").classList.remove("d-none");
+      document.getElementById("cfg-card").classList.remove("d-none");
       refreshControls();
+      loadFlowConfig();
       connectUI({ state: updateBadge, log: onFlowLog },
-        () => { refreshControls(); resyncFlowLogs(); });
+        () => { refreshControls(); loadFlowConfig(); resyncFlowLogs(); });
     }
     function setHljsTheme(t) {
       document.getElementById("hljs-theme").href = "<%= hljs %>/styles/" + (t === "dark" ? "github-dark.min.css" : "github.min.css");
