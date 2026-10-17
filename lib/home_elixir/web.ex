@@ -990,11 +990,23 @@ defmodule HomeElixir.Web do
           #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:iex)}" href="terminal">IEx</a></li>|, else: ""}
           #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:admin)}" href="admin">Admin</a></li>|, else: ""}
         </ul>
+        <span id="nav-loading" class="navbar-text me-2 d-flex align-items-center gap-1" style="display:none; opacity:0; transition: opacity 0.3s"><div class="spinner-border spinner-border-sm" role="status"></div><small id="nav-loading-text"></small></span>
         #{user_menu_html(user)}
         <button id="theme-toggle" class="btn btn-outline-secondary btn-sm ms-2"></button>
       </div>
     </nav>
     <script>
+      function showLoading(text) {
+        var el = document.getElementById("nav-loading");
+        document.getElementById("nav-loading-text").textContent = text || "";
+        el.style.display = "flex";
+        requestAnimationFrame(function() { el.style.opacity = "1"; });
+      }
+      function hideLoading() {
+        var el = document.getElementById("nav-loading");
+        el.style.opacity = "0";
+        setTimeout(function() { el.style.display = "none"; }, 300);
+      }
       (function () {
         var btn = document.getElementById("theme-toggle");
         var mq = window.matchMedia ? matchMedia("(prefers-color-scheme: light)") : null;

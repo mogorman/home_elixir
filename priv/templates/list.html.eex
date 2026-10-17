@@ -63,9 +63,15 @@
       errDlg.showModal();
     }
     async function act(name, action) {
-      const r = await fetch(`api/flows/${name}/${action}`, { method: "POST" });
-      if (!r.ok) fail(name + " " + action, r);
-      refresh();
+      const msgs = { load: "Loading…", unload: "Unloading…", reload: "Reloading…" };
+      if (msgs[action]) showLoading(msgs[action]);
+      try {
+        const r = await fetch(`api/flows/${name}/${action}`, { method: "POST" });
+        if (!r.ok) fail(name + " " + action, r);
+      } finally {
+        hideLoading();
+        refresh();
+      }
     }
     function cloneName(name) {
       const parts = name.split("/");
@@ -95,9 +101,14 @@
       try { ALL_USERS = (await (await fetch("api/admin/users")).json()).map((u) => u.name); } catch (_) {}
     }
     async function reloadAll() {
-      const r = await fetch("api/flows/reload", { method: "POST" });
-      if (!r.ok) fail("reload all", r);
-      refresh();
+      showLoading("Reloading all…");
+      try {
+        const r = await fetch("api/flows/reload", { method: "POST" });
+        if (!r.ok) fail("reload all", r);
+      } finally {
+        hideLoading();
+        refresh();
+      }
     }
     const expanded = new Set();
     const sortOrder = [];
