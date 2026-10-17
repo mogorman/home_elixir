@@ -24,7 +24,7 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
   @prompt "Is there a mail truck present in this image? Answer with a single word: true or false."
 
   def setup do
-    HomeElixir.Dep.install([{:req_llm, "~> 1.28"}])
+    HomeElixir.Dep.install([{:req, "~> 0.5"}, {:req_llm, "~> 1.28"}])
   end
 
   # ---- handler flow: the button click and the midnight poke arrive here ----
