@@ -8,6 +8,7 @@ defmodule HomeElixir.HA do
   """
 
   @client_name :home_elixir_ha_client
+  @snapshot_timeout 15_000
 
   @doc "The atom name of the shared client process."
   def client_name, do: @client_name
@@ -77,6 +78,40 @@ defmodule HomeElixir.HA do
 
       url ->
         rest_prefix(url)
+    end
+  end
+
+  @doc """
+  Fetch a camera snapshot for `entity_id` as raw bytes, via HA's
+  `/api/camera_proxy/{entity}` REST endpoint, over Mint (a core dependency, so
+  callers don't need to install `req`). Returns `{:ok, binary}` or
+  `{:error, reason}`.
+  """
+  def snapshot(entity_id) do
+    base = rest_base()
+    token = token()
+
+    cond do
+      is_nil(base) or is_nil(token) ->
+        {:error, "Home Assistant is not configured"}
+
+      true ->
+        case http_get(base <> "/api/camera_proxy/" <> entity_id, token) do
+          {:ok, body} -> {:ok, body}
+          {:error, reason} -> {:error, {:snapshot, reason}}
+        end
+    end
+  end
+
+  @doc """
+  Fetch a camera snapshot for `entity_id` and return it base64-encoded (for
+  inlining as a `data:image/jpeg;base64,...` URL). Built on `snapshot/1`.
+  Returns `{:ok, base64}` or `{:error, reason}`.
+  """
+  def snapshot_b64(entity_id) do
+    case snapshot(entity_id) do
+      {:ok, bytes} -> {:ok, Base.encode64(bytes)}
+      {:error, _} = err -> err
     end
   end
 
@@ -234,5 +269,109 @@ defmodule HomeElixir.HA do
           wait_loop(client, deadline)
         end
     end
+  end
+
+  # ---- Camera snapshot over Mint (core HTTP, no `req`) ----
+
+  defp http_get(url, token) do
+    uri = URI.parse(url)
+    scheme = if uri.scheme == "https", do: :https, else: :http
+    port = uri.port || if(scheme == :https, do: 443, else: 80)
+    path = (uri.path || "/") <> if(uri.query, do: "?" <> uri.query, else: "")
+    headers = [{"authorization", "Bearer " <> token}, {"accept", "image/*"}]
+
+    with {:ok, conn} <- Mint.HTTP.connect(scheme, uri.host, port, mint_opts(scheme)),
+         {:ok, conn, _ref} <- Mint.HTTP.request(conn, "GET", path, headers, "") do
+      read_response(conn, %{status: nil, length: nil, got: 0, body: []})
+    end
+  end
+
+  # TLS verifies the peer against the system bundle (a self-contained release
+  # doesn't ship OTP's built-in cacerts). Same lookup as the WS transport.
+  defp mint_opts(:https), do: [protocols: [:http1], transport_opts: [cacerts: system_cacerts()]]
+  defp mint_opts(:http), do: [protocols: [:http1]]
+
+  defp system_cacerts do
+    case Enum.find(
+           [
+             "/etc/ssl/certs/ca-certificates.crt",
+             "/etc/pki/tls/certs/ca-bundle.crt",
+             "/etc/ssl/cert.pem"
+           ],
+           &File.exists?/1
+         ) do
+      nil ->
+        []
+
+      path ->
+        path
+        |> File.read!()
+        |> :public_key.pem_decode()
+        |> Enum.filter(fn {tag, _, _} -> tag == :Certificate end)
+        |> Enum.map(fn {_, der, _} -> der end)
+    end
+  end
+
+  # The socket's `{:tcp, ref, data}` ref is set at connect time, not per request,
+  # so match any ref and let Mint.HTTP.stream validate it (returns :unknown for
+  # a foreign message — same as the WS transport).
+  defp read_response(conn, state) do
+    receive do
+      {:tcp, _ref, _data} = msg -> stream_response(conn, msg, state)
+      {:ssl, _ref, _data} = msg -> stream_response(conn, msg, state)
+      {:tcp_closed, _} -> {:error, :connection_closed}
+      {:ssl_closed, _} -> {:error, :connection_closed}
+      {:tcp_error, _ref, reason} -> {:error, {:socket, reason}}
+      {:ssl_error, _ref, reason} -> {:error, {:socket, reason}}
+    after
+      @snapshot_timeout -> {:error, :timeout}
+    end
+  end
+
+  defp stream_response(conn, msg, state) do
+    case Mint.HTTP.stream(conn, msg) do
+      :unknown ->
+        read_response(conn, state)
+
+      {:ok, conn, []} ->
+        read_response(conn, state)
+
+      {:ok, conn, parts} ->
+        state = reduce_parts(parts, state)
+        if body_complete?(state), do: finish(state), else: read_response(conn, state)
+
+      {:error, _conn, reason, _parts} ->
+        {:error, {:http, reason}}
+    end
+  end
+
+  defp reduce_parts(parts, state) do
+    Enum.reduce(parts, state, fn
+      {:status, _ref, code}, st -> %{st | status: code}
+      {:headers, _ref, headers}, st -> %{st | length: content_length(headers)}
+      {:data, _ref, data}, st -> %{st | got: st.got + byte_size(data), body: [data | st.body]}
+      _other, st -> st
+    end)
+  end
+
+  defp content_length(headers) do
+    Enum.find_value(headers, fn
+      {"content-length", value} -> String.to_integer(value)
+      _ -> nil
+    end)
+  end
+
+  # HA's camera_proxy sends a fixed content-length (never chunked), so the body
+  # is complete once that many bytes have arrived.
+  defp body_complete?(%{status: status, length: length, got: got}) do
+    is_integer(status) and is_integer(length) and got >= length
+  end
+
+  defp finish(%{status: 200, body: body}) do
+    {:ok, body |> Enum.reverse() |> IO.iodata_to_binary()}
+  end
+
+  defp finish(%{status: code}) do
+    {:error, {:status, code}}
   end
 end

@@ -58,7 +58,7 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
     Logger.info("check: start")
     t0 = now_ms()
 
-    case snapshot_b64() do
+    case HomeElixir.HA.snapshot_b64(@camera) do
       {:ok, b64} ->
         data_url = "data:image/jpeg;base64,#{b64}"
         Logger.info("check: snapshot fetched in #{now_ms() - t0}ms")
@@ -148,18 +148,6 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
         }
       }
     }
-  end
-
-  defp snapshot_b64 do
-    base = HomeElixir.HA.rest_base()
-    token = HomeElixir.HA.token()
-
-    case Req.get("#{base}/api/camera_proxy/#{@camera}",
-           headers: [authorization: "Bearer #{token}"]
-         ) do
-      {:ok, %Req.Response{status: 200, body: bytes}} -> {:ok, Base.encode64(bytes)}
-      other -> {:error, "snapshot: #{inspect(other)}"}
-    end
   end
 
   defp value(%{which: :last_check}), do: FlowState.get(:last_check)
