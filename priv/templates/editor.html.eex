@@ -78,7 +78,7 @@
                placeholder="Search name or entity_id…" spellcheck="false">
         <button id="ent-refresh" class="btn btn-sm btn-outline-secondary">Refresh</button>
         <span id="ent-status" class="text-secondary small"></span>
-        <button id="ent-close" class="btn btn-sm btn-outline-secondary ms-auto" aria-label="Close">×</button>
+        <button id="ent-close" class="btn btn-sm btn-outline-secondary ms-auto" aria-label="Close"><i class="mdi mdi-close"></i></button>
       </div>
       <div class="card-body p-0">
         <div id="ent-tree"></div>
@@ -89,7 +89,7 @@
     <div id="cron-card" class="card">
       <div class="card-header d-flex align-items-center gap-2">
         <span class="fw-semibold">Cron</span>
-        <button id="cron-close" class="btn btn-sm btn-outline-secondary ms-auto" aria-label="Close">×</button>
+        <button id="cron-close" class="btn btn-sm btn-outline-secondary ms-auto" aria-label="Close"><i class="mdi mdi-close"></i></button>
       </div>
       <div class="card-body">
         <div class="d-flex align-items-center gap-2">

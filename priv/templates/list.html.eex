@@ -1,19 +1,10 @@
 <%= base %>
   <style>
     .flows-table thead th {
-      text-transform: uppercase;
-      font-size: .72rem;
-      letter-spacing: .03em;
-      font-weight: 600;
+      font-size: .85rem;
+      font-weight: 500;
       color: var(--bs-secondary-color);
-      background: var(--bs-tertiary-bg);
     }
-    .status-dot { display: inline-block; width: .7rem; height: .7rem;
-      border-radius: 50%; background: var(--bs-secondary-color); vertical-align: middle; }
-    .status-dot.is-green { background: var(--bs-success); }
-    .status-dot.is-yellow { background: var(--bs-warning); }
-    .status-dot.is-red { background: var(--bs-danger); }
-    .status-dot.is-broken { background: transparent; border: 2px solid var(--bs-danger); box-sizing: border-box; }
     .card { overflow: visible; }
     .dropdown-menu { z-index: 1080; }
   </style>
@@ -55,6 +46,7 @@
     <%= control_js %>
     const IS_ADMIN = <%= is_admin %>;
     const MODE = "<%= mode_string %>";
+    const STATUS_LABEL = { green: "Running", yellow: "Changed", red: "Stopped", grey: "Idle", broken: "Broken" };
     let ALL_USERS = [];
     const errDlg = document.getElementById("error-dlg");
     async function fail(what, r) {
@@ -154,10 +146,10 @@
     function updateSortHeaders() {
       for (const th of document.querySelectorAll("th.sortable")) {
         const i = sortOrder.indexOf(th.dataset.sort);
-        const arrow = i === 0 ? (sortDir[th.dataset.sort] === "desc" ? " ▼" : " ▲")
-          : i === 1 ? (sortDir[th.dataset.sort] === "desc" ? " ↓" : " ↑")
-          : "";
-        th.textContent = th.dataset.label + arrow;
+        let icon = "";
+        if (i === 0) icon = sortDir[th.dataset.sort] === "desc" ? "mdi-arrow-down-bold" : "mdi-arrow-up-bold";
+        else if (i === 1) icon = sortDir[th.dataset.sort] === "desc" ? "mdi-arrow-down" : "mdi-arrow-up";
+        th.innerHTML = th.dataset.label + (icon ? ' <i class="mdi ' + icon + '"></i>' : "");
       }
     }
     function buildTree(flows) {
@@ -308,7 +300,7 @@
       }
       tr.innerHTML =
         `<td class="fw-semibold" style="padding-left:${12 + depth * 20}px">${modLabel(f)}</td>` +
-        `<td><span class="status-dot ${f.status === "grey" ? "" : "is-" + f.status}" title="${f.status}"></span></td>` +
+        `<td><span class="status-badge ${f.status === "grey" ? "" : "is-" + f.status}" title="${STATUS_LABEL[f.status] || f.status}">${STATUS_LABEL[f.status] || f.status}</span></td>` +
         `<td class="text-secondary">${timeAgo(f.last_triggered)}</td>`;
       const actions = document.createElement("div");
       actions.className = "d-flex gap-2 justify-content-end align-items-center";
@@ -341,7 +333,7 @@
 
         const dd = document.createElement("div");
         dd.className = "dropdown";
-        dd.innerHTML = '<button class="btn btn-sm btn-outline-secondary" aria-label="menu">⋮</button><div class="dropdown-menu dropdown-menu-end" data-bs-popper>' + items + '</div>';
+        dd.innerHTML = '<button class="btn btn-sm btn-outline-secondary" aria-label="menu"><i class="mdi mdi-dots-vertical"></i></button><div class="dropdown-menu dropdown-menu-end" data-bs-popper>' + items + '</div>';
         actions.appendChild(dd);
 
         const menuList = dd.querySelector(".dropdown-menu");
@@ -366,7 +358,7 @@
       const td = document.createElement("td");
       td.colSpan = 4;
       td.style.cursor = "pointer";
-      td.innerHTML = `<span class="fw-semibold" style="padding-left:${12 + depth * 20}px">${open ? "▾" : "▸"} ${folder.path.split("/").pop()} <span class="text-secondary fw-normal">(${folderCount(folder)})</span></span>`;
+      td.innerHTML = `<span class="fw-semibold d-inline-flex align-items-center gap-1" style="padding-left:${12 + depth * 20}px"><i class="mdi ${open ? "mdi-chevron-down" : "mdi-chevron-right"}"></i> ${folder.path.split("/").pop()} <span class="text-secondary fw-normal">(${folderCount(folder)})</span></span>`;
       td.onclick = () => { open ? expanded.delete(folder.path) : expanded.add(folder.path); refresh(); };
       tr.appendChild(td);
       return tr;

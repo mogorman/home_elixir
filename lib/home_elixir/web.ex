@@ -1009,6 +1009,7 @@ defmodule HomeElixir.Web do
   defp terminal_page(user \\ nil) do
     Template.render("terminal.html.eex",
       bootstrap: @bootstrap,
+      theme: Template.render("theme.html.eex"),
       theme_script: Template.render("theme_script.html.eex"),
       nav: navbar_html(:iex, user)
     )
@@ -1088,6 +1089,7 @@ defmodule HomeElixir.Web do
   defp login_page do
     Template.render("login.html.eex",
       bootstrap: @bootstrap,
+      theme: Template.render("theme.html.eex"),
       theme_script: Template.render("theme_script.html.eex")
     )
   end
@@ -1102,6 +1104,7 @@ defmodule HomeElixir.Web do
     Template.render("base.html.eex",
       title: title,
       bootstrap: @bootstrap,
+      theme: Template.render("theme.html.eex"),
       theme_script: Template.render("theme_script.html.eex"),
       nav: navbar_html(active, user)
     )
@@ -1112,7 +1115,7 @@ defmodule HomeElixir.Web do
     admin? = user != nil and elem(user, 1) == "admin"
 
     """
-    <nav class="navbar navbar-expand-lg bg-body-tertiary rounded-3 mb-3 px-3">
+    <nav class="navbar navbar-expand-lg app-bar">
       <div class="container-fluid">
         <a class="navbar-brand fw-semibold d-flex align-items-center gap-2" href="./"><img src="static/logo.svg" width="24" height="24" alt="">home_elixir</a>
         <ul class="navbar-nav gap-1 flex-wrap">
@@ -1126,7 +1129,7 @@ defmodule HomeElixir.Web do
         </ul>
         <span id="nav-loading" class="navbar-text me-2 d-flex align-items-center gap-1" style="display:none; opacity:0; transition: opacity 0.3s"><div class="spinner-border spinner-border-sm" role="status"></div><small id="nav-loading-text"></small></span>
         #{user_menu_html(user)}
-        <button id="theme-toggle" class="btn btn-outline-secondary btn-sm ms-2"></button>
+        <button id="theme-toggle" class="btn btn-outline-secondary btn-sm ms-2" aria-label="Toggle theme"><i class="mdi mdi-weather-night"></i></button>
       </div>
     </nav>
     <script>
@@ -1145,7 +1148,7 @@ defmodule HomeElixir.Web do
         var btn = document.getElementById("theme-toggle");
         var mq = window.matchMedia ? matchMedia("(prefers-color-scheme: light)") : null;
         function theme() { return document.documentElement.getAttribute("data-bs-theme"); }
-        function label() { btn.textContent = theme() === "dark" ? "Light" : "Dark"; }
+        function label() { btn.innerHTML = theme() === "dark" ? '<i class="mdi mdi-white-balance-sunny"></i>' : '<i class="mdi mdi-weather-night"></i>'; }
         function apply(t) {
           document.documentElement.setAttribute("data-bs-theme", t);
           document.dispatchEvent(new CustomEvent("themechange", { detail: t }));
