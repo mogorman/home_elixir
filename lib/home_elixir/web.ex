@@ -971,12 +971,15 @@ defmodule HomeElixir.Web do
         not_found(conn)
 
       File.regular?(path) ->
-        type =
-          case Path.extname(path) do
-            ".js" -> "text/javascript"
-            ".css" -> "text/css"
-            _ -> "application/octet-stream"
-          end
+          type =
+            case Path.extname(path) do
+              ".js" -> "text/javascript"
+              ".css" -> "text/css"
+              ".svg" -> "image/svg+xml"
+              ".png" -> "image/png"
+              ".ico" -> "image/x-icon"
+              _ -> "application/octet-stream"
+            end
 
         conn
         |> put_resp_content_type(type)
