@@ -108,11 +108,29 @@ defmodule HomeElixir.Web do
   def dispatch(%{method: "GET", request_path: "/archived"} = conn, _opts),
     do: html(conn, list_page(cur(conn), :archived))
 
+  def dispatch(%{method: "GET", request_path: "/examples"} = conn, _opts),
+    do: html(conn, list_page(cur(conn), :examples))
+
+  def dispatch(%{method: "GET", request_path: "/examples/" <> name} = conn, _opts) do
+    if flow_name_valid?(name) do
+      case HomeElixir.Examples.source(name) do
+        {:ok, src} -> html(conn, example_view_page(src, cur(conn)))
+        _ -> not_found(conn)
+      end
+    else
+      not_found(conn)
+    end
+  end
+
   def dispatch(%{method: "GET", request_path: "/api/flows"} = conn, _opts) do
     case HomeElixir.FlowStore.list() do
       flows -> json(conn, visible_flows(conn, flows))
       :timeout -> json(conn, %{"busy" => true, "message" => "Installing flow dependencies…"})
     end
+  end
+
+  def dispatch(%{method: "GET", request_path: "/api/examples"} = conn, _opts) do
+    json(conn, HomeElixir.Examples.list() |> Enum.map(& &1.name))
   end
 
   def dispatch(%{method: "GET", request_path: "/api/me"} = conn, _opts) do
@@ -259,10 +277,15 @@ defmodule HomeElixir.Web do
       ["", "api", "config"] ->
         global_config_set_endpoint(conn)
 
-      # Flow names may be path-style ("LivingRoom/counter"), so the name is
-      # everything between "flows" and the trailing action segment.
-      ["", "api", "flows" | tail] when length(tail) >= 1 ->
-        flow_api(conn, Enum.join(Enum.drop(tail, -1), "/"), List.last(tail))
+       # Flow names may be path-style ("LivingRoom/counter"), so the name is
+       # everything between "flows" and the trailing action segment.
+       ["", "api", "flows" | tail] when length(tail) >= 1 ->
+         flow_api(conn, Enum.join(Enum.drop(tail, -1), "/"), List.last(tail))
+
+       # Copy a bundled example into the user's flows (examples have flat names).
+       ["", "api", "examples", name, "copy"] ->
+         copy_example_endpoint(conn, name)
+
 
       ["", "api", "ui", "click"] ->
         click_endpoint(conn)
@@ -384,6 +407,26 @@ defmodule HomeElixir.Web do
 
   defp handle_get(conn), do: not_found(conn)
 
+  # Copy a bundled example into the user's flows (verbatim). The new flow is
+  # idle and editable; the client navigates to its editor.
+  defp copy_example_endpoint(conn, name) do
+    if flow_name_valid?(name) do
+      case HomeElixir.Examples.copy(name) do
+        {:ok, new_name} ->
+          HomeElixir.UI.Hub.push(:flow_changed, %{})
+          json(conn, %{ok: true, name: new_name})
+
+        {:error, :exists} ->
+          bad_request(conn, "a flow named #{name} already exists")
+
+        {:error, :not_found} ->
+          not_found(conn)
+      end
+    else
+      bad_request(conn, "invalid name")
+    end
+  end
+
   # ---- handlers ----
 
   defp save_endpoint(conn) do
@@ -441,25 +484,20 @@ defmodule HomeElixir.Web do
 
   # New flows may be created by anyone logged in; an existing flow may be saved
   # only by its owner or an admin. Unowned pre-existing files are admin-only.
-  # Example flows are read-only — clone one to edit a copy.
   defp save_guard(conn, name) do
-    if HomeElixir.FlowStore.example?(name) do
-      {:error, "example flows are read-only — clone it to edit"}
-    else
-      case cur(conn) do
-        {_id, "admin"} ->
-          :ok
+    case cur(conn) do
+      {_id, "admin"} ->
+        :ok
 
-        {id, _} ->
-          cond do
-            not File.exists?(flow_path(name)) -> :ok
-            HomeElixir.FlowState.flow_owner(name) == id -> :ok
-            true -> {:error, "forbidden: not your flow"}
-          end
+      {id, _} ->
+        cond do
+          not File.exists?(flow_path(name)) -> :ok
+          HomeElixir.FlowState.flow_owner(name) == id -> :ok
+          true -> {:error, "forbidden: not your flow"}
+        end
 
-        _ ->
-          :ok
-      end
+      _ ->
+        :ok
     end
   end
 
@@ -796,12 +834,8 @@ defmodule HomeElixir.Web do
   defp is_admin?(conn), do: role_of(conn) == "admin"
 
   # A user may open/edit a named flow if they are admin, its owner, or the flow
-  # is public (owned by everyone). Examples are readable by everyone.
+  # is public (owned by everyone).
   defp flow_access(conn, name) do
-    if HomeElixir.FlowStore.example?(name), do: :ok, else: flow_access_user(conn, name)
-  end
-
-  defp flow_access_user(conn, name) do
     pub = HomeElixir.FlowState.public_owner()
 
     case cur(conn) do
@@ -821,19 +855,13 @@ defmodule HomeElixir.Web do
   end
 
   # The flows a user may see: everything for admin, their own + public for
-  # others (plus the bundled examples, which are visible to everyone).
-  # (Unowned non-example flows — never saved through the UI — are admin-only.)
+  # others. (Unowned flows — never saved through the UI — are admin-only.)
   defp visible_flows(conn, flows) do
     pub = HomeElixir.FlowState.public_owner()
 
     case cur(conn) do
       {_id, "admin"} -> flows
-
-      {id, _} ->
-        Enum.filter(flows, fn f ->
-          HomeElixir.FlowStore.example?(f.name) or f[:owner] == id or f[:owner] == pub
-        end)
-
+      {id, _} -> Enum.filter(flows, fn f -> f[:owner] == id or f[:owner] == pub end)
       _ -> flows
     end
   end
@@ -1044,22 +1072,25 @@ defmodule HomeElixir.Web do
 
   defp list_page(user, mode \\ :flows) do
     is_admin = user != nil and elem(user, 1) == "admin"
-    archived? = mode == :archived
-    title = if archived?, do: "Archived", else: "Flows"
+    examples? = mode == :examples
+    title = cond do
+      examples? -> "Examples"
+      mode == :archived -> "Archived"
+      true -> "Flows"
+    end
 
     header_buttons =
-      if archived? do
-        ""
-      else
-        ~s|<a href="edit" class="btn btn-sm btn-primary">New flow</a><button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>|
+      cond do
+        examples? or mode == :archived -> ""
+        true -> ~s|<a href="edit" class="btn btn-sm btn-primary">New flow</a><button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>|
       end
 
     Template.render("list.html.eex",
-      base: base_html(title, if(archived?, do: :archived, else: :flows), user),
+      base: base_html(title, mode, user),
       title: title,
       header_buttons: header_buttons,
       is_admin: is_admin,
-      mode_string: if(archived?, do: "archived", else: "flows"),
+      mode_string: to_string(mode),
       control_js: Template.render("control_js.html.eex")
     )
   end
@@ -1074,13 +1105,25 @@ defmodule HomeElixir.Web do
   defp editor_page(name, source, user \\ nil) do
     source_json = Jason.encode!(source)
     name_json = Jason.encode!(name)
-    readonly_json = Jason.encode!(name != nil and HomeElixir.FlowStore.example?(name))
 
     Template.render("editor.html.eex",
       base: base_html("Edit flow", :edit, user),
       source_json: source_json,
       name_json: name_json,
-      readonly_json: readonly_json,
+      readonly_json: "false",
+      hljs: @hljs,
+      control_js: Template.render("control_js.html.eex")
+    )
+  end
+
+  # Read-only view of a bundled example's source (no save; copy it from the
+  # Examples page to make an editable flow).
+  defp example_view_page(source, user) do
+    Template.render("editor.html.eex",
+      base: base_html("Example", :examples, user),
+      source_json: Jason.encode!(source),
+      name_json: "null",
+      readonly_json: "true",
       hljs: @hljs,
       control_js: Template.render("control_js.html.eex")
     )
@@ -1139,6 +1182,7 @@ defmodule HomeElixir.Web do
         <div class="collapse navbar-collapse" id="nav-collapse">
           <ul class="navbar-nav gap-1 flex-wrap">
             <li class="nav-item"><a class="nav-link#{a.(:flows)}" href="./">Flows</a></li>
+            <li class="nav-item"><a class="nav-link#{a.(:examples)}" href="examples">Examples</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:archived)}" href="archived">Archived</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="controls">Controls</a></li>
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:logs)}" href="logs">Logs</a></li>|, else: ""}

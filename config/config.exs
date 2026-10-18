@@ -24,6 +24,10 @@ config :home_elixir, start_web: true
 # flow-state DB); the first run loads every flow.
 config :home_elixir, restore_flows: true
 
+# Bundled example flows live in this read-only dir (outside flows_dir); they can
+# be viewed and copied into your flows. Defaults to the repo's `examples/` dir.
+config :home_elixir, examples_dir: "examples"
+
 # Start the HA "Flows" switcher (HomeElixir.FlowsHA): one switch per flow in a
 # single "Flows" device. Off in :test, where an isolated instance is started
 # per-test instead.

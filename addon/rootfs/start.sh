@@ -20,11 +20,11 @@ in_ha=false
 opt() { jq -r ".${1} // empty" /data/options.json 2>/dev/null; }
 
 mkdir -p /config/flows /config/mnesia
-# Refresh the bundled example flows to exactly match the release on every start,
-# so deploys ship new/updated examples. They're read-only in the UI (clone one to
-# make your own); user flows live at the top level of /config/flows, untouched.
-rm -rf /config/flows/Examples
-cp -a /opt/home-elixir/flows/Examples /config/flows/ 2>/dev/null || true
+# Seed default flows from the release on first start only (editable in the UI).
+if [ ! -f /config/.flows-seeded ]; then
+  cp -a /opt/home-elixir/flows/. /config/flows/ 2>/dev/null || true
+  touch /config/.flows-seeded
+fi
 
 # HA: connect through the Supervisor proxy (like Music Assistant). The app
 # reads SUPERVISOR_TOKEN from its environment and uses it for the WebSocket

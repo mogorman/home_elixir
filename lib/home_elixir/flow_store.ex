@@ -78,9 +78,6 @@ defmodule HomeElixir.FlowStore do
   @doc "Whether a flow is currently loaded (without compiling it)."
   def loaded?(name), do: call({:loaded?, name})
 
-  @doc "Whether a flow name is a bundled example (read-only, lives under `Examples/`)."
-  def example?(name), do: is_binary(name) and String.starts_with?(name, "Examples/")
-
   @doc "The source at the flow's last successful load (for editor revert); `:error` if never loaded."
   def loaded_source(name) do
     case HomeElixir.FlowState.loaded_source(name) do
@@ -107,9 +104,6 @@ defmodule HomeElixir.FlowStore do
         nil -> first_run_names()
         names -> names
       end
-      # Examples are read-only templates: never auto-loaded (disabled by default),
-      # and any that were running before this deploy are dropped.
-      |> Enum.reject(&example?/1)
 
     # Persist the resolved set first: add_loaded during the loop rebuilds from
     # `loaded_names()`, so an unsaved first-run set would be lost to the first
@@ -245,27 +239,23 @@ defmodule HomeElixir.FlowStore do
   end
 
   def handle_call({:delete, name}, _from, cache) do
-    if example?(name) do
-      {:reply, {:error, :read_only}, cache}
-    else
-      case resolve(name) do
-        {:ok, path} ->
-          {mod, cache} = atom_for(path, cache)
+    case resolve(name) do
+      {:ok, path} ->
+        {mod, cache} = atom_for(path, cache)
 
-          cache =
-            if mod != nil and Registry.loaded?(mod),
-              do: elem(do_unload(name, cache), 1),
-              else: cache
+        cache =
+          if mod != nil and Registry.loaded?(mod),
+            do: elem(do_unload(name, cache), 1),
+            else: cache
 
-          File.rm(path)
-          HomeElixir.FlowState.forget_flow(name)
-          if mod, do: HomeElixir.FlowState.forget_triggered(mod)
-          flow_changed()
-          {:reply, :ok, cache}
+        File.rm(path)
+        HomeElixir.FlowState.forget_flow(name)
+        if mod, do: HomeElixir.FlowState.forget_triggered(mod)
+        flow_changed()
+        {:reply, :ok, cache}
 
-        error ->
-          {:reply, error, cache}
-      end
+      error ->
+        {:reply, error, cache}
     end
   end
 
@@ -287,33 +277,29 @@ defmodule HomeElixir.FlowStore do
   end
 
   def handle_call({:rename, old_name, new_name}, _from, cache) do
-    if example?(old_name) or example?(new_name) do
-      {:reply, {:error, :read_only}, cache}
-    else
-      case resolve(old_name) do
-        {:ok, old_path} ->
-          {mod, cache} = atom_for(old_path, cache)
+    case resolve(old_name) do
+      {:ok, old_path} ->
+        {mod, cache} = atom_for(old_path, cache)
 
-          cache =
-            if mod != nil and Registry.loaded?(mod),
-              do: elem(do_unload(old_name, cache), 1),
-              else: cache
+        cache =
+          if mod != nil and Registry.loaded?(mod),
+            do: elem(do_unload(old_name, cache), 1),
+            else: cache
 
-          case HomeElixir.FlowState.flow_owner(old_name) do
-            nil -> :ok
-            owner -> HomeElixir.FlowState.set_flow_owner(new_name, owner)
-          end
+        case HomeElixir.FlowState.flow_owner(old_name) do
+          nil -> :ok
+          owner -> HomeElixir.FlowState.set_flow_owner(new_name, owner)
+        end
 
-          HomeElixir.FlowState.forget_flow(old_name)
-          if mod, do: HomeElixir.FlowState.forget_triggered(mod)
-          File.rm(old_path)
-          cache = Map.delete(cache, old_name)
-          flow_changed()
-          {:reply, :ok, cache}
+        HomeElixir.FlowState.forget_flow(old_name)
+        if mod, do: HomeElixir.FlowState.forget_triggered(mod)
+        File.rm(old_path)
+        cache = Map.delete(cache, old_name)
+        flow_changed()
+        {:reply, :ok, cache}
 
-        error ->
-          {:reply, error, cache}
-      end
+      error ->
+        {:reply, error, cache}
     end
   end
 
@@ -403,13 +389,7 @@ defmodule HomeElixir.FlowStore do
   # ---- internals ----
 
   # Load/unload bodies shared by the `load`/`unload`/`reload`/`reload_all` calls.
-  # Examples are read-only templates and can't be started in place — clone one to
-  # run your own copy.
   defp do_load(name, cache) do
-    if example?(name), do: {{:error, :read_only}, cache}, else: do_load_inner(name, cache)
-  end
-
-  defp do_load_inner(name, cache) do
     if HomeElixir.FlowState.is_archived?(name) do
       {{:error, :archived}, cache}
     else
@@ -478,14 +458,10 @@ defmodule HomeElixir.FlowStore do
     end
   end
 
-  # Copy a flow to an editable sibling with a "Clone" suffix, inheriting the
+  # Copy a flow to a sibling file/module with a "Clone" suffix, inheriting the
   # original's owner. The clone starts unloaded. Returns {:ok, new_name}.
-  # Cloning an example lands at the top level (editable) instead of in
-  # Examples/ — the "save elsewhere" path for a read-only template.
   defp do_clone(name, path, mod, cache) do
-    example = example?(name)
-    new_name = if example, do: top_level_clone_name(name), else: clone_name(name)
-    new_mod = if example, do: strip_examples(clone_module(mod)), else: clone_module(mod)
+    new_name = clone_name(name)
     new_path = Path.join(dir(), "#{new_name}.ex")
 
     if File.exists?(new_path) do
@@ -495,7 +471,7 @@ defmodule HomeElixir.FlowStore do
         {:ok, source} ->
           new_src =
             String.replace(source, "defmodule #{bare(mod)} do",
-              "defmodule #{bare(new_mod)} do")
+              "defmodule #{bare(clone_module(mod))} do")
 
           File.mkdir_p!(Path.dirname(new_path))
           File.write!(new_path, new_src)
@@ -529,17 +505,6 @@ defmodule HomeElixir.FlowStore do
       |> Enum.split(-1)
 
     String.to_atom(Enum.join(prefix ++ [leaf <> "Clone"], "."))
-  end
-
-  # "Examples/counter" -> "counter_clone" (drop the Examples/ prefix so the copy
-  # is a top-level, editable user flow).
-  defp top_level_clone_name(name) do
-    name |> String.split("/") |> List.last() |> Kernel.<>("_clone")
-  end
-
-  # HomeElixir.Flows.Examples.CounterClone -> HomeElixir.Flows.CounterClone
-  defp strip_examples(mod) do
-    mod |> bare() |> String.replace(".Examples.", ".") |> String.to_atom()
   end
 
   # The module name as written in a defmodule clause (no "Elixir." prefix).
