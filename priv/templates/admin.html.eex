@@ -12,7 +12,7 @@
         <button class="btn btn-sm btn-primary">Add user</button>
       </form>
     </div>
-    <table class="table table-hover align-middle mb-0">
+    <table class="table align-middle mb-0 ha-table">
       <thead><tr><th>name</th><th>role</th><th class="text-end">actions</th></tr></thead>
       <tbody id="users"></tbody>
     </table>

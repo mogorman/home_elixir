@@ -17,6 +17,8 @@
   :root {
     --ha-primary: #03a9f4;
     --ha-card-shadow: 0 2px 2px 0 rgba(0,0,0,0.14), 0 3px 1px -2px rgba(0,0,0,0.12), 0 1px 5px 0 rgba(0,0,0,0.2);
+    --ha-divider: rgba(0,0,0,0.12);
+    --ha-primary-text-rgb: 0,0,0;
     --bs-primary: #03a9f4;
     --bs-primary-rgb: 3,169,244;
     --bs-link-color: #03a9f4;
@@ -33,6 +35,8 @@
     --bs-body-bg: #111111;
     --bs-body-color: #e0e0e0;
     --bs-bg-body-tertiary: #1c1c1c;
+    --ha-divider: rgba(255,255,255,0.12);
+    --ha-primary-text-rgb: 255,255,255;
     --ha-card-shadow: 0 2px 2px 0 rgba(0,0,0,0.5), 0 3px 1px -2px rgba(0,0,0,0.4), 0 1px 5px 0 rgba(0,0,0,0.6);
   }
 
@@ -67,6 +71,46 @@
     --bs-btn-active-color: #fff;
   }
   .btn-primary:hover, .btn-primary:active, .btn-primary:focus { color: #fff !important; }
+
+  /* Flat HA icon button (borderless, circular hover) for row menus. */
+  .ha-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--bs-secondary-color);
+    cursor: pointer;
+    transition: background-color 0.15s;
+  }
+  .ha-icon-btn:hover { background: rgba(var(--ha-primary-text-rgb), 0.08); }
+
+  /* HA data-table look: 52px rows, 56px header, dividers, subtle row hover. */
+  .ha-table { --bs-table-bg: transparent; }
+  .ha-table thead th {
+    height: 56px;
+    padding: 0 16px;
+    font-size: .875rem;
+    font-weight: 500;
+    letter-spacing: .0178em;
+    color: var(--bs-body-color);
+    white-space: nowrap;
+  }
+  .ha-table thead th.text-end { text-align: right; }
+  .ha-table tbody td {
+    height: 52px;
+    padding: 8px 16px;
+    font-size: .875rem;
+    letter-spacing: .0178em;
+    color: var(--bs-body-color);
+    border-top: 1px solid var(--ha-divider);
+    vertical-align: middle;
+  }
+  .ha-table tbody td.text-end { text-align: right; }
+  .ha-table tbody tr:hover td { background: rgba(var(--ha-primary-text-rgb), .04); }
 
   .table { --bs-table-bg: transparent; }
   .card { border: none; box-shadow: var(--ha-card-shadow); }

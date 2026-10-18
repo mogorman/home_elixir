@@ -1,10 +1,5 @@
 <%= base %>
   <style>
-    .flows-table thead th {
-      font-size: .85rem;
-      font-weight: 500;
-      color: var(--bs-secondary-color);
-    }
     .card { overflow: visible; }
     .dropdown-menu { z-index: 1080; }
   </style>
@@ -13,7 +8,7 @@
       <span class="fw-semibold"><%= title %></span>
       <div class="d-flex gap-1"><%= header_buttons %></div>
     </div>
-    <table class="table table-hover align-middle mb-0 flows-table">
+    <table class="table align-middle mb-0 ha-table">
       <thead><tr>
         <th class="sortable" data-label="name" data-sort="name" style="cursor:pointer">name</th>
         <th class="sortable" data-label="status" data-sort="loaded" style="cursor:pointer">status</th>
@@ -333,7 +328,7 @@
 
         const dd = document.createElement("div");
         dd.className = "dropdown";
-        dd.innerHTML = '<button class="btn btn-sm btn-outline-secondary" aria-label="menu"><i class="mdi mdi-dots-vertical"></i></button><div class="dropdown-menu dropdown-menu-end" data-bs-popper>' + items + '</div>';
+        dd.innerHTML = '<button class="ha-icon-btn" aria-label="menu"><i class="mdi mdi-dots-vertical"></i></button><div class="dropdown-menu dropdown-menu-end" data-bs-popper>' + items + '</div>';
         actions.appendChild(dd);
 
         const menuList = dd.querySelector(".dropdown-menu");
@@ -349,7 +344,10 @@
           };
         });
       }
-      tr.appendChild(actions);
+      const tdActions = document.createElement("td");
+      tdActions.className = "text-end";
+      tdActions.appendChild(actions);
+      tr.appendChild(tdActions);
       return tr;
     }
     function folderRow(folder, depth) {
