@@ -19,6 +19,8 @@ defmodule HomeElixir.ConfigTest do
     Config.delete(:global, "cfg")
     Config.delete(@flow_name, "cfg_s")
     Config.delete(:global, "cfg_gs")
+    Config.delete(@flow_name, "cfg_sh")
+    Config.delete(:global, "cfg_sh")
     Application.delete_env(:home_elixir, :cfg_app)
     Application.delete_env(:home_elixir, :cfg_g)
     Application.delete_env(:home_elixir, :cfg_sys_probe)
@@ -96,6 +98,21 @@ defmodule HomeElixir.ConfigTest do
       Config.seed(%{cfg_s: "third"})
       assert Config.get("cfg_s") == "third"
     end)
+  end
+
+  test "seed does not shadow an existing value from a higher layer" do
+    Config.put(:global, "cfg_sh", "global")
+
+    try do
+      FlowState.as(@flow, fn ->
+        Config.seed(%{cfg_sh: "flow-default"})
+        # the flow keeps the existing global value; no per-flow copy is stamped
+        assert Config.resolve("cfg_sh") == {"global", :global}
+        assert Config.flow_config(@flow_name) == %{}
+      end)
+    after
+      Config.delete(:global, "cfg_sh")
+    end
   end
 
   test "seed scope: :global seeds the global scope" do

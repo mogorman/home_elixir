@@ -150,10 +150,10 @@ function cfgRow(it, flowName, onDone) {
   save.className = "btn btn-sm btn-outline-primary";
   save.textContent = "Save";
   save.onclick = () => post(input.value);
-  const reset = document.createElement("button");
-  reset.className = "btn btn-sm btn-outline-secondary";
-  reset.textContent = "Reset";
-  reset.onclick = () => post(null);
+  const del = document.createElement("button");
+  del.className = "btn btn-sm btn-outline-danger";
+  del.textContent = "Delete";
+  del.onclick = () => post(null);
   const kids = [label, input];
   if (flowName) {
     const badge = document.createElement("span");
@@ -162,7 +162,7 @@ function cfgRow(it, flowName, onDone) {
     badge.textContent = it.source;
     kids.push(badge);
   }
-  kids.push(save, reset);
+  kids.push(save, del);
   if (it.secret) {
     const reveal = document.createElement("button");
     reveal.className = "btn btn-sm btn-outline-secondary";

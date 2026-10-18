@@ -114,7 +114,7 @@ defmodule HomeElixir.Web do
   def dispatch(%{method: "GET", request_path: "/examples/" <> name} = conn, _opts) do
     if flow_name_valid?(name) do
       case HomeElixir.Examples.source(name) do
-        {:ok, src} -> html(conn, example_view_page(src, cur(conn)))
+        {:ok, src} -> html(conn, example_view_page(name, src, cur(conn)))
         _ -> not_found(conn)
       end
     else
@@ -1111,19 +1111,21 @@ defmodule HomeElixir.Web do
       source_json: source_json,
       name_json: name_json,
       readonly_json: "false",
+      example_name_json: "null",
       hljs: @hljs,
       control_js: Template.render("control_js.html.eex")
     )
   end
 
-  # Read-only view of a bundled example's source (no save; copy it from the
-  # Examples page to make an editable flow).
-  defp example_view_page(source, user) do
+  # Read-only view of a bundled example's source. The only applicable action is
+  # Copy (into the user's flows); the other editor controls are hidden.
+  defp example_view_page(name, source, user) do
     Template.render("editor.html.eex",
       base: base_html("Example", :examples, user),
       source_json: Jason.encode!(source),
       name_json: "null",
       readonly_json: "true",
+      example_name_json: Jason.encode!(name),
       hljs: @hljs,
       control_js: Template.render("control_js.html.eex")
     )

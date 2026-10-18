@@ -34,6 +34,7 @@ defmodule HomeElixir.Config do
   @table :home_elixir_config
   @global :global
   @app_unset :__config_app_unset__
+  @seed_unset :__config_seed_unset__
 
   # Create the table. Mnesia is already up (FlowState.start ran first).
   def start do
@@ -134,7 +135,9 @@ defmodule HomeElixir.Config do
   @doc """
   Declare editable keys + defaults for the current flow. `scope:` defaults to
   `:flow` (per-flow); pass `scope: :global` for values shared across flows.
-  Only-if-absent, so a user's later edit wins over a re-seed.
+  Only-if-absent across the whole resolution chain, so it never shadows a value
+  already set at any layer (flow/global/app/system) — a user's edit or app
+  config always wins over a re-seed.
   """
   def seed(map, opts \\ []) do
     case Keyword.get(opts, :scope, :flow) do
@@ -150,12 +153,14 @@ defmodule HomeElixir.Config do
   end
 
   defp seed_scope(scope, key, value) do
-    ks = to_key(key)
-
-    if Map.has_key?(read(scope), ks) do
-      :ok
-    else
+    # Only seed when nothing already provides a value (the ambient flow would
+    # otherwise resolve to :default). Never shadow an existing flow/global/app/
+    # system value — a user's edit or app config always wins over a re-seed.
+    if elem(resolve(key, @seed_unset), 1) == :default do
+      ks = to_key(key)
       write(scope, Map.put(read(scope), ks, value))
+    else
+      :ok
     end
   end
 
