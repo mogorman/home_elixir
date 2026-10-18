@@ -62,6 +62,8 @@
     }
     function cloneName(name) {
       const parts = name.split("/");
+      // Examples clone to the top level (editable copy), so drop the Examples/ prefix.
+      if (parts[0] === "Examples") return parts[parts.length - 1] + "_clone";
       parts[parts.length - 1] += "_clone";
       return parts.join("/");
     }
@@ -288,13 +290,14 @@
       return b;
     }
     function flowRow(f, depth, label) {
+      const isEx = f.name.startsWith("Examples/");
       const tr = document.createElement("tr");
       if (MODE !== "archived") {
         tr.style.cursor = "pointer";
         tr.onclick = (ev) => { if (!ev.target.closest("button, a, select, input, .dropdown")) togglePanel(f.name); };
       }
       tr.innerHTML =
-        `<td style="padding-left:${12 + depth * 20}px">${modLabel(f)}</td>` +
+        `<td style="padding-left:${12 + depth * 20}px">${modLabel(f)}${isEx ? ' <span class="example-badge">example</span>' : ""}</td>` +
         `<td><span class="status-badge ${f.status === "grey" ? "" : "is-" + f.status}" title="${STATUS_LABEL[f.status] || f.status}">${STATUS_LABEL[f.status] || f.status}</span></td>` +
         `<td class="text-secondary">${timeAgo(f.last_triggered)}</td>`;
       const actions = document.createElement("div");
@@ -303,28 +306,35 @@
       if (MODE === "archived") {
         const restore = mkBtn("Restore", "btn-outline-secondary");
         restore.onclick = () => act(f.name, "unarchive");
-        const del = mkBtn("Delete", "btn-outline-danger");
-        del.onclick = () => confirmDelete(f.name);
-        actions.append(restore, del);
+        actions.append(restore);
+        if (!isEx) {
+          const del = mkBtn("Delete", "btn-outline-danger");
+          del.onclick = () => confirmDelete(f.name);
+          actions.append(del);
+        }
       } else {
-        const sw = document.createElement("div");
-        sw.className = "form-check form-switch mb-0";
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.className = "form-check-input";
-        cb.checked = !!f.loaded;
-        cb.onchange = () => act(f.name, cb.checked ? "load" : "unload");
-        sw.appendChild(cb);
-        actions.appendChild(sw);
+        // Examples are read-only templates: no on/off switch (they can't run in
+        // place) and no reload/permissions/delete — clone one to make your own.
+        if (!isEx) {
+          const sw = document.createElement("div");
+          sw.className = "form-check form-switch mb-0";
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.className = "form-check-input";
+          cb.checked = !!f.loaded;
+          cb.onchange = () => act(f.name, cb.checked ? "load" : "unload");
+          sw.appendChild(cb);
+          actions.appendChild(sw);
+        }
 
         const items =
-          '<a class="dropdown-item" href="edit/' + f.name + '">Edit</a>' +
-          '<button class="dropdown-item" data-a="reload">Reload</button>' +
-          (IS_ADMIN ? '<button class="dropdown-item" data-a="perms">Permissions</button>' : "") +
+          '<a class="dropdown-item" href="edit/' + f.name + '">' + (isEx ? "View" : "Edit") + '</a>' +
+          (isEx ? "" : '<button class="dropdown-item" data-a="reload">Reload</button>') +
+          (isEx ? "" : (IS_ADMIN ? '<button class="dropdown-item" data-a="perms">Permissions</button>' : "")) +
           '<button class="dropdown-item" data-a="clone">Clone</button>' +
-          '<button class="dropdown-item" data-a="archive">Archive</button>' +
-          '<hr class="dropdown-divider">' +
-          '<button class="dropdown-item text-danger" data-a="delete">Delete</button>';
+          '<button class="dropdown-item" data-a="archive">' + (isEx ? "Hide" : "Archive") + '</button>' +
+          (isEx ? "" : '<hr class="dropdown-divider">' +
+            '<button class="dropdown-item text-danger" data-a="delete">Delete</button>');
 
         const dd = document.createElement("div");
         dd.className = "dropdown";

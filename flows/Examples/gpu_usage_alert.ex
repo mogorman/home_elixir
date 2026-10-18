@@ -1,4 +1,4 @@
-defmodule HomeElixir.Flows.GpuUsageAlert do
+defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
   @moduledoc """
   Alerts (Signal to mog) when any deepthought RTX 3090 GPU runs hot.
 

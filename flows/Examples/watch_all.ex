@@ -1,4 +1,4 @@
-defmodule HomeElixir.Flows.WatchAll do
+defmodule HomeElixir.Flows.Examples.WatchAll do
   @moduledoc """
   Example read-only flow: log every Home Assistant state change.
 

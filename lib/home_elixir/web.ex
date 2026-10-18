@@ -441,20 +441,25 @@ defmodule HomeElixir.Web do
 
   # New flows may be created by anyone logged in; an existing flow may be saved
   # only by its owner or an admin. Unowned pre-existing files are admin-only.
+  # Example flows are read-only — clone one to edit a copy.
   defp save_guard(conn, name) do
-    case cur(conn) do
-      {_id, "admin"} ->
-        :ok
+    if HomeElixir.FlowStore.example?(name) do
+      {:error, "example flows are read-only — clone it to edit"}
+    else
+      case cur(conn) do
+        {_id, "admin"} ->
+          :ok
 
-      {id, _} ->
-        cond do
-          not File.exists?(flow_path(name)) -> :ok
-          HomeElixir.FlowState.flow_owner(name) == id -> :ok
-          true -> {:error, "forbidden: not your flow"}
-        end
+        {id, _} ->
+          cond do
+            not File.exists?(flow_path(name)) -> :ok
+            HomeElixir.FlowState.flow_owner(name) == id -> :ok
+            true -> {:error, "forbidden: not your flow"}
+          end
 
-      _ ->
-        :ok
+        _ ->
+          :ok
+      end
     end
   end
 
@@ -791,8 +796,12 @@ defmodule HomeElixir.Web do
   defp is_admin?(conn), do: role_of(conn) == "admin"
 
   # A user may open/edit a named flow if they are admin, its owner, or the flow
-  # is public (owned by everyone).
+  # is public (owned by everyone). Examples are readable by everyone.
   defp flow_access(conn, name) do
+    if HomeElixir.FlowStore.example?(name), do: :ok, else: flow_access_user(conn, name)
+  end
+
+  defp flow_access_user(conn, name) do
     pub = HomeElixir.FlowState.public_owner()
 
     case cur(conn) do
@@ -812,13 +821,19 @@ defmodule HomeElixir.Web do
   end
 
   # The flows a user may see: everything for admin, their own + public for
-  # others. (Unowned flows — never saved through the UI — are admin-only.)
+  # others (plus the bundled examples, which are visible to everyone).
+  # (Unowned non-example flows — never saved through the UI — are admin-only.)
   defp visible_flows(conn, flows) do
     pub = HomeElixir.FlowState.public_owner()
 
     case cur(conn) do
       {_id, "admin"} -> flows
-      {id, _} -> Enum.filter(flows, fn f -> f[:owner] == id or f[:owner] == pub end)
+
+      {id, _} ->
+        Enum.filter(flows, fn f ->
+          HomeElixir.FlowStore.example?(f.name) or f[:owner] == id or f[:owner] == pub
+        end)
+
       _ -> flows
     end
   end
@@ -1059,11 +1074,13 @@ defmodule HomeElixir.Web do
   defp editor_page(name, source, user \\ nil) do
     source_json = Jason.encode!(source)
     name_json = Jason.encode!(name)
+    readonly_json = Jason.encode!(name != nil and HomeElixir.FlowStore.example?(name))
 
     Template.render("editor.html.eex",
       base: base_html("Edit flow", :edit, user),
       source_json: source_json,
       name_json: name_json,
+      readonly_json: readonly_json,
       hljs: @hljs,
       control_js: Template.render("control_js.html.eex")
     )

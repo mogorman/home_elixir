@@ -297,6 +297,35 @@ defmodule HomeElixir.FlowStoreTest do
     assert {:error, :not_found} = FlowStore.clone("nope")
   end
 
+  test "example flows are read-only and clone to a top-level editable copy" do
+    tmp = Application.get_env(:home_elixir, :flows_dir)
+    ex_dir = Path.join(tmp, "Examples")
+    File.mkdir_p!(ex_dir)
+
+    File.write!(
+      Path.join(ex_dir, "example_flow.ex"),
+      "defmodule HomeElixir.Flows.Examples.ExampleFlow do\n  use HomeElixir.Flow\n  node(\"in\", HomeElixir.Nodes.Sink)\nend"
+    )
+
+    # detection
+    assert FlowStore.example?("Examples/example_flow")
+    refute FlowStore.example?("store_test")
+
+    # can't be started, deleted, or renamed in place
+    assert {:error, :read_only} = FlowStore.load("Examples/example_flow")
+    assert {:error, :read_only} = FlowStore.delete("Examples/example_flow")
+    assert {:error, :read_only} = FlowStore.rename("Examples/example_flow", "example_flow")
+    assert File.exists?(Path.join(ex_dir, "example_flow.ex"))
+
+    # clone lands at the top level with the .Examples module segment stripped
+    assert {:ok, "example_flow_clone"} = FlowStore.clone("Examples/example_flow")
+    clone_path = Path.join(tmp, "example_flow_clone.ex")
+    assert File.exists?(clone_path)
+    src = File.read!(clone_path)
+    assert src =~ "defmodule HomeElixir.Flows.ExampleFlowClone do"
+    refute src =~ "Examples"
+  end
+
   defp poll(fun, timeout \\ 1_000) do
     deadline = System.monotonic_time(:millisecond) + timeout
 

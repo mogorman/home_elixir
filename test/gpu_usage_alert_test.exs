@@ -3,12 +3,12 @@ defmodule HomeElixir.GpuUsageAlertTest do
 
   use ExUnit.Case, async: true
 
-  alias HomeElixir.Flows.GpuUsageAlert, as: Gpu
+  alias HomeElixir.Flows.Examples.GpuUsageAlert, as: Gpu
 
   @min 60_000
 
   setup_all do
-    Code.require_file(Path.expand("../flows/gpu_usage_alert.ex", __DIR__))
+    Code.require_file(Path.expand("../flows/Examples/gpu_usage_alert.ex", __DIR__))
     :ok
   end
 
