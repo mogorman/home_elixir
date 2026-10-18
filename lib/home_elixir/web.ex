@@ -1118,18 +1118,21 @@ defmodule HomeElixir.Web do
     <nav class="navbar navbar-expand-lg app-bar">
       <div class="container-fluid">
         <a class="navbar-brand fw-semibold d-flex align-items-center gap-2" href="./"><img src="static/logo.svg" width="24" height="24" alt="">home_elixir</a>
-        <ul class="navbar-nav gap-1 flex-wrap">
-          <li class="nav-item"><a class="nav-link#{a.(:flows)}" href="./">Flows</a></li>
-          <li class="nav-item"><a class="nav-link#{a.(:archived)}" href="archived">Archived</a></li>
-          <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="controls">Controls</a></li>
-          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:logs)}" href="logs">Logs</a></li>|, else: ""}
-          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:iex)}" href="terminal">IEx</a></li>|, else: ""}
-          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:config)}" href="config">Config</a></li>|, else: ""}
-          #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:admin)}" href="admin">Admin</a></li>|, else: ""}
-        </ul>
-        <span id="nav-loading" class="navbar-text me-2 d-flex align-items-center gap-1" style="display:none; opacity:0; transition: opacity 0.3s"><div class="spinner-border spinner-border-sm" role="status"></div><small id="nav-loading-text"></small></span>
-        #{user_menu_html(user)}
-        <button id="theme-toggle" class="btn btn-outline-secondary btn-sm ms-2" aria-label="Toggle theme"><i class="mdi mdi-weather-night"></i></button>
+        <button class="navbar-toggler" id="nav-toggler" type="button" aria-label="Menu" aria-expanded="false"><span class="navbar-toggler-icon"></span></button>
+        <div class="collapse navbar-collapse" id="nav-collapse">
+          <ul class="navbar-nav gap-1 flex-wrap">
+            <li class="nav-item"><a class="nav-link#{a.(:flows)}" href="./">Flows</a></li>
+            <li class="nav-item"><a class="nav-link#{a.(:archived)}" href="archived">Archived</a></li>
+            <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="controls">Controls</a></li>
+            #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:logs)}" href="logs">Logs</a></li>|, else: ""}
+            #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:iex)}" href="terminal">IEx</a></li>|, else: ""}
+            #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:config)}" href="config">Config</a></li>|, else: ""}
+            #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:admin)}" href="admin">Admin</a></li>|, else: ""}
+          </ul>
+          <span id="nav-loading" class="navbar-text me-2 d-flex align-items-center gap-1" style="display:none; opacity:0; transition: opacity 0.3s"><div class="spinner-border spinner-border-sm" role="status"></div><small id="nav-loading-text"></small></span>
+          #{user_menu_html(user)}
+          <button id="theme-toggle" class="btn btn-outline-secondary btn-sm ms-2" aria-label="Toggle theme"><i class="mdi mdi-weather-night"></i></button>
+        </div>
       </div>
     </nav>
     <script>
@@ -1145,6 +1148,13 @@ defmodule HomeElixir.Web do
         setTimeout(function() { el.style.display = "none"; }, 300);
       }
       (function () {
+        var tog = document.getElementById("nav-toggler");
+        var col = document.getElementById("nav-collapse");
+        if (tog && col) tog.addEventListener("click", function () {
+          var open = col.classList.toggle("show");
+          tog.classList.toggle("collapsed", !open);
+          tog.setAttribute("aria-expanded", open ? "true" : "false");
+        });
         var btn = document.getElementById("theme-toggle");
         var mq = window.matchMedia ? matchMedia("(prefers-color-scheme: light)") : null;
         function theme() { return document.documentElement.getAttribute("data-bs-theme"); }

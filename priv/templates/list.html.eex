@@ -294,7 +294,7 @@
         tr.onclick = (ev) => { if (!ev.target.closest("button, a, select, input, .dropdown")) togglePanel(f.name); };
       }
       tr.innerHTML =
-        `<td class="fw-semibold" style="padding-left:${12 + depth * 20}px">${modLabel(f)}</td>` +
+        `<td style="padding-left:${12 + depth * 20}px">${modLabel(f)}</td>` +
         `<td><span class="status-badge ${f.status === "grey" ? "" : "is-" + f.status}" title="${STATUS_LABEL[f.status] || f.status}">${STATUS_LABEL[f.status] || f.status}</span></td>` +
         `<td class="text-secondary">${timeAgo(f.last_triggered)}</td>`;
       const actions = document.createElement("div");
@@ -356,7 +356,7 @@
       const td = document.createElement("td");
       td.colSpan = 4;
       td.style.cursor = "pointer";
-      td.innerHTML = `<span class="fw-semibold d-inline-flex align-items-center gap-1" style="padding-left:${12 + depth * 20}px"><i class="mdi ${open ? "mdi-chevron-down" : "mdi-chevron-right"}"></i> ${folder.path.split("/").pop()} <span class="text-secondary fw-normal">(${folderCount(folder)})</span></span>`;
+      td.innerHTML = `<span class="fw-medium d-inline-flex align-items-center gap-1" style="padding-left:${12 + depth * 20}px"><i class="mdi ${open ? "mdi-chevron-down" : "mdi-chevron-right"}"></i> ${folder.path.split("/").pop()} <span class="text-secondary fw-normal">(${folderCount(folder)})</span></span>`;
       td.onclick = () => { open ? expanded.delete(folder.path) : expanded.add(folder.path); refresh(); };
       tr.appendChild(td);
       return tr;
