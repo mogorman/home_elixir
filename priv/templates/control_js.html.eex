@@ -28,6 +28,34 @@ function setSnapshot(el, value) {
     el.appendChild(s);
   }
 }
+function renderTable(el, value) {
+  el.innerHTML = "";
+  const cols = (value && value.cols) || [];
+  const rows = (value && value.rows) || [];
+  if (!rows.length) {
+    const s = document.createElement("span");
+    s.className = "text-secondary small"; s.textContent = "no data yet";
+    el.appendChild(s);
+    return;
+  }
+  const t = document.createElement("table");
+  t.className = "table table-sm align-middle mb-0 ha-table";
+  const head = document.createElement("thead");
+  const hr = document.createElement("tr");
+  for (const c of cols) { const th = document.createElement("th"); th.textContent = c; hr.appendChild(th); }
+  head.appendChild(hr); t.appendChild(head);
+  const body = document.createElement("tbody");
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    for (const cell of r) {
+      const td = document.createElement("td");
+      td.textContent = (cell === null || cell === undefined) ? "-" : String(cell);
+      tr.appendChild(td);
+    }
+    body.appendChild(tr);
+  }
+  t.appendChild(body); el.appendChild(t);
+}
 function renderControl(e, btnClass) {
   if (e.type === "state") {
     const b = document.createElement("span");
@@ -48,6 +76,17 @@ function renderControl(e, btnClass) {
     wrap.dataset.label = e.label || e.node;
     wrap.dataset.snapshot = "1";
     setSnapshot(wrap, e.value);
+    return wrap;
+  }
+  if (e.type === "table") {
+    const wrap = document.createElement("div");
+    wrap.className = "w-100";
+    wrap.style.maxHeight = "340px"; wrap.style.overflow = "auto";
+    wrap.dataset.flow = e.name;
+    wrap.dataset.node = e.node;
+    wrap.dataset.label = e.label || e.node;
+    wrap.dataset.table = "1";
+    renderTable(wrap, e.value);
     return wrap;
   }
   const b = document.createElement("button");
@@ -76,6 +115,7 @@ function updateBadge(u) {
   const el = [...document.querySelectorAll('[data-node="' + u.node + '"]')].find(
     (b) => b.dataset.flow === u.flow || b.dataset.flow.split("/").pop() === u.flow);
   if (!el) return;
+  if (el.dataset.table) { renderTable(el, u.value); return; }
   if (el.dataset.snapshot) { setSnapshot(el, u.value); return; }
   el.textContent = el.dataset.label + ": " + (u.value === null || u.value === undefined ? "-" : u.value);
 }

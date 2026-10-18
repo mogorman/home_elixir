@@ -140,7 +140,7 @@ defmodule HomeElixir.FlowStore do
           type: ui.type,
           label: Map.get(ui, :label),
           payload: Map.get(ui, :payload),
-          value: if(ui.type in ["state", "image"], do: node_state_value(mod, node_id), else: nil)
+          value: if(ui.type in ["state", "image", "table"], do: node_state_value(mod, node_id), else: nil)
         }
       end
 

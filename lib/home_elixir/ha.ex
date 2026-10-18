@@ -88,18 +88,9 @@ defmodule HomeElixir.HA do
   `{:error, reason}`.
   """
   def snapshot(entity_id) do
-    base = rest_base()
-    token = token()
-
-    cond do
-      is_nil(base) or is_nil(token) ->
-        {:error, "Home Assistant is not configured"}
-
-      true ->
-        case http_get(base <> "/api/camera_proxy/" <> entity_id, token) do
-          {:ok, body} -> {:ok, body}
-          {:error, reason} -> {:error, {:snapshot, reason}}
-        end
+    case rest_get("/api/camera_proxy/" <> entity_id, token()) do
+      {:ok, body} -> {:ok, body}
+      {:error, reason} -> {:error, {:snapshot, reason}}
     end
   end
 
@@ -113,6 +104,116 @@ defmodule HomeElixir.HA do
       {:ok, bytes} -> {:ok, Base.encode64(bytes)}
       {:error, _} = err -> err
     end
+  end
+
+  # ---- State / history helpers: a thin IO shell (WS + REST) over pure cores ----
+
+  @doc """
+  The current state of one entity (a `get_states` entry: `%{"entity_id",
+  "state", "attributes", "last_changed", "last_updated"}`), or `{:error, reason}`.
+  """
+  def state(entity_id) do
+    with {:ok, states} <- ws_list("get_states"),
+         s when not is_nil(s) <- find_state(states, entity_id) do
+      {:ok, s}
+    else
+      {:error, _} = e -> e
+      _ -> {:error, {:not_found, entity_id}}
+    end
+  end
+
+  @doc """
+  The current states of every entity on `device_id` (resolved via the entity
+  registry), in registry order. Returns `{:ok, [state_map]}` or `{:error, reason}`.
+  """
+  def device_states(device_id) do
+    with {:ok, regs} <- ws_list("config/entity_registry/list"),
+         {:ok, states} <- ws_list("get_states") do
+      case device_entity_ids(regs, device_id) do
+        [] -> {:error, {:no_entities, device_id}}
+        ids -> {:ok, filter_states(states, ids)}
+      end
+    else
+      {:error, _} = e -> e
+    end
+  end
+
+  @doc """
+  State history for `ids` (an entity_id or a list of them) over `range`.
+  `range` is `nil` (last hour), a number (look back N hours), or `{start, end}`
+  (DateTime or ISO8601 strings). Returns `{:ok, [state_map]}` (a flat list) or
+  `{:error, reason}`.
+  """
+  def history(ids, range \\ nil) do
+    list = if is_list(ids), do: ids, else: [ids]
+
+    case rest_get(history_path(list, range), token()) do
+      {:ok, body} ->
+        case Jason.decode(body) do
+          {:ok, grouped} when is_list(grouped) -> {:ok, flatten_history(grouped)}
+          {:ok, _} -> {:error, {:history, :unexpected}}
+          {:error, reason} -> {:error, {:history, reason}}
+        end
+
+      {:error, _} = e ->
+        e
+    end
+  end
+
+  @doc """
+  State history for every entity on `device_id` over `range` (see `history/2`).
+  Returns `{:ok, [state_map]}` or `{:error, reason}`.
+  """
+  def device_history(device_id, range \\ nil) do
+    case ws_list("config/entity_registry/list") do
+      {:ok, regs} ->
+        case device_entity_ids(regs, device_id) do
+          [] -> {:error, {:no_entities, device_id}}
+          ids -> history(ids, range)
+        end
+
+      {:error, _} = e ->
+        e
+    end
+  end
+
+  # ---- Pure cores (exposed so the logic is unit-testable without a live HA) ----
+
+  @doc "Find one entity's state in a `get_states` list, or `nil`."
+  def find_state(states, entity_id) do
+    Enum.find(states, &(&1["entity_id"] == entity_id))
+  end
+
+  @doc "The `entity_id`s belonging to `device_id`, from an entity-registry list."
+  def device_entity_ids(registry, device_id) do
+    for r <- registry, r["device_id"] == device_id, do: r["entity_id"]
+  end
+
+  @doc "The states for `entity_ids` (in that order), from a `get_states` list."
+  def filter_states(states, entity_ids) do
+    by_id = Map.new(states, &{&1["entity_id"], &1})
+    for id <- entity_ids, s = Map.get(by_id, id), not is_nil(s), do: s
+  end
+
+  @doc """
+  Resolve a history `range` to a `{start_iso, end_iso}` UTC pair. `nil` is the
+  last hour; a number is a look-back in hours; `{start, end}` is explicit
+  (DateTime or ISO8601). `now` (unix seconds) is injectable for tests.
+  """
+  def build_range(range, now \\ System.system_time(:second)) do
+    case range do
+      nil -> {iso(now - 3600), iso(now)}
+      n when is_number(n) -> {iso(now - round(n) * 3600), iso(now)}
+      {s, e} -> {iso_dt(s), iso_dt(e)}
+    end
+  end
+
+  @doc "Flatten HA's history response (a list of per-entity lists) to one list."
+  def flatten_history(list) when is_list(list) do
+    Enum.flat_map(list, fn
+      inner when is_list(inner) -> inner
+      single -> [single]
+    end)
   end
 
   # A WS path like "/core/api/websocket" means REST lives under "/core/api/...";
@@ -271,20 +372,70 @@ defmodule HomeElixir.HA do
     end
   end
 
-  # ---- Camera snapshot over Mint (core HTTP, no `req`) ----
+  # ---- REST over Mint (core HTTP, no `req`) + WS list fetch ----
 
-  defp http_get(url, token) do
-    uri = URI.parse(url)
-    scheme = if uri.scheme == "https", do: :https, else: :http
-    port = uri.port || if(scheme == :https, do: 443, else: 80)
-    path = (uri.path || "/") <> if(uri.query, do: "?" <> uri.query, else: "")
-    headers = [{"authorization", "Bearer " <> token}, {"accept", "image/*"}]
+  # GET `path` (relative to rest_base()) with the shared token; the raw body on
+  # HTTP 200, else an error. Shared by the REST-backed helpers.
+  defp rest_get(path, token) do
+    base = rest_base()
 
-    with {:ok, conn} <- Mint.HTTP.connect(scheme, uri.host, port, mint_opts(scheme)),
-         {:ok, conn, _ref} <- Mint.HTTP.request(conn, "GET", path, headers, "") do
-      read_response(conn, %{status: nil, length: nil, got: 0, body: []})
+    if is_nil(base) or is_nil(token) do
+      {:error, :not_configured}
+    else
+      uri = URI.parse(base <> path)
+      scheme = if uri.scheme == "https", do: :https, else: :http
+      port = uri.port || if(scheme == :https, do: 443, else: 80)
+      req_path = (uri.path || "/") <> if(uri.query, do: "?" <> uri.query, else: "")
+      headers = [{"authorization", "Bearer " <> token}, {"accept", "*/*"}]
+
+      with {:ok, conn} <- Mint.HTTP.connect(scheme, uri.host, port, mint_opts(scheme)),
+           {:ok, conn, _ref} <- Mint.HTTP.request(conn, "GET", req_path, headers, "") do
+        read_response(conn, %{status: nil, length: nil, got: 0, body: [], done: false})
+      end
     end
   end
+
+  # HA 2026+ history API: the start time is a path segment, the entities go in
+  # `filter_entity_id`, the end in `end_time`.
+  defp history_path(ids, range) do
+    {start, end_} = build_range(range)
+
+    "/api/history/period/" <>
+      start <>
+      "?filter_entity_id=" <> Enum.join(ids, ",") <>
+      "&end_time=#{end_}&minimal_response=true&no_attributes=true"
+  end
+
+  # A single read-only WS list command on the shared client.
+  defp ws_list(command) do
+    case client() do
+      nil ->
+        {:error, :no_client}
+
+      c ->
+        case HomeElixir.HA.Client.call(c, command) do
+          list when is_list(list) -> {:ok, list}
+          {:error, reason} -> {:error, reason}
+          other -> {:error, {:unexpected, other}}
+        end
+    end
+  end
+
+  # unix seconds -> "YYYY-MM-DDTHH:MM:SSZ" (UTC; `Z` keeps the URL query clean —
+  # a `+` offset would be read as a space by HA).
+  defp iso(unix) do
+    dt = DateTime.from_unix!(unix)
+
+    :io_lib.format("~4..0B-~2..0B-~2..0BT~2..0B:~2..0B:~2..0BZ", [
+      dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second
+    ])
+    |> IO.iodata_to_binary()
+  end
+
+  defp iso_dt(v) when is_integer(v), do: iso(v)
+  defp iso_dt(v) when is_binary(v), do: v
+  defp iso_dt(%DateTime{} = dt), do: DateTime.to_unix(dt) |> iso()
+
 
   # TLS verifies the peer against the system bundle (a self-contained release
   # doesn't ship OTP's built-in cacerts). Same lookup as the WS transport.
@@ -350,6 +501,7 @@ defmodule HomeElixir.HA do
       {:status, _ref, code}, st -> %{st | status: code}
       {:headers, _ref, headers}, st -> %{st | length: content_length(headers)}
       {:data, _ref, data}, st -> %{st | got: st.got + byte_size(data), body: [data | st.body]}
+      {:done, _ref}, st -> %{st | done: true}
       _other, st -> st
     end)
   end
@@ -361,8 +513,10 @@ defmodule HomeElixir.HA do
     end)
   end
 
-  # HA's camera_proxy sends a fixed content-length (never chunked), so the body
-  # is complete once that many bytes have arrived.
+  # A body is complete once Mint emits `:done` (chunked) or its declared
+  # content-length is satisfied (fixed-length).
+  defp body_complete?(%{done: true}), do: true
+
   defp body_complete?(%{status: status, length: length, got: got}) do
     is_integer(status) and is_integer(length) and got >= length
   end
