@@ -1185,9 +1185,9 @@ defmodule HomeElixir.Web do
           <span id="dep-banner" class="navbar-text dep-banner"></span>
           <ul class="navbar-nav gap-1 flex-wrap">
             <li class="nav-item"><a class="nav-link#{a.(:flows)}" href="./">Flows</a></li>
-            <li class="nav-item"><a class="nav-link#{a.(:examples)}" href="examples">Examples</a></li>
-            <li class="nav-item"><a class="nav-link#{a.(:archived)}" href="archived">Archived</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="controls">Controls</a></li>
+            <li class="nav-item"><a class="nav-link#{a.(:archived)}" href="archived">Archived</a></li>
+            <li class="nav-item"><a class="nav-link#{a.(:examples)}" href="examples">Examples</a></li>
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:logs)}" href="logs">Logs</a></li>|, else: ""}
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:iex)}" href="terminal">IEx</a></li>|, else: ""}
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:config)}" href="config">Config</a></li>|, else: ""}
