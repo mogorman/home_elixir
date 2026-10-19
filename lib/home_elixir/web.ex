@@ -29,7 +29,7 @@ defmodule HomeElixir.Web do
   alias HomeElixir.Template
 
   @hljs "static/hljs"
-  @bootstrap "static/bootstrap/bootstrap.min.css"
+  @bootstrap "static/ha.css"
 
   def init(_opts), do: []
 
