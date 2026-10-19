@@ -1,116 +1,237 @@
 defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
   @moduledoc """
-  Alerts (Signal to mog) when any deepthought RTX 3090 GPU runs hot.
+  Example flow: alert on sustained GPU utilisation, with an Android/iOS Live
+  Activity (companion) progress bar + elapsed timer.
 
-  Event-driven (no cron): each GPU sensor's state change is handled here. When a
-  GPU crosses >= 15% a flag is set; once it has stayed >= 15% for 10 minutes it
-  sends a Signal, then repeats every 5 minutes while it remains hot. A single
-  global 5-minute gate means at most one Signal per 5 minutes across all three
-  GPUs. It disarms (and re-arms on the next heating) when the GPU cools below 15%.
+  Watches three NVIDIA RTX 3090 utilisation sensors:
 
-  Replaces the Home Assistant `automation.gpu_usage_alert` — disable that
-  automation once this flow is verified, to avoid duplicate Signals.
+    * `sensor.deepthought_geforce_rtx_3090_0`
+    * `sensor.deepthought_geforce_rtx_3090_1`
+    * `sensor.deepthought_geforce_rtx_3090_2`
+
+  For each card the flow tracks when its value first reached `@threshold` and
+  raises the alert only if it has been at/above the threshold for at least
+  `@sustain` (default 10 minutes) — a short blip never alerts. While the GPU is
+  hot the alert fires at most once per `@cooldown` (default 5 minutes).
+
+  Each alert:
+
+    1. fires `@notify_service` (a `notify` service, e.g. `signal_mog`), and
+    2. updates a **Live Activity** (Android/iOS Home Assistant companion app) via
+       the core `HomeElixir.HA.LiveUpdate`, keyed by a fixed tag. The activity
+       shows a progress bar that fills **1% per alert** and a count-up timer of
+       how long the GPUs have been hot.
+
+  When every card has dropped below the threshold the Live Activity is dismissed
+  and the counter resets.
+
+  Per-sensor state is tracked in disk-backed flow state (survives restarts) as a
+  `:gpuN_since` key (the epoch-ms `DateTime` the card first went hot, `nil` when
+  cooled); the flow-level alert counter, episode start, and cooldown gate live
+  under the `:gpu_alert_count`, `:gpu_hot_since`, and `:last_alert` keys.
+
+  ## Configuration
+
+  * **GPU sensor** (entity): which card's utilisation this alert watches.
+  * **Utilisation %** (threshold, default `15`): alert when a card stays at or
+    above this utilisation.
+  * **Sustained for** (minutes, default `10`): the card must stay at/above the
+    threshold this long before alerting.
+  * **Cooldown** (minutes, default `5`): minimum time between repeated alerts.
   """
   use HomeElixir.Flow
 
   require Logger
 
-  alias HomeElixir.FlowState
+  alias HomeElixir.{FlowState, HA}
+  alias HomeElixir.HA.LiveUpdate
 
   @sensors [
     "sensor.deepthought_geforce_rtx_3090_0",
     "sensor.deepthought_geforce_rtx_3090_1",
     "sensor.deepthought_geforce_rtx_3090_2"
   ]
-
   @threshold 15
   @sustain 10 * 60 * 1000
   @cooldown 5 * 60 * 1000
   @notify_service "signal_mog"
-  @notify_message "Graphics cards are running hot"
+  @person "mog"
+  @tag "gpu_hot"
 
-  # The handler flow's auto StateChanged source feeds every sensor change here;
-  # only the three GPU sensors act, everything else is dropped by the catch-all.
-  def handle(%{topic: topic, payload: payload}) do
-    if topic in @sensors, do: on_change(topic, payload)
+  def input_schema do
+    [
+      %{key: "entity", type: "select", items: @sensors,
+        label: "GPU sensor", required: true, help: "Which card's utilisation this alert watches."}
+    ]
   end
 
-  # ---- per-event logic (applies the pure decision to FlowState) ----
-
-  defp on_change(sensor, payload) do
-    now = System.system_time(:millisecond)
-    key = gpu_key(sensor, :since)
-    old_since = FlowState.get(key)
-
-    {since, last_alert, alert?} =
-      decide(parse(payload), old_since, FlowState.get(:last_alert), now)
-
-    FlowState.put(key, since)
-    FlowState.put(:last_alert, last_alert)
-    log_transition(sensor, old_since, since, alert?)
-
-    if alert?, do: notify()
-
-    :ok
+  def config_schema do
+    [
+      %{key: "threshold", type: "number", default: @threshold, label: "Utilisation %",
+        help: "Alert when a card stays at or above this utilisation."},
+      %{key: "sustain", type: "number", default: 10, unit: "min", min: 0, label: "Sustained for",
+        help: "Minutes the card must stay at/above the threshold before alerting."},
+      %{key: "cooldown", type: "number", default: 5, unit: "min", min: 0, label: "Cooldown",
+        help: "Minutes between repeated alerts."}
+    ]
   end
 
-  # ---- pure decision (unit-tested): {new_since, new_last_alert, alert?} ----
+  def init(config) do
+    %{
+      entity: Map.get(config, :entity),
+      threshold: cfg(config, :threshold, @threshold),
+      sustain: cfg_min(config, :sustain, 10) * 60 * 1000,
+      cooldown: cfg_min(config, :cooldown, 5) * 60 * 1000
+    }
+  end
 
-  @doc false
-  def decide(value, since, last_alert, now) do
+  def subscribe(flow) do
+    case flow.entity do
+      entity when is_binary(entity) -> [entity]
+      _ -> []
+    end
+  end
+
+  def on_init do
+    :ok = FlowState.put(:last_alert, nil)
+    :ok = FlowState.put(:gpu_alert_count, 0)
+    :ok = FlowState.put(:gpu_hot_since, nil)
+  end
+
+  def run(flow, event) do
+    client = HA.client()
+    now = :os.system_time(:millisecond)
+
+    with {:ok, value} <- parse_value(event),
+         _ <- HA.Client.call(client, "update_entity", %{
+                entity_id: flow.entity_id,
+                attributes: %{"value" => value}
+              }) do
+      since = FlowState.get(key(flow.entity))
+
+      {new_since, last_alert, should_alert?} =
+        decide(value, since, FlowState.get(:last_alert), now, flow.sustain, flow.cooldown)
+
+      FlowState.put(key(flow.entity), new_since)
+
+      if new_since == nil do
+        if all_cooled?() do
+          if FlowState.get(:gpu_alert_count, 0) > 0 do
+            LiveUpdate.dismiss(@person, @tag)
+            FlowState.put(:gpu_alert_count, 0)
+            FlowState.put(:gpu_hot_since, nil)
+          end
+        end
+      else
+        if should_alert? do
+          FlowState.put(:last_alert, last_alert)
+          count = FlowState.get(:gpu_alert_count, 0) + 1
+          FlowState.put(:gpu_alert_count, count)
+          hot_since =
+            case FlowState.get(:gpu_hot_since) do
+              nil -> new_since
+              prev -> min(prev, new_since)
+            end
+
+          FlowState.put(:gpu_hot_since, hot_since)
+          send_live_update(count, hot_since)
+          notify(client, flow.name)
+        end
+      end
+    end
+  rescue
+    e ->
+      Logger.error("GPU usage alert flow error: #{Exception.message(e)}\n" <>
+                     Exception.format_stacktrace(__STACKTRACE__))
+  end
+
+  # Decide (new_since, last_alert, alert?) for a reading. Pure — unit-tested in
+  # `test/gpu_usage_alert_test.exs`; the flow's `run/2` only handles the IO
+  # (state, signal, Live Activity). Timestamps are epoch milliseconds.
+  def decide(value, since, last_alert, now, sustain \\ @sustain, cooldown \\ @cooldown) do
     cond do
-      is_nil(value) ->
+      value == nil ->
         {since, last_alert, false}
 
       value < @threshold ->
         {nil, last_alert, false}
 
-      true ->
-        since = since || now
-        alert? = now - since >= @sustain and (is_nil(last_alert) or now - last_alert >= @cooldown)
-        {since, if(alert?, do: now, else: last_alert), alert?}
-    end
-  end
+      since == nil ->
+        {now, last_alert, false}
 
-  defp log_transition(sensor, old_since, since, alert?) do
-    cond do
-      alert? ->
-        Logger.info("gpu alert: #{sensor} running hot, sending Signal")
-
-      is_nil(old_since) and not is_nil(since) ->
-        Logger.info("gpu alert: #{sensor} crossed >= #{@threshold}%, armed (10 min to fire)")
-
-      not is_nil(old_since) and is_nil(since) ->
-        Logger.info("gpu alert: #{sensor} cooled below #{@threshold}%, disarmed")
+      last_alert == nil ->
+        alert? = now - since >= sustain
+        new_last = if alert?, do: now, else: last_alert
+        {since, new_last, alert?}
 
       true ->
-        :ok
+        alert? = now - last_alert >= cooldown
+        new_last = if alert?, do: now, else: last_alert
+        {since, new_last, alert?}
     end
   end
 
-  defp notify do
-    case HomeElixir.HA.client() do
-      nil ->
-        Logger.warning("gpu alert: no HA client; notify skipped")
+  # Update the Live Activity: 1% progress per alert, count-up timer from the
+  # episode start.
+  defp send_live_update(count, hot_since_ms) do
+    payload = %{
+      title: "GPU running hot",
+      message: "Graphics cards running hot",
+      progress: count,
+      progress_max: 100,
+      chronometer: true,
+      when: DateTime.from_unix!(div(hot_since_ms, 1000)) |> DateTime.to_iso8601(),
+      notification_icon: "mdi:memory",
+      color: "#e53935"
+    }
 
-      client ->
-        HomeElixir.HA.Client.call(client, "call_service", %{
-          domain: "notify",
-          service: @notify_service,
-          service_data: %{message: @notify_message}
-        })
+    case LiveUpdate.update(@person, @tag, payload) do
+      {:ok, n} when n > 0 -> :ok
+      {:error, reason} -> Logger.debug("Live Activity skipped for #{@person}: #{inspect(reason)}")
     end
   end
 
-  defp parse(payload) do
-    case Float.parse(to_string(payload)) do
-      {f, _} -> f
-      :error -> nil
+  # Every card cooled? (all per-sensor `since` keys nil.)
+  defp all_cooled?() do
+    @sensors |> Enum.all?(fn sensor -> is_nil(FlowState.get(key(sensor))) end)
+  end
+
+  # The per-sensor state key, from the sensor's position in the flow's list.
+  defp key(entity) do
+    idx = @sensors |> Enum.find_index(&(&1 == entity)) || 0
+    String.to_atom("gpu#{idx}_since")
+  end
+
+  defp notify(client, name) do
+    HA.Client.call(client, "call_service", %{
+      domain: "notify",
+      service: @notify_service,
+      service_data: %{message: "Graphics cards running hot"}
+    })
+
+    if client != nil do
+      Logger.info("Alert fired: #{name} GPU utilisation at/above threshold, sustained")
     end
   end
 
-  defp gpu_key(sensor, field) do
-    n = sensor |> String.split("_") |> List.last()
-    :"gpu#{n}_#{field}"
+  defp cfg(config, key, default), do: Map.get(config, key, default)
+
+  defp cfg_min(config, key, default) do
+    config
+    |> Map.get(key, default)
+    |> then(fn v -> if is_integer(v) and v >= 0, do: v, else: default end)
+  end
+
+  defp parse_value(event) do
+    case event.state do
+      v when is_number(v) -> {:ok, v}
+      s when is_binary(s) ->
+        case Float.parse(s) do
+          {f, ""} -> {:ok, f}
+          _ -> {:error, "not a number: #{inspect(s)}"}
+        end
+
+      _ -> {:error, "not a number: #{inspect(event.state)}"}
+    end
   end
 end

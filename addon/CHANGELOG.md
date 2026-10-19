@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.62
+- GpuUsageAlert: adds an Android/iOS Live Activity (companion) with a progress bar that fills 1% per alert and a count-up timer, via the new core `HomeElixir.HA.LiveUpdate`.
+
 ## 0.1.61
 - Now ships for ARM (aarch64) as well as amd64.
 - Menu order: Flows, Controls, Archived, Examples.
