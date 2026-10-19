@@ -51,28 +51,32 @@ fi
 # --- auth ---
 podman login ghcr.io -u mogorman --password-stdin < ~/.ghcr-token >/dev/null
 
-# --- build one arch (release base + addon), verify the addon arch before returning ---
-build() { # name  platform  image-arch
-  plat="$2"
-  rel="localhost/home-elixir-release:$1"
-  # Always pass an explicit --platform so the build never silently follows host/base arch.
-  docker build --platform "$plat" --no-cache -f Dockerfile.release -t "$rel" . >/dev/null
-  assert_arch "$rel" "$3"
-  docker build --platform "$plat" --no-cache \
-    --build-arg RELEASE_IMAGE="$rel" \
-    --build-arg BUILD_ARCH="$3" \
-    --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    --build-arg BUILD_DESCRIPTION="Node-RED-style Elixir flow engine for Home Assistant" \
-    --build-arg BUILD_NAME=HomeElixir --build-arg BUILD_VERSION="$VERSION" \
-    -f addon/Dockerfile -t "$IMAGE:$VERSION-$3" addon/ >/dev/null
-  assert_arch "$IMAGE:$VERSION-$3" "$3"
-  echo "    $3 built (arch verified)"
-}
+  # --- build one arch (release base + addon), verify the arch before returning ---
+  # $3 = podman/OCI arch (image tag + assert: amd64|arm64); $4 = HA arch label
+  # (io.hass.arch: amd64|aarch64). podman v5+ reports "arm64"; HA wants "aarch64".
+  build() { # name  platform  img-arch  ha-arch
+    plat="$2"
+    imgarch="$3"
+    haarch="$4"
+    rel="localhost/home-elixir-release:$1"
+    # Always pass an explicit --platform so the build never silently follows host/base arch.
+    docker build --platform "$plat" --no-cache -f Dockerfile.release -t "$rel" . >/dev/null
+    assert_arch "$rel" "$imgarch"
+    docker build --platform "$plat" --no-cache \
+      --build-arg RELEASE_IMAGE="$rel" \
+      --build-arg BUILD_ARCH="$haarch" \
+      --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --build-arg BUILD_DESCRIPTION="Node-RED-style Elixir flow engine for Home Assistant" \
+      --build-arg BUILD_NAME=HomeElixir --build-arg BUILD_VERSION="$VERSION" \
+      -f addon/Dockerfile -t "$IMAGE:$VERSION-$imgarch" addon/ >/dev/null
+    assert_arch "$IMAGE:$VERSION-$imgarch" "$imgarch"
+    echo "    $imgarch built (arch verified)"
+  }
 
-echo "==> building amd64 + arm64 (parallel)"
-build amd64 linux/amd64 amd64 & P1=$!
-build arm64 linux/arm64 aarch64 & P2=$!
-wait "$P1"; wait "$P2"
+  echo "==> building amd64 + arm64 (parallel)"
+  build amd64 linux/amd64 amd64 amd64 & P1=$!
+  build arm64 linux/arm64 arm64 aarch64 & P2=$!
+  wait "$P1"; wait "$P2"
 
 # --- push arch tags ---
 echo "==> pushing arch tags"
