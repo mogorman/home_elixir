@@ -22,8 +22,9 @@ cached release layers).
 
 ## Release steps (replace `<ver>` with the new version, e.g. 0.1.62)
 
-1. **Bump + changelog** — in `addon/config.yaml`: set `version: <ver>` and add a
-   `<ver>` entry at the top of `changelog`. (`arch` is already `[amd64, aarch64]`.)
+1. **Bump + changelog** — in `addon/config.yaml`: set `version: <ver>`. Then add a
+   `<ver>` section at the top of `addon/CHANGELOG.md` — HA reads the changelog from that
+   file (a `config.yaml` `changelog:` key is ignored). (`arch` is already `[amd64, aarch64]`.)
 
 2. **Auth**
    ```sh
