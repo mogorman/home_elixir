@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <title>Home Elixir IEx</title>
   <link href="<%= bootstrap %>" rel="stylesheet">
+  <link href="static/mdi/materialdesignicons.min.css" rel="stylesheet">
   <%= theme %>
   <link rel="stylesheet" href="static/xterm/xterm.min.css">
   <script src="static/xterm/xterm.min.js"></script>

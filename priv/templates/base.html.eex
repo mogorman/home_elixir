@@ -6,6 +6,7 @@
   <link rel="icon" type="image/svg+xml" href="static/logo.svg">
   <title><%= title %> — home_elixir</title>
   <link href="<%= bootstrap %>" rel="stylesheet">
+  <link href="static/mdi/materialdesignicons.min.css" rel="stylesheet">
   <%= theme %>
   <%= theme_script %>
 </head>

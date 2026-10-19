@@ -237,6 +237,15 @@
     document.getElementById("revert").onclick = doRevert;
     document.getElementById("check").onclick = doCheck;
     document.getElementById("reload").onclick = doReload;
+    if (!READONLY) {
+      // Ctrl/Cmd+S saves the flow.
+      document.addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
+          e.preventDefault();
+          doSave();
+        }
+      });
+    }
     if (READONLY) {
       document.getElementById("ro-banner").classList.remove("d-none");
       editor.readOnly = true;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.65
+- Fixed the load/unload switch knob disappearing in the off state.
+- Mobile menu (hamburger) now sits at the right of the app bar.
+- Restored the Material Design icon font — the theme toggle and row/folder icons were rendering blank.
+- Editor: Ctrl/Cmd+S saves the flow.
+
 ## 0.1.64
 - Web UI drops Bootstrap in favor of Home Assistant's own design tokens plus an HA-styled component layer — colors, spacing, corner radii, shadows, and typography now match HA, and the accent follows HA's palette.
 
