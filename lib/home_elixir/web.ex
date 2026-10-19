@@ -1182,6 +1182,7 @@ defmodule HomeElixir.Web do
         <a class="navbar-brand fw-semibold d-flex align-items-center gap-2" href="./"><img src="static/logo.svg" width="24" height="24" alt="">home_elixir</a>
         <button class="navbar-toggler" id="nav-toggler" type="button" aria-label="Menu" aria-expanded="false"><span class="navbar-toggler-icon"></span></button>
         <div class="collapse navbar-collapse" id="nav-collapse">
+          <span id="dep-banner" class="navbar-text dep-banner"></span>
           <ul class="navbar-nav gap-1 flex-wrap">
             <li class="nav-item"><a class="nav-link#{a.(:flows)}" href="./">Flows</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:examples)}" href="examples">Examples</a></li>
