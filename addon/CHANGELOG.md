@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.64
+- Web UI drops Bootstrap in favor of Home Assistant's own design tokens plus an HA-styled component layer — colors, spacing, corner radii, shadows, and typography now match HA, and the accent follows HA's palette.
+
 ## 0.1.63
 - Live Activities now actually reach the phone: fixed the notification service name and payload shape (companion fields in `data`) that were silently failing — the GPU alert's Live Activity works end-to-end.
 - New "LiveUpdate" example: test Live Activities directly with trigger/+10/clear and toggles for every documented field (sticky, alert once, silent, chronometer, color, all-fields).
