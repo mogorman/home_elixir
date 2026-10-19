@@ -22,6 +22,13 @@ cached release layers).
 
 ## Release steps (replace `<ver>` with the new version, e.g. 0.1.62)
 
+**Preferred: run `scripts/release.sh`** — it does steps 2-7 (auth, build both arches with an
+explicit `--platform`, push, multi-arch manifest, verify) and **asserts each image's arch
+matches its tag and that the manifest has both arches before pushing**. Do step 1 (bump +
+changelog) first, then `scripts/release.sh` (it commits + pushes pending changes; add
+`--no-commit` to skip the commit, `-m "msg"` for a custom message). The manual steps below
+are the reference for what the script does.
+
 1. **Bump + changelog** — in `addon/config.yaml`: set `version: <ver>`. Then add a
    `<ver>` section at the top of `addon/CHANGELOG.md` — HA reads the changelog from that
    file (a `config.yaml` `changelog:` key is ignored). (`arch` is already `[amd64, aarch64]`.)
