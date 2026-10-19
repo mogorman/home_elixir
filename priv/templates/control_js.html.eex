@@ -16,6 +16,47 @@
   // Idle safety net: catch a session that lapses while the page sits open.
   setInterval(() => { window.fetch("api/me"); }, 30000);
 })();
+// Dep-install progress ticker. Each install pushes fetch/compile/load/done lines;
+// the newest sits at the bottom, each new line pushes the older up while it fades,
+// and the whole stack clears when the build finishes (or fails). Built once.
+(function () {
+  if (document.getElementById("dep-banner")) return;
+  const style = document.createElement("style");
+  style.textContent =
+    "#dep-banner{position:fixed;bottom:1.25rem;left:50%;transform:translateX(-50%);" +
+    "z-index:1050;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:.35rem}" +
+    ".dep-row{display:flex;align-items:center;gap:.5rem;padding:.4rem .8rem;border-radius:.6rem;" +
+    "background:rgba(33,37,41,.82);color:#fff;font-size:.85rem;box-shadow:0 2px 10px rgba(0,0,0,.25);" +
+    "opacity:1;transform:translateY(0);transition:opacity .35s ease,transform .35s ease}" +
+    ".dep-row.enter{opacity:0;transform:translateY(12px)}" +
+    ".dep-row.leave{opacity:0;transform:translateY(-12px)}";
+  document.head.appendChild(style);
+  const box = document.createElement("div");
+  box.id = "dep-banner";
+  document.body.appendChild(box);
+})();
+function depLeaveRow(r) {
+  const s = r.querySelector(".spinner-border");
+  if (s) s.remove();
+  r.classList.add("leave");
+  setTimeout(() => r.remove(), 450);
+}
+function depBanner(msg) {
+  const box = document.getElementById("dep-banner");
+  if (!box) return;
+  if (msg.phase === "done") {
+    box.querySelectorAll(".dep-row").forEach(depLeaveRow);
+    return;
+  }
+  const row = document.createElement("div");
+  row.className = "dep-row enter";
+  row.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"></div><span></span>';
+  row.querySelector("span").textContent = msg.message || "";
+  box.appendChild(row);
+  requestAnimationFrame(() => requestAnimationFrame(() => row.classList.remove("enter")));
+  const all = box.querySelectorAll(".dep-row");
+  for (let i = 0; i < all.length - 1; i++) depLeaveRow(all[i]);
+}
 function setSnapshot(el, value) {
   el.innerHTML = "";
   if (value) {
@@ -100,6 +141,7 @@ function renderControl(e, btnClass) {
 }
 // Reconnect-with-backoff web socket. `handlers` maps a push `type` to a fn(msg).
 function connectUI(handlers, onOpen, retryMs) {
+  handlers = Object.assign({ dep: depBanner }, handlers);
   const proto = location.protocol === "https:" ? "wss://" : "ws://";
   const ws = new WebSocket(proto + location.host + __BASE__ + "/api/ui/ws");
   if (onOpen) ws.onopen = () => onOpen();

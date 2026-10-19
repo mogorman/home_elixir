@@ -26,10 +26,40 @@ defmodule HomeElixir.Dep do
   def install(deps) when is_list(deps) do
     dir = build_dir()
     ensure_project!(dir, union!(dir, deps))
-    mix!(dir, ["deps.get"])
-    mix!(dir, ["deps.compile"])
-    add_paths!(dir)
+
+    try do
+      progress(:fetch, "Fetching dependencies…")
+      mix!(dir, ["deps.get"])
+      progress(:compile, "Compiling dependencies: " <> dep_names(deps))
+      mix!(dir, ["deps.compile"])
+      progress(:load, "Loading dependencies…")
+      add_paths!(dir)
+    rescue
+      e ->
+        progress_done()
+        reraise(e, __STACKTRACE__)
+    end
+
+    progress_done()
     :ok
+  end
+
+  # Live status line for the web UI, so a long (blocking) dep build shows progress
+  # instead of a frozen page. Skipped when the UI hub isn't up (early boot/tests).
+  defp progress(phase, message), do: maybe_push(%{phase: phase, message: message})
+
+  defp progress_done(), do: maybe_push(%{phase: "done"})
+
+  defp maybe_push(payload) do
+    if Process.whereis(HomeElixir.UI.Hub) do
+      HomeElixir.UI.Hub.push(:dep, payload)
+    end
+  end
+
+  defp dep_names(deps) do
+    deps
+    |> Enum.map(&to_string(elem(&1, 0)))
+    |> Enum.join(", ")
   end
 
   # The deps every flow file currently declares, as a canonical (deduped,
