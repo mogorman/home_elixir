@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.63
+- Live Activities now actually reach the phone: fixed the notification service name and payload shape (companion fields in `data`) that were silently failing — the GPU alert's Live Activity works end-to-end.
+- New "LiveUpdate" example: test Live Activities directly with trigger/+10/clear and toggles for every documented field (sticky, alert once, silent, chronometer, color, all-fields).
+- "Save" no longer forces a page reload when the flow is already running.
+- Fixed a duplicate loading spinner during dependency downloads.
+
 ## 0.1.62
 - GpuUsageAlert: adds an Android/iOS Live Activity (companion) with a progress bar that fills 1% per alert and a count-up timer, via the new core `HomeElixir.HA.LiveUpdate`.
 

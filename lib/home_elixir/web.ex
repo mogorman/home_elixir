@@ -461,12 +461,21 @@ defmodule HomeElixir.Web do
             if renaming?, do: HomeElixir.FlowStore.rename(old_name, new_name)
             HomeElixir.UI.Hub.push(:flow_changed, %{})
 
-            # Save enables the flow: reload restarts a running flow with the new
-            # source, or loads one that isn't running yet.
-            case HomeElixir.FlowStore.reload(new_name) do
-              :ok -> text(conn, 200, "saved " <> new_name <> ".ex (loaded)")
-              {:error, reason} ->
-                text(conn, 400, "saved " <> new_name <> ".ex, but could not load:\n" <> to_string(reason))
+            # Save persists the file. A flow that's already running is left as-is
+            # (no reload, so its setup/dep install isn't re-run — hit Reload to
+            # pick up the new source); one that isn't running is loaded now (setup
+            # runs on load).
+            case HomeElixir.FlowStore.loaded?(new_name) do
+              true ->
+                text(conn, 200, "saved " <> new_name <> ".ex (already running)")
+
+              false ->
+                case HomeElixir.FlowStore.load(new_name) do
+                  :ok -> text(conn, 200, "saved " <> new_name <> ".ex (loaded)")
+                  {:error, reason} ->
+                    text(conn, 400, "saved " <> new_name <> ".ex, but could not load:\n" <>
+                                       to_string(reason))
+                end
             end
           rescue
             e ->

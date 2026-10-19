@@ -34,6 +34,9 @@ function depBanner(msg) {
     setTimeout(() => { el.textContent = ""; }, 300);
     return;
   }
+  // A dep install is in progress: the phase text below supersedes the generic
+  // nav spinner, so hide it to avoid two indicators in the bar at once.
+  if (typeof hideLoading === "function") hideLoading();
   el.textContent = msg.message || "";
   el.style.opacity = "0";
   requestAnimationFrame(() => requestAnimationFrame(() => { el.style.opacity = "1"; }));
