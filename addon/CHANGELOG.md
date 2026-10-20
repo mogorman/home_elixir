@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.72
+- Dark mode: secondary/outline buttons (Reset password, Re-check, dialog Cancel/Close) now show blue text on hover instead of grey-on-grey.
+
 ## 0.1.71
 - Node-RED Companion notice is now anchored under the sticky menu with even spacing, and dismisses permanently ("Ignore permanently").
 - Per-flow Node-RED warnings on the flows list are bold, and the same warning now shows inside the flow's panel.

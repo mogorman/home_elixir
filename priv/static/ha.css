@@ -435,6 +435,9 @@ dialog{background:var(--surface-card);color:var(--bs-body-color)}
 .btn-outline-primary:hover{background:var(--bs-primary);border-color:var(--bs-primary);color:#fff}
 .btn-outline-secondary{background:transparent;border-color:var(--ha-color-border-neutral-normal);color:var(--bs-body-color)}
 .btn-outline-secondary:hover{background:var(--ha-color-fill-neutral-quiet-hover);color:var(--bs-body-color)}
+/* dark mode: the neutral hover fill is a light grey, so body-colour text nearly
+   vanishes on it — use the accent (matches the nav-link hover fix) */
+[data-bs-theme="dark"] .btn-outline-secondary:hover,[data-bs-theme="dark"] .btn-secondary:hover{color:var(--bs-primary)}
 .btn-outline-danger{background:transparent;border-color:var(--bs-danger);color:var(--bs-danger)}
 .btn-outline-danger:hover{background:var(--bs-danger);border-color:var(--bs-danger);color:#fff}
 
