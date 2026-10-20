@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.80
+- New Documentation tab in the menu: an in-app copy of the HomeElixir docs (`/docs`), rendered from the bundled markdown with syntax-highlighted code blocks.
+
 ## 0.1.79
 - Fix: the in-browser IEx now has working line editing (history, left/right, tab completion). The shell runs with no `TERM` in the container, which disabled IEx's line editor; it's now forced to `xterm-256color`.
 

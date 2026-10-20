@@ -122,6 +122,17 @@ defmodule HomeElixir.Web do
     end
   end
 
+  def dispatch(%{method: "GET", request_path: "/docs"} = conn, _opts),
+    do: html(conn, docs_page(cur(conn)))
+
+  # The bundled docs source, served raw so the /docs page can render it client-side.
+  def dispatch(%{method: "GET", request_path: "/docs.md"} = conn, _opts) do
+    case File.read(docs_path()) do
+      {:ok, md} -> text(conn, 200, md)
+      _ -> not_found(conn)
+    end
+  end
+
   def dispatch(%{method: "GET", request_path: "/api/flows"} = conn, _opts) do
     case HomeElixir.FlowStore.list() do
       flows -> json(conn, visible_flows(conn, flows))
@@ -1224,6 +1235,14 @@ defmodule HomeElixir.Web do
     end
   end
 
+  # The Documentation page: the bundled docs (priv/docs/index.md), rendered
+  # client-side by /priv/templates/docs.html.eex (marked + highlight.js).
+  defp docs_page(user \\ nil) do
+    Template.render("docs.html.eex", base: base_html("Documentation", :docs, user))
+  end
+
+  defp docs_path, do: Application.app_dir(:home_elixir, "priv/docs/index.md") |> Path.expand()
+
   defp base_html(title, active, user \\ nil) do
     Template.render("base.html.eex",
       title: title,
@@ -1271,6 +1290,7 @@ defmodule HomeElixir.Web do
             <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="controls">Controls</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:archived)}" href="archived">Archived</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:examples)}" href="examples">Examples</a></li>
+            <li class="nav-item"><a class="nav-link#{a.(:docs)}" href="docs">Documentation</a></li>
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:logs)}" href="logs">Logs</a></li>|, else: ""}
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:iex)}" href="terminal">IEx</a></li>|, else: ""}
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:config)}" href="config">Config</a></li>|, else: ""}

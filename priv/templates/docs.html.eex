@@ -1,0 +1,23 @@
+<%= base %>
+  <div class="docs" style="max-width: 900px; margin: 0 auto; line-height: 1.6">
+    <article id="docs" class="docs-content">Loading docs…</article>
+  </div>
+  <link id="hljs-theme" href="static/hljs/styles/github-dark.min.css" rel="stylesheet">
+  <script src="static/marked.min.js"></script>
+  <script src="static/hljs/highlight.min.js"></script>
+  <script src="static/hljs/languages/elixir.min.js"></script>
+  <script>
+    function setHljsTheme(t) {
+      document.getElementById("hljs-theme").href = "static/hljs/styles/" + (t === "dark" ? "github-dark.min.css" : "github.min.css");
+    }
+    setHljsTheme(document.documentElement.getAttribute("data-bs-theme"));
+    document.addEventListener("themechange", function (e) { setHljsTheme(e.detail); });
+    fetch(__BASE__ + "/docs.md")
+      .then((r) => { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then((md) => {
+        const el = document.getElementById("docs");
+        el.innerHTML = marked.parse(md);
+        el.querySelectorAll("pre code").forEach((b) => hljs.highlightElement(b));
+      })
+      .catch((e) => { document.getElementById("docs").textContent = "Failed to load docs: " + e.message; });
+  </script>
