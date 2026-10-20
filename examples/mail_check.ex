@@ -58,13 +58,15 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
     Logger.info("check: start")
     t0 = now_ms()
 
-    case HomeElixir.HA.snapshot_b64(@camera) do
-      {:ok, b64} ->
-        data_url = "data:image/jpeg;base64,#{b64}"
+    case HomeElixir.HA.snapshot(@camera) do
+      {:ok, jpeg} ->
+        # Raw bytes go straight to the LLM (req_llm base64-encodes them for the
+        # wire); the UI's <img> needs a data URL, so encode a copy for the badge.
+        data_url = "data:image/jpeg;base64," <> Base.encode64(jpeg)
         Logger.info("check: snapshot fetched in #{now_ms() - t0}ms")
         FlowState.put(:snapshot, data_url)
         push_snapshot(data_url)
-        check_answer(ask_llm(b64))
+        check_answer(ask_llm(jpeg))
 
       {:error, reason} ->
         Logger.warning("check: snapshot failed in #{now_ms() - t0}ms: #{inspect(reason)}")
@@ -93,13 +95,16 @@ defmodule HomeElixir.Flows.Examples.MailCheck do
     FlowState.put(:last_check, "error")
   end
 
-  defp ask_llm(b64) do
+  defp ask_llm(jpeg) do
     t0 = now_ms()
 
     case ReqLLM.generate_text(
            model_spec(),
            ReqLLM.Context.new([
-             ReqLLM.Context.with_image(:user, @prompt, "data:image/jpeg;base64,#{b64}")
+             ReqLLM.Context.user([
+               ReqLLM.Message.ContentPart.text(@prompt),
+               ReqLLM.Message.ContentPart.image(jpeg, "image/jpeg", %{detail: :high})
+             ])
            ]),
            api_key: llm_config(:llm_api_key),
            max_tokens: 400

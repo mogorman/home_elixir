@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.77
+- mail_check example: the camera snapshot is now sent to the LLM as raw bytes via req_llm's `ContentPart.image` (req_llm base64-encodes it for the wire) instead of the app pre-building a base64 data URL; the snapshot still displays in the UI.
+
 ## 0.1.76
 - The per-flow Node-RED indicator now turns green ("detected & working") when the Node-RED Companion is present, instead of only showing the yellow warning when it's missing. Applies to the flows-list badge and the note inside each flow's panel.
 
