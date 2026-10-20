@@ -1196,19 +1196,30 @@ defmodule HomeElixir.Web do
   # The admin card shown while the Node-RED Companion is absent/unknown, with a
   # manual re-check. `:loaded` (and once re-checked to loaded) renders nothing.
   defp nodered_admin_card_html(status) do
-    if status in [:absent, :unknown] do
-      """
-      <div class="card mt-3" id="nodered-card">
-        <div class="card-header fw-semibold">Home Assistant integrations</div>
-        <div class="card-body d-flex align-items-center gap-3 flex-wrap">
-          <span>Node-RED Companion: <strong id="nodered-status" class="text-warning-emphasis">#{status}</strong></span>
-          <span class="text-secondary small">Required for flows that use Node-RED device nodes — add &amp; enable it under Settings → Devices &amp; Services → Add Integration.</span>
-          <button id="nodered-check" class="btn btn-sm btn-outline-secondary">Re-check</button>
+    case status do
+      :loaded ->
+        version = HomeElixir.NodeRedStatus.version()
+
+        """
+        <div class="card mt-3" id="nodered-card">
+          <div class="card-body d-flex align-items-center gap-3 flex-wrap">
+            <span class="text-success">Node-RED Companion: <strong>detected &amp; working</strong></span>
+            <span class="text-secondary small">Confirmed via the integration's API#{if version, do: " (v#{version})", else: ""} — device nodes are enabled.</span>
+          </div>
         </div>
-      </div>
-      """
-    else
-      ""
+        """
+
+      _ ->
+        """
+        <div class="card mt-3" id="nodered-card">
+          <div class="card-header fw-semibold">Home Assistant integrations</div>
+          <div class="card-body d-flex align-items-center gap-3 flex-wrap">
+            <span>Node-RED Companion: <strong id="nodered-status" class="text-warning-emphasis">#{status}</strong></span>
+            <span class="text-secondary small">Required for flows that use Node-RED device nodes — add &amp; enable it under Settings → Devices &amp; Services → Add Integration.</span>
+            <button id="nodered-check" class="btn btn-sm btn-outline-secondary">Re-check</button>
+          </div>
+        </div>
+        """
     end
   end
 

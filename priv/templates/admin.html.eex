@@ -130,14 +130,10 @@
       noderedCheck.disabled = true;
       noderedCheck.textContent = "Checking…";
       try {
-        const r = await api("api/nodered/check", { method: "POST" });
-        const s = document.getElementById("nodered-status");
-        s.textContent = r.status;
-        s.className = r.status === "loaded" ? "text-success" : "text-warning-emphasis";
-        if (r.status === "loaded") document.getElementById("nodered-card").remove();
+        await api("api/nodered/check", { method: "POST" });
+        location.reload();
       } catch (e) {
         err(e.message);
-      } finally {
         noderedCheck.disabled = false;
         noderedCheck.textContent = "Re-check";
       }

@@ -40,6 +40,14 @@ defmodule HomeElixir.NodeRedStatus do
   @doc "True when the Node-RED integration is present."
   def present?, do: status() == :loaded
 
+  @doc "The detected integration version, when present (`nil` otherwise)."
+  def version do
+    case GenServer.whereis(__MODULE__) do
+      pid when is_pid(pid) -> GenServer.call(pid, :version)
+      _ -> nil
+    end
+  end
+
   @doc "Re-run the probe now and return the new status."
   def recheck do
     case GenServer.whereis(__MODULE__) do
@@ -51,15 +59,17 @@ defmodule HomeElixir.NodeRedStatus do
   @impl true
   def init(_opts) do
     Process.send_after(self(), :probe, @retry_ms)
-    {:ok, %{status: :unknown, retries: 0}}
+    {:ok, %{status: :unknown, version: nil, retries: 0}}
   end
 
   @impl true
   def handle_call(:status, _from, state), do: {:reply, state.status, state}
 
+  def handle_call(:version, _from, state), do: {:reply, state.version, state}
+
   def handle_call(:recheck, _from, state) do
-    s = probe_once()
-    {:reply, s, %{state | status: s}}
+    {s, v} = probe_once()
+    {:reply, s, %{state | status: s, version: v}}
   end
 
   @impl true
@@ -67,26 +77,27 @@ defmodule HomeElixir.NodeRedStatus do
   # once. `:unknown` retries (the client is still coming up); `:loaded`/`:absent`
   # and retry exhaustion lock the status for the rest of this run.
   def handle_info(:probe, state) do
-    case probe_once() do
-      :unknown when state.retries < @max_retries ->
-        Process.send_after(self(), :probe, @retry_ms)
-        {:noreply, %{state | retries: state.retries + 1}}
+    {s, v} = probe_once()
 
-      s ->
-        {:noreply, %{state | status: s}}
+    if s == :unknown and state.retries < @max_retries do
+      Process.send_after(self(), :probe, @retry_ms)
+      {:noreply, %{state | retries: state.retries + 1}}
+    else
+      {:noreply, %{state | status: s, version: v}}
     end
   end
 
-  # A single presence check. `:unknown` whenever we can't tell (no client, not
-  # connected, or the probe itself failed/timed out).
+  # A single presence check. Returns `{status, version}` where `version` is the
+  # integration's reported version when `:loaded`, else `nil`. `:unknown` whenever
+  # we can't tell (no client, not connected, or the probe failed/timed out).
   defp probe_once do
     case HA.client() do
       nil ->
-        :unknown
+        {:unknown, nil}
 
       client ->
         if HA.Client.status(client) != :connected do
-          :unknown
+          {:unknown, nil}
         else
           # `nodered/version` is registered (alongside `nodered/discovery` and
           # `nodered/entity`) only once a config entry is set up, so a version
@@ -94,12 +105,12 @@ defmodule HomeElixir.NodeRedStatus do
           # that its files are installed. Unknown command => not added/set up.
           try do
             case HA.Client.call(client, "nodered/version", %{}, 1_500) do
-              version when is_binary(version) -> :loaded
-              {:error, %{code: "unknown_command"}} -> :absent
-              _ -> :unknown
+              version when is_binary(version) -> {:loaded, version}
+              {:error, %{code: "unknown_command"}} -> {:absent, nil}
+              _ -> {:unknown, nil}
             end
           rescue
-            _ -> :unknown
+            _ -> {:unknown, nil}
           end
         end
     end

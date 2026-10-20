@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.75
+- Admin page now shows a green "Node-RED Companion: detected & working" note (with the detected version) when the integration is set up, instead of nothing. Re-checking now re-renders the card.
+
 ## 0.1.74
 - Node-RED Companion detection now confirms the integration is actually added & set up (a config entry is loaded), not just that its files are installed. It probes the `nodered/version` websocket command — registered only once set up, alongside the `nodered/discovery`/`nodered/entity` commands device nodes use — so an installed-but-not-added integration is correctly reported as missing.
 
