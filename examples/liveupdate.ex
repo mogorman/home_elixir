@@ -17,8 +17,8 @@ defmodule HomeElixir.Flows.Examples.LiveUpdate do
   notify service's `data` dict (handled by the core).
 
    **Android note:** the Android companion app currently has broken
-   *live-notification icon* support (the icon does not render) —
-   https://github.com/home-assistant/android/issues/5758.
+   *live-notification icon* support (the icon does not render); a workaround
+   exists — https://github.com/home-assistant/android/issues/5758#issuecomment-3297763341.
 
    One module plays both roles (the `handle/1` handler fed by the buttons, and its
    display node via `handle/2`), following the `counter` example. No wires.

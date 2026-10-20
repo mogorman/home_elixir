@@ -14,6 +14,9 @@ defmodule HomeElixir.AuthGuard do
 
   def call(conn, opts) do
     conn = Plug.Conn.fetch_cookies(conn)
+    # Request-scoped: lets the nav (rendered deep in Web) know it's an ingress
+    # request without threading the conn through every page function. Same process.
+    Process.put(:he_ingress, ingress?(conn))
     inner = HomeElixir.Web.init(opts)
 
     base = HomeElixir.Web.base_path(conn.request_path)

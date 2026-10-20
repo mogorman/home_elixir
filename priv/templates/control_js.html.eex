@@ -81,16 +81,24 @@ function renderTable(el, value) {
   }
   t.appendChild(body); el.appendChild(t);
 }
+// Badge color for a state value: green=truthy/on, red=falsy/off, grey=unknown/
+// unavailable/error/empty, else a flow-settable `color` (falls back to grey).
+function stateBadgeClass(v, color) {
+  const s = (v === null || v === undefined) ? "" : String(v).toLowerCase();
+  const unknown = v === null || v === undefined || s === "" || s === "unknown" || s === "unavailable" || s === "error";
+  const on = v === true || s === "on" || s === "true" || s === "open" || s === "up";
+  const off = v === false || s === "off" || s === "false" || s === "closed" || s === "down";
+  return unknown ? "bg-secondary" : on ? "bg-success" : off ? "bg-danger" : (color || "bg-secondary");
+}
 function renderControl(e, btnClass) {
   if (e.type === "state") {
     const b = document.createElement("span");
-    const on = e.value === true || e.value === "on";
-    const off = e.value === false || e.value === "off";
-    b.className = "badge " + (on ? "bg-success" : off ? "bg-secondary" : "bg-info text-dark");
+    b.className = "badge " + stateBadgeClass(e.value, e.color);
     b.textContent = (e.label || e.node) + ": " + (e.value === null || e.value === undefined ? "-" : e.value);
     b.dataset.flow = e.name;
     b.dataset.node = e.node;
     b.dataset.label = e.label || e.node;
+    b.dataset.color = e.color || "";
     return b;
   }
   if (e.type === "image") {
@@ -143,6 +151,7 @@ function updateBadge(u) {
   if (!el) return;
   if (el.dataset.table) { renderTable(el, u.value); return; }
   if (el.dataset.snapshot) { setSnapshot(el, u.value); return; }
+  el.className = "badge " + stateBadgeClass(u.value, el.dataset.color);
   el.textContent = el.dataset.label + ": " + (u.value === null || u.value === undefined ? "-" : u.value);
 }
 // A config key row. `flowName` null -> global scope via api/config; a flow
@@ -159,8 +168,16 @@ function cfgRow(it, flowName, onDone) {
   const input = document.createElement("input");
   input.className = "form-control form-control-sm";
   input.type = it.secret ? "password" : "text";
+  input.autocomplete = "off";
   input.value = it.value == null ? "" : String(it.value);
   input.dataset.revealed = "0";
+  if (it.secret) {
+    // Browsers ignore autocomplete=off on password fields and still offer to save
+    // them; keep it readonly until focused so no "save password" prompt fires.
+    input.readOnly = true;
+    input.addEventListener("focus", () => { input.readOnly = false; });
+    input.addEventListener("blur", () => { input.readOnly = true; });
+  }
   const url = flowName ? "api/flows/" + flowName + "/config" : "api/config";
   const post = async (value) => {
     const body = { key: it.key, value };

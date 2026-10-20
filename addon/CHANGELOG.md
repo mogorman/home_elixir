@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.67
+- App bar height now matches HA's 56px top bar, so the panel aligns with the sidebar menu notch.
+- Flows list: the enabled toggle is left-aligned to match the name/status/last-triggered columns.
+- State badges are colored by value — green for on/true, red for off/false, grey for unknown/unavailable/error — with an optional flow-settable color.
+- Device-history (table) UI now renders on the flows panel, not just the controls page.
+- Config: masked secret values (tokens, passwords) no longer trigger the browser's "save password" prompt.
+- Behind HA ingress the now-useless "Log out" button is hidden.
+- Dark mode: nav menu hover uses the HA accent color instead of grey.
+- Flows panel: the controls box sizes to its content (capped) and the logs box fills the rest.
+- README/examples: the Android live-notification note now links to the workaround.
+
 ## 0.1.66
 - Fixed the mobile menu (hamburger) dropping under the title when expanded — it now stays at the far right.
 - Flows list: the old "actions" column is split into an "enabled" switch column and a separate "actions" (⋮) column.

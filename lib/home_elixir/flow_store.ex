@@ -140,6 +140,7 @@ defmodule HomeElixir.FlowStore do
           type: ui.type,
           label: Map.get(ui, :label),
           payload: Map.get(ui, :payload),
+          color: Map.get(ui, :color),
           value: if(ui.type in ["state", "image", "table"], do: node_state_value(mod, node_id), else: nil)
         }
       end
@@ -358,18 +359,19 @@ defmodule HomeElixir.FlowStore do
               elements =
                 for {node_id, {_handler, config}} <- nodes,
                     %{type: _t} = ui <- [Map.get(config, :ui)] do
-                  %{
-                    name: name,
-                    node: node_id,
-                    type: ui.type,
-                    label: Map.get(ui, :label),
-                    payload: Map.get(ui, :payload),
-                    value:
-                      if(ui.type in ["state", "image"] and loaded,
-                        do: node_state_value(mod, node_id),
-                        else: nil
-                      )
-                  }
+                   %{
+                     name: name,
+                     node: node_id,
+                     type: ui.type,
+                     label: Map.get(ui, :label),
+                     payload: Map.get(ui, :payload),
+                     color: Map.get(ui, :color),
+                     value:
+                       if(ui.type in ["state", "image", "table"] and loaded,
+                         do: node_state_value(mod, node_id),
+                         else: nil
+                       )
+                   }
                 end
 
               {:reply, elements, cache}

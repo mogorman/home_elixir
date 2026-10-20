@@ -8,7 +8,8 @@ runs the flows as an OTP supervision tree.
 
 > **Live notifications:** Live Activities work on iOS and Android, but the Android
 > companion app currently has broken live-notification *icon* support — the icon
-> does not render ([home-assistant/android#5758](https://github.com/home-assistant/android/issues/5758)).
+> does not render (a workaround exists, see
+> [home-assistant/android#5758](https://github.com/home-assistant/android/issues/5758#issuecomment-3297763341)).
 > See the `liveupdate` example.
 
 ## Running

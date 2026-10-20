@@ -1259,11 +1259,15 @@ defmodule HomeElixir.Web do
 
   defp user_menu_html({name, role}) do
     badge = if role == "admin", do: ~s|<span class="badge bg-primary ms-1">admin</span>|, else: ""
+    # Behind HA ingress the session is HA's, so the app's own "Log out" is useless — hide it.
+    logout =
+      if Process.get(:he_ingress, false), do: "",
+      else: ~s|<button id="logout" class="btn btn-outline-secondary btn-sm ms-2">Log out</button>|
 
     """
     <span class="navbar-text ms-auto me-2 d-flex align-items-center">
       #{name}#{badge}
-      <button id="logout" class="btn btn-outline-secondary btn-sm ms-2">Log out</button>
+      #{logout}
     </span>
     """
   end

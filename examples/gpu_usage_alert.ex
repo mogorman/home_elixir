@@ -26,8 +26,8 @@ defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
   and the counter resets.
 
   **Android note:** the Android companion app currently has broken
-  *live-notification icon* support (the icon does not render) —
-  https://github.com/home-assistant/android/issues/5758.
+  *live-notification icon* support (the icon does not render); a workaround
+  exists — https://github.com/home-assistant/android/issues/5758#issuecomment-3297763341.
 
   Per-sensor state is tracked in disk-backed flow state (survives restarts) as a
   `:gpuN_since` key (the epoch-ms `DateTime` the card first went hot, `nil` when

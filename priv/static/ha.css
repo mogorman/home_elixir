@@ -489,6 +489,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 .nav-link{display:inline-flex;align-items:center;padding:.5rem .75rem;font-size:.875rem;color:var(--bs-body-color);opacity:.7;border-radius:8px;text-decoration:none}
 .nav-link:hover{opacity:1;background:var(--ha-color-fill-neutral-quiet-hover);text-decoration:none}
 .nav-link.active{opacity:1;color:var(--bs-primary);font-weight:500}
+[data-bs-theme="dark"] .nav-link:hover{color:var(--bs-primary)}
 .navbar-text{padding:.5rem 0;color:var(--bs-body-color)}
 .navbar-toggler{display:none;align-items:center;justify-content:center;padding:.25rem;margin-left:auto;background:transparent;border:0;color:var(--bs-body-color)}
 .navbar-toggler-icon{display:block;width:24px;height:24px;background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(0,0,0,.55)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");background-repeat:no-repeat;background-position:center;background-size:100%}
@@ -503,6 +504,10 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   .navbar-nav .nav-link{width:100%;justify-content:flex-start}
   .navbar-collapse .navbar-text{padding-left:1rem;padding-right:1rem}
 }
+/* Match HA's 56px top-app-bar so the panel aligns with the sidebar menu notch;
+   grow back to auto only when the mobile menu is expanded. */
+.app-bar{height:56px;box-sizing:border-box;padding-top:0;padding-bottom:0}
+.app-bar:has(.navbar-collapse.show){height:auto;padding-top:.5rem;padding-bottom:.5rem}
 
 /* ---- badge ---- */
 .badge{display:inline-block;padding:.35em .65em;font-size:.75rem;font-weight:500;line-height:1;border-radius:999px;text-align:center;white-space:nowrap}
@@ -548,8 +553,8 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 
 /* ---- text ---- */
 .small{font-size:.875em}
-.text-center{text-align:center}
-.text-end{text-align:right}
+.text-center{text-align:center!important}
+.text-end{text-align:right!important}
 .text-truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .text-secondary{color:var(--bs-secondary-color)!important}
 .text-danger{color:var(--bs-danger)!important}

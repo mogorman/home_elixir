@@ -13,7 +13,7 @@
         <th class="sortable" data-label="name" data-sort="name" style="cursor:pointer">name</th>
         <th class="sortable" data-label="status" data-sort="loaded" style="cursor:pointer">status</th>
         <th class="sortable" data-label="last triggered" data-sort="last_triggered" style="cursor:pointer">last triggered</th>
-        <th class="text-end">enabled</th>
+        <th>enabled</th>
         <th class="text-end">actions</th>
       </tr></thead>
       <tbody id="flows"></tbody>
@@ -212,9 +212,9 @@
       td.colSpan = 5;
       td.innerHTML =
         '<div class="d-flex gap-3 p-2 flex-column flex-md-row">' +
-         '<div class="border rounded p-2 flex-grow-1"><div class="fw-semibold small mb-2">controls</div>' +
+         '<div class="border rounded p-2" style="flex:0 1 auto;min-width:0;max-width:60%"><div class="fw-semibold small mb-2">controls</div>' +
          '<div id="panel-ui" class="d-flex flex-wrap gap-2 align-items-center">loading…</div></div>' +
-         '<div class="border rounded p-2 flex-grow-1"><div class="fw-semibold small mb-2">logs</div>' +
+         '<div class="border rounded p-2 flex-grow-1" style="min-width:0"><div class="fw-semibold small mb-2">logs</div>' +
          '<div id="panel-logs" style="font-family:ui-monospace,monospace;font-size:12px;white-space:pre-wrap;height:220px;overflow:auto"></div></div>' +
          '</div>';
       tr.appendChild(td);
@@ -321,7 +321,6 @@
         `<td><span class="status-badge ${f.status === "grey" ? "" : "is-" + f.status}" title="${STATUS_LABEL[f.status] || f.status}">${STATUS_LABEL[f.status] || f.status}</span></td>` +
         `<td class="text-secondary">${timeAgo(f.last_triggered)}</td>`;
       const tdEnabled = document.createElement("td");
-      tdEnabled.className = "d-flex justify-content-end";
       const actions = document.createElement("div");
       actions.className = "d-flex gap-2 justify-content-end align-items-center";
       const tdActions = document.createElement("td");
