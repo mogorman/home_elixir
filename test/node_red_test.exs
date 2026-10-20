@@ -58,16 +58,22 @@ defmodule HomeElixir.NodeRedTest do
   end
 
   # Start the default prober and drive it to a locked status by answering its
-  # one `get_config` probe (no `nodered` component). Returns the (now settled) status.
+  # one `nodered/version` probe with an unknown-command error. Returns the (now
+  # settled) status.
   defp prober_absent!(t) do
     stop_prober()
     wait_nil(NodeRedStatus)
     {:ok, _} = NodeRedStatus.start_link()
-    req = sent_until(t, &(&1 =~ "get_config"))
+    req = sent_until(t, &(&1 =~ "nodered/version"))
 
     FakeTransport.send_text(
       t,
-      Jason.encode!(%{"id" => req["id"], "type" => "result", "success" => true, "result" => %{"components" => ["light", "sensor"]}})
+      Jason.encode!(%{
+        "id" => req["id"],
+        "type" => "result",
+        "success" => false,
+        "error" => %{"code" => "unknown_command", "message" => "Unknown command."}
+      })
     )
 
     poll(fn -> NodeRedStatus.status() == :absent end)
@@ -142,7 +148,7 @@ defmodule HomeElixir.NodeRedTest do
     stop_prober()
   end
 
-  test "probe reports loaded when the nodered component is present" do
+  test "probe reports loaded when the nodered/version command replies" do
     %{t: t} = start_ha!()
     on_exit(fn -> stop_ha() end)
 
@@ -150,7 +156,7 @@ defmodule HomeElixir.NodeRedTest do
     wait_nil(NodeRedStatus)
     {:ok, _} = NodeRedStatus.start_link()
 
-    req = sent_until(t, &(&1 =~ "get_config"))
+    req = sent_until(t, &(&1 =~ "nodered/version"))
 
     FakeTransport.send_text(
       t,
@@ -158,7 +164,7 @@ defmodule HomeElixir.NodeRedTest do
         "id" => req["id"],
         "type" => "result",
         "success" => true,
-        "result" => %{"components" => ["nodered", "nodered.sensor", "light"]}
+        "result" => "4.3.2"
       })
     )
 
@@ -167,7 +173,7 @@ defmodule HomeElixir.NodeRedTest do
     stop_prober()
   end
 
-  test "probe reports absent when the nodered component is missing" do
+  test "probe reports absent when the nodered/version command is unknown" do
     %{t: t} = start_ha!()
     on_exit(fn -> stop_ha() end)
     assert prober_absent!(t) == :absent

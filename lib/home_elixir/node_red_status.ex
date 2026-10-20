@@ -6,9 +6,10 @@ defmodule HomeElixir.NodeRedStatus do
 
   Status is three-state:
 
-    * `:loaded` — the Node-RED Companion integration is installed/enabled
-      (it loads as the `nodered` component)
-    * `:absent` — HA is reachable but the integration is not installed/enabled
+    * `:loaded` — the integration is added & set up (its `nodered/version`
+      websocket command is registered, which only happens once a config entry
+      is loaded)
+    * `:absent` — HA is reachable but the integration is not added/set up
     * `:unknown` — can't tell (no HA client, not connected yet, or a probe error)
 
   Only `:absent` changes behavior (the flow→Node-RED sync stops and `device`
@@ -87,16 +88,18 @@ defmodule HomeElixir.NodeRedStatus do
         if HA.Client.status(client) != :connected do
           :unknown
         else
-          case HA.Client.call(client, "get_config", %{}, 1_500) do
-            %{} = cfg ->
-              comps = Map.get(cfg, "components", [])
-              # The integration loads as the `nodered` component (plus `nodered.*`).
-              # Its presence means it is installed and enabled.
-              present = Enum.any?(comps, &(&1 == "nodered" or String.starts_with?(&1, "nodered.")))
-              if present, do: :loaded, else: :absent
-
-            _ ->
-              :unknown
+          # `nodered/version` is registered (alongside `nodered/discovery` and
+          # `nodered/entity`) only once a config entry is set up, so a version
+          # reply means the integration is actually added & functional — not just
+          # that its files are installed. Unknown command => not added/set up.
+          try do
+            case HA.Client.call(client, "nodered/version", %{}, 1_500) do
+              version when is_binary(version) -> :loaded
+              {:error, %{code: "unknown_command"}} -> :absent
+              _ -> :unknown
+            end
+          rescue
+            _ -> :unknown
           end
         end
     end

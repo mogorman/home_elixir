@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.74
+- Node-RED Companion detection now confirms the integration is actually added & set up (a config entry is loaded), not just that its files are installed. It probes the `nodered/version` websocket command — registered only once set up, alongside the `nodered/discovery`/`nodered/entity` commands device nodes use — so an installed-but-not-added integration is correctly reported as missing.
+
 ## 0.1.73
 - Fix: Node-RED Companion detection now works — it checks for the `nodered` component (the old `node_red` service check never matched, so an installed integration was reported as missing).
 - The Node-RED notice and admin card now explain the integration must be added & enabled under Settings → Devices & Services after the HACS install.
