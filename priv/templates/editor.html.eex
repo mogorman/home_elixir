@@ -288,6 +288,8 @@
         box.innerHTML = '<span class="text-secondary small">no config (load the flow to seed defaults)</span>';
         return;
       }
+      // flow-scoped values first, then global (stable within each group)
+      items.sort((a, b) => (a.source === "global" ? 1 : 0) - (b.source === "global" ? 1 : 0));
       for (const it of items) box.appendChild(cfgRow(it, FLOWNAME, loadFlowConfig));
     }
     const flowlogBox = document.getElementById("flowlogs");

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.78
+- Flow editor: config options are now listed flow-scoped first, then global.
+
 ## 0.1.77
 - mail_check example: the camera snapshot is now sent to the LLM as raw bytes via req_llm's `ContentPart.image` (req_llm base64-encodes it for the wire) instead of the app pre-building a base64 data URL; the snapshot still displays in the UI.
 
