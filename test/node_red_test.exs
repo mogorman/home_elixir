@@ -58,16 +58,16 @@ defmodule HomeElixir.NodeRedTest do
   end
 
   # Start the default prober and drive it to a locked status by answering its
-  # one `get_services` probe. Returns the (now settled) status.
+  # one `get_config` probe (no `nodered` component). Returns the (now settled) status.
   defp prober_absent!(t) do
     stop_prober()
     wait_nil(NodeRedStatus)
     {:ok, _} = NodeRedStatus.start_link()
-    req = sent_until(t, &(&1 =~ "get_services"))
+    req = sent_until(t, &(&1 =~ "get_config"))
 
     FakeTransport.send_text(
       t,
-      Jason.encode!(%{"id" => req["id"], "type" => "result", "success" => true, "result" => %{"light" => %{}}})
+      Jason.encode!(%{"id" => req["id"], "type" => "result", "success" => true, "result" => %{"components" => ["light", "sensor"]}})
     )
 
     poll(fn -> NodeRedStatus.status() == :absent end)
@@ -142,7 +142,7 @@ defmodule HomeElixir.NodeRedTest do
     stop_prober()
   end
 
-  test "probe reports loaded when node_red services exist" do
+  test "probe reports loaded when the nodered component is present" do
     %{t: t} = start_ha!()
     on_exit(fn -> stop_ha() end)
 
@@ -150,7 +150,7 @@ defmodule HomeElixir.NodeRedTest do
     wait_nil(NodeRedStatus)
     {:ok, _} = NodeRedStatus.start_link()
 
-    req = sent_until(t, &(&1 =~ "get_services"))
+    req = sent_until(t, &(&1 =~ "get_config"))
 
     FakeTransport.send_text(
       t,
@@ -158,7 +158,7 @@ defmodule HomeElixir.NodeRedTest do
         "id" => req["id"],
         "type" => "result",
         "success" => true,
-        "result" => %{"node_red" => %{}, "light" => %{}}
+        "result" => %{"components" => ["nodered", "nodered.sensor", "light"]}
       })
     )
 
@@ -167,7 +167,7 @@ defmodule HomeElixir.NodeRedTest do
     stop_prober()
   end
 
-  test "probe reports absent when node_red services are missing" do
+  test "probe reports absent when the nodered component is missing" do
     %{t: t} = start_ha!()
     on_exit(fn -> stop_ha() end)
     assert prober_absent!(t) == :absent

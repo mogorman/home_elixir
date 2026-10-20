@@ -6,8 +6,9 @@ defmodule HomeElixir.NodeRedStatus do
 
   Status is three-state:
 
-    * `:loaded` — the `node_red` integration is present (its services exist)
-    * `:absent` — HA is reachable but the integration is not installed
+    * `:loaded` — the Node-RED Companion integration is installed/enabled
+      (it loads as the `nodered` component)
+    * `:absent` — HA is reachable but the integration is not installed/enabled
     * `:unknown` — can't tell (no HA client, not connected yet, or a probe error)
 
   Only `:absent` changes behavior (the flow→Node-RED sync stops and `device`
@@ -86,9 +87,13 @@ defmodule HomeElixir.NodeRedStatus do
         if HA.Client.status(client) != :connected do
           :unknown
         else
-          case HA.Client.call(client, "get_services", %{}, 1_500) do
-            %{} = services ->
-              if Map.has_key?(services, "node_red"), do: :loaded, else: :absent
+          case HA.Client.call(client, "get_config", %{}, 1_500) do
+            %{} = cfg ->
+              comps = Map.get(cfg, "components", [])
+              # The integration loads as the `nodered` component (plus `nodered.*`).
+              # Its presence means it is installed and enabled.
+              present = Enum.any?(comps, &(&1 == "nodered" or String.starts_with?(&1, "nodered.")))
+              if present, do: :loaded, else: :absent
 
             _ ->
               :unknown

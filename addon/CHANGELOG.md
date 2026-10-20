@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.73
+- Fix: Node-RED Companion detection now works — it checks for the `nodered` component (the old `node_red` service check never matched, so an installed integration was reported as missing).
+- The Node-RED notice and admin card now explain the integration must be added & enabled under Settings → Devices & Services after the HACS install.
+
 ## 0.1.72
 - Dark mode: secondary/outline buttons (Reset password, Re-check, dialog Cancel/Close) now show blue text on hover instead of grey-on-grey.
 

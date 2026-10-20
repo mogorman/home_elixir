@@ -1202,7 +1202,7 @@ defmodule HomeElixir.Web do
         <div class="card-header fw-semibold">Home Assistant integrations</div>
         <div class="card-body d-flex align-items-center gap-3 flex-wrap">
           <span>Node-RED Companion: <strong id="nodered-status" class="text-warning-emphasis">#{status}</strong></span>
-          <span class="text-secondary small">Required for flows that use Node-RED device nodes.</span>
+          <span class="text-secondary small">Required for flows that use Node-RED device nodes — add &amp; enable it under Settings → Devices &amp; Services → Add Integration.</span>
           <button id="nodered-check" class="btn btn-sm btn-outline-secondary">Re-check</button>
         </div>
       </div>
@@ -1231,7 +1231,7 @@ defmodule HomeElixir.Web do
     if HomeElixir.NodeRedStatus.status() == :absent and not dismissed do
       """
       <div class="nodered-notice alert alert-info d-flex align-items-center gap-3">
-        <div class="flex-grow-1"><strong>Optional:</strong> add the Node-RED Companion for the full HomeElixir experience — flows using Node-RED device nodes won't run until it's installed. <a href="https://github.com/zachowj/hass-node-red" target="_blank" rel="noopener">Install from HACS</a>, then restart Home Assistant.</div>
+        <div class="flex-grow-1"><strong>Optional:</strong> the Node-RED Companion isn't installed — flows using Node-RED device nodes won't run until it's added. <a href="https://github.com/zachowj/hass-node-red" target="_blank" rel="noopener">Install from HACS</a>, restart Home Assistant, then add &amp; enable it under Settings → Devices &amp; Services → Add Integration.</div>
         <button type="button" class="btn btn-sm btn-outline-secondary" id="nodered-dismiss">Ignore permanently</button>
       </div>
       <script>
