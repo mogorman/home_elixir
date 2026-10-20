@@ -113,7 +113,7 @@
     document.getElementById("warn-cancel").onclick = () => { warnDlg.close(); warnProceed = null; };
     function nodeRedBadge(f) {
       if (!(NODERED_ABSENT && f.nodered)) return "";
-      return '<i class="mdi mdi-robot-outline text-warning-emphasis" title="Uses Node-RED device nodes — requires the Node-RED Companion (not installed)"></i>';
+      return '<i class="mdi mdi-robot-outline text-warning-emphasis" title="Uses Node-RED device nodes — requires the Node-RED Companion (not installed)"></i><span class="text-warning-emphasis fw-bold" style="font-size:.78em">Node-RED</span>';
     }
     async function loadUsers() {
       if (!IS_ADMIN) return;
@@ -241,7 +241,11 @@
       const tr = document.createElement("tr");
       const td = document.createElement("td");
       td.colSpan = 5;
+      const warn = (NODERED_ABSENT && f.nodered)
+        ? '<div class="alert alert-info d-flex align-items-center gap-2 mb-0 py-2"><i class="mdi mdi-robot-outline"></i><span><strong>Node-RED Companion not installed.</strong> This flow uses Node-RED device nodes, so its device(s) won\'t work until it\'s added.</span></div>'
+        : "";
       td.innerHTML =
+        warn +
         '<div class="d-flex gap-3 p-2 flex-column flex-md-row">' +
          '<div class="border rounded p-2" style="flex:0 1 auto;min-width:0;max-width:60%"><div class="fw-semibold small mb-2">controls</div>' +
          '<div id="panel-ui" class="d-flex flex-wrap gap-2 align-items-center">loading…</div></div>' +

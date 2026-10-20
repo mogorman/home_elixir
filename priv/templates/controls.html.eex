@@ -22,7 +22,7 @@
         head.className = "card-header fw-semibold";
         head.textContent = flow;
         const body = document.createElement("div");
-        body.className = "card-body d-flex flex-wrap gap-2";
+        body.className = "card-body d-flex flex-wrap gap-2 align-items-center";
         for (const e of items) body.appendChild(renderControl(e, "btn-primary"));
         card.appendChild(head);
         card.appendChild(body);

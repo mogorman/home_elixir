@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.71
+- Node-RED Companion notice is now anchored under the sticky menu with even spacing, and dismisses permanently ("Ignore permanently").
+- Per-flow Node-RED warnings on the flows list are bold, and the same warning now shows inside the flow's panel.
+- The "load flow without Node-RED" confirm dialog (and all dialogs) now respect the light/dark theme.
+- Controls page: state badges and buttons are vertically centered.
+
 ## 0.1.70
 - Node-RED Companion awareness: on startup the app detects whether the Node-RED Companion integration is installed in Home Assistant.
   - When it's missing, a dismissible notice under the menu explains it's optional and links the HACS install.

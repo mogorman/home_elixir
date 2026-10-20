@@ -1230,9 +1230,9 @@ defmodule HomeElixir.Web do
 
     if HomeElixir.NodeRedStatus.status() == :absent and not dismissed do
       """
-      <div class="alert alert-info d-flex align-items-center gap-3" style="margin-top:.75rem">
+      <div class="nodered-notice alert alert-info d-flex align-items-center gap-3">
         <div class="flex-grow-1"><strong>Optional:</strong> add the Node-RED Companion for the full HomeElixir experience — flows using Node-RED device nodes won't run until it's installed. <a href="https://github.com/zachowj/hass-node-red" target="_blank" rel="noopener">Install from HACS</a>, then restart Home Assistant.</div>
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="nodered-dismiss">Ignore</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="nodered-dismiss">Ignore permanently</button>
       </div>
       <script>
         (function(){var b=document.getElementById("nodered-dismiss");if(b)b.onclick=function(){b.closest(".alert").remove();fetch("api/nodered/dismiss",{method:"POST"}).catch(function(){});};})();
