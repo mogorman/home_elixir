@@ -25,6 +25,10 @@ defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
   When every card has dropped below the threshold the Live Activity is dismissed
   and the counter resets.
 
+  **Android note:** the Android companion app currently has broken
+  *live-notification icon* support (the icon does not render) —
+  https://github.com/home-assistant/android/issues/5758.
+
   Per-sensor state is tracked in disk-backed flow state (survives restarts) as a
   `:gpuN_since` key (the epoch-ms `DateTime` the card first went hot, `nil` when
   cooled); the flow-level alert counter, episode start, and cooldown gate live

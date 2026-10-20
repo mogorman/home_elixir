@@ -1,0 +1,49 @@
+#include <tunables/global>
+
+# HomeElixir add-on AppArmor profile.
+#
+# Shipped in COMPLAIN mode: AppArmor logs what it *would* block instead of
+# blocking, so this can never break the add-on on first deploy. To harden, run
+# the add-on with every feature, read the denials on the host with
+#   journalctl _TRANSPORT=audit -g 'apparmor="ALLOWED"'
+# add the missing rules, then drop `complain` from the flags below so AppArmor
+# actually blocks everything not listed here.
+#
+# The Supervisor renames this profile to the add-on's own ID at load time, so
+# the slug on the `profile` line is just a placeholder.
+
+profile home-elixir flags=(attach_disconnected,mediate_deleted,complain) {
+  #include <abstractions/base>
+
+  # Capabilities
+  file,
+  signal (send) set=(kill,term,int,hup,cont),
+
+  # Entrypoint (bash) -> mix/beam.smp (the Elixir app), nginx, and the
+  # bashio / jq / curl helpers it shells out to.
+  /bin/** ixr,
+  /sbin/** ixr,
+  /usr/** ixr,
+
+  # The release app (compiled at /app) and the seed flows under /opt/home-elixir.
+  /app/** r,
+  /opt/home-elixir/** r,
+
+  # Add-on config/state (flows, mnesia, config.json) and HA options.
+  /config/** rwk,
+  /data/** rwk,
+  /tmp/** rwk,
+
+  # nginx front: rendered server configs + runtime sockets / logs / cache.
+  /etc/nginx/** rwk,
+  /run/** rwk,
+  /var/log/** rw,
+  /var/run/** rwk,
+  /var/cache/** rw,
+  /var/lib/** rw,
+
+  # Misc reads/writes the runtime needs.
+  /etc/** r,
+  /dev/** rw,
+  /proc/1/fd/* rw,
+}

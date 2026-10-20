@@ -16,9 +16,13 @@ defmodule HomeElixir.Flows.Examples.LiveUpdate do
   platform. `title`/`message` are top-level; every other field rides in the
   notify service's `data` dict (handled by the core).
 
-  One module plays both roles (the `handle/1` handler fed by the buttons, and its
-  display node via `handle/2`), following the `counter` example. No wires.
-  """
+   **Android note:** the Android companion app currently has broken
+   *live-notification icon* support (the icon does not render) —
+   https://github.com/home-assistant/android/issues/5758.
+
+   One module plays both roles (the `handle/1` handler fed by the buttons, and its
+   display node via `handle/2`), following the `counter` example. No wires.
+   """
   use HomeElixir.Flow
 
   @behaviour HomeElixir.Node

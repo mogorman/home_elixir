@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.66
+- Fixed the mobile menu (hamburger) dropping under the title when expanded — it now stays at the far right.
+- Flows list: the old "actions" column is split into an "enabled" switch column and a separate "actions" (⋮) column.
+- Add-on now ships an AppArmor profile (`apparmor.txt`) for full AppArmor confinement and the top add-on security rating.
+- README: added the "Add to Home Assistant" install badge and a note that the Android companion's live-notification icon support is currently broken.
+
 ## 0.1.65
 - Fixed the load/unload switch knob disappearing in the off state.
 - Mobile menu (hamburger) now sits at the right of the app bar.

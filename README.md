@@ -4,6 +4,13 @@ A Node-RED-style flow engine for Home Assistant in Elixir. Flows are plain `.ex`
 files in `flows/`; the app connects to Home Assistant over its WebSocket API and
 runs the flows as an OTP supervision tree.
 
+[![Open your Home Assistant instance and show the add add-ons and integrations page to install the add-on.](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=88eff496_home-elixir&repository_url=https%3A%2F%2Fgithub.com%2Fmogorman%2Fhome_elixir)
+
+> **Live notifications:** Live Activities work on iOS and Android, but the Android
+> companion app currently has broken live-notification *icon* support — the icon
+> does not render ([home-assistant/android#5758](https://github.com/home-assistant/android/issues/5758)).
+> See the `liveupdate` example.
+
 ## Running
 
 Start the app and its web UI (flow list, editor, live logs):

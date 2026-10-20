@@ -13,6 +13,7 @@
         <th class="sortable" data-label="name" data-sort="name" style="cursor:pointer">name</th>
         <th class="sortable" data-label="status" data-sort="loaded" style="cursor:pointer">status</th>
         <th class="sortable" data-label="last triggered" data-sort="last_triggered" style="cursor:pointer">last triggered</th>
+        <th class="text-end">enabled</th>
         <th class="text-end">actions</th>
       </tr></thead>
       <tbody id="flows"></tbody>
@@ -208,7 +209,7 @@
     function panelRow(f) {
       const tr = document.createElement("tr");
       const td = document.createElement("td");
-      td.colSpan = 4;
+      td.colSpan = 5;
       td.innerHTML =
         '<div class="d-flex gap-3 p-2 flex-column flex-md-row">' +
          '<div class="border rounded p-2 flex-grow-1"><div class="fw-semibold small mb-2">controls</div>' +
@@ -294,6 +295,7 @@
       tr.innerHTML =
         `<td><a href="${__BASE__}/examples/${name}" class="fw-medium">${name}</a></td>` +
         `<td><span class="text-secondary small">read-only</span></td>` +
+        `<td></td>` +
         `<td></td>`;
       const tdA = document.createElement("td");
       tdA.className = "text-end";
@@ -318,8 +320,13 @@
         `<td style="padding-left:${12 + depth * 20}px">${modLabel(f)}</td>` +
         `<td><span class="status-badge ${f.status === "grey" ? "" : "is-" + f.status}" title="${STATUS_LABEL[f.status] || f.status}">${STATUS_LABEL[f.status] || f.status}</span></td>` +
         `<td class="text-secondary">${timeAgo(f.last_triggered)}</td>`;
+      const tdEnabled = document.createElement("td");
+      tdEnabled.className = "d-flex justify-content-end";
       const actions = document.createElement("div");
       actions.className = "d-flex gap-2 justify-content-end align-items-center";
+      const tdActions = document.createElement("td");
+      tdActions.className = "text-end";
+      tdActions.appendChild(actions);
 
       if (MODE === "archived") {
         const restore = mkBtn("Restore", "btn-outline-secondary");
@@ -336,7 +343,7 @@
         cb.checked = !!f.loaded;
         cb.onchange = () => act(f.name, cb.checked ? "load" : "unload");
         sw.appendChild(cb);
-        actions.appendChild(sw);
+        tdEnabled.appendChild(sw);
 
         const items =
           '<a class="dropdown-item" href="edit/' + f.name + '">Edit</a>' +
@@ -365,9 +372,7 @@
           };
         });
       }
-      const tdActions = document.createElement("td");
-      tdActions.className = "text-end";
-      tdActions.appendChild(actions);
+      tr.appendChild(tdEnabled);
       tr.appendChild(tdActions);
       return tr;
     }
@@ -375,7 +380,7 @@
       const open = expanded.has(folder.path);
       const tr = document.createElement("tr");
       const td = document.createElement("td");
-      td.colSpan = 4;
+      td.colSpan = 5;
       td.style.cursor = "pointer";
       td.innerHTML = `<span class="fw-medium d-inline-flex align-items-center gap-1" style="padding-left:${12 + depth * 20}px"><i class="mdi ${open ? "mdi-chevron-down" : "mdi-chevron-right"}"></i> ${folder.path.split("/").pop()} <span class="text-secondary fw-normal">(${folderCount(folder)})</span></span>`;
       td.onclick = () => { open ? expanded.delete(folder.path) : expanded.add(folder.path); refresh(); };
@@ -407,7 +412,7 @@
         const names = await (await fetch("api/examples")).json();
         tbody.innerHTML = "";
         if (!names.length) {
-          tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">No examples</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No examples</td></tr>';
         } else {
           for (const name of names) tbody.appendChild(exampleRow(name));
         }
@@ -415,7 +420,7 @@
       }
       const all = await (await fetch("api/flows")).json();
       if (all && all.busy) {
-        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">${all.message || "Loading…"}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">${all.message || "Loading…"}</td></tr>`;
         return;
       }
       const flows = MODE === "archived" ? all.filter((f) => f.archived) : all.filter((f) => !f.archived);
