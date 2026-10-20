@@ -44,7 +44,14 @@ defmodule HomeElixir.Terminal do
   end
 
   defp spawn_spec do
-    base = System.get_env()
+    # The app runs in a container with no TTY, so its env has no TERM. Without a
+    # real terminal type Erlang/IEx disables its line editor — no history
+    # (up/down), cursor editing (left/right), or tab completion, and raw escape
+    # sequences get echoed. Force one so the in-browser shell edits properly.
+    base =
+      System.get_env()
+      |> Map.put("TERM", "xterm-256color")
+      |> Map.put("COLORTERM", "truecolor")
 
     case app_node() do
       nil ->
