@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.69
+- Branding: the UI now reads "HomeElixir" (nav, page titles, login) instead of "home_elixir".
+
 ## 0.1.68
 - The menu bar is now sticky — it stays pinned to the top of the page while you scroll.
 

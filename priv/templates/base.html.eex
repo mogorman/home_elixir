@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/svg+xml" href="static/logo.svg">
-  <title><%= title %> — home_elixir</title>
+  <title><%= title %> — HomeElixir</title>
   <link href="<%= bootstrap %>" rel="stylesheet">
   <link href="static/mdi/materialdesignicons.min.css" rel="stylesheet">
   <%= theme %>
