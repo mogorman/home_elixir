@@ -17,6 +17,7 @@
       <tbody id="users"></tbody>
     </table>
   </div>
+  <%= nodered_card %>
   <div class="alert alert-secondary small mt-3">
     "Reset password" works for any user, including your own (no current password needed).
     Deleting a user revokes their live session and blocks that account from logging in again.
@@ -124,5 +125,22 @@
       } catch (e) { err(e.message); }
     };
     document.getElementById("reset-cancel").onclick = () => document.getElementById("reset-dlg").close();
+    const noderedCheck = document.getElementById("nodered-check");
+    if (noderedCheck) noderedCheck.onclick = async () => {
+      noderedCheck.disabled = true;
+      noderedCheck.textContent = "Checking…";
+      try {
+        const r = await api("api/nodered/check", { method: "POST" });
+        const s = document.getElementById("nodered-status");
+        s.textContent = r.status;
+        s.className = r.status === "loaded" ? "text-success" : "text-warning-emphasis";
+        if (r.status === "loaded") document.getElementById("nodered-card").remove();
+      } catch (e) {
+        err(e.message);
+      } finally {
+        noderedCheck.disabled = false;
+        noderedCheck.textContent = "Re-check";
+      }
+    };
     refresh();
   </script>

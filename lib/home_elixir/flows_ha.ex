@@ -17,7 +17,7 @@ defmodule HomeElixir.FlowsHA do
 
   use GenServer
 
-  alias HomeElixir.{FlowStore, HA, Nodered}
+  alias HomeElixir.{FlowStore, HA, Nodered, NodeRedStatus}
 
   @server_id "home_elixir"
   @device_id "home_elixir_flows"
@@ -35,7 +35,9 @@ defmodule HomeElixir.FlowsHA do
   def init(_) do
     HomeElixir.UI.Hub.subscribe(self())
     state = %{switches: %{}, by_id: %{}}
-    state = ensure_discovered(state)
+    # Skip the boot reconcile when the Node-RED Companion is confirmed absent;
+    # `:unknown` (prober still settling) keeps the previous behavior.
+    state = if NodeRedStatus.status() == :absent, do: state, else: ensure_discovered(state)
     Process.send_after(self(), :sync, 500)
     {:ok, state}
   end
@@ -82,7 +84,15 @@ defmodule HomeElixir.FlowsHA do
   # ---- internals ----
 
   # Keep the switch set in step with the flow files, then push their states.
-  defp do_sync(state), do: state |> ensure_discovered() |> push_states()
+  # Skipped entirely when the Node-RED Companion is confirmed absent — the
+  # switches can't exist without it, so firing syncs would only error. `:unknown`
+  # (boot window) keeps the current behavior.
+  defp do_sync(state) do
+    case NodeRedStatus.status() do
+      :absent -> state
+      _ -> state |> ensure_discovered() |> push_states()
+    end
+  end
 
   # Rebuild the switch set from the current flow files: discover new ones, remove
   # the HA entity for every published flow that is now gone (deleted or archived),

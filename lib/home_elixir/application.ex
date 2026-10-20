@@ -26,7 +26,7 @@ defmodule HomeElixir.Application do
         {HomeElixir.Log, []},
         {HomeElixir.Auth, []},
         {HomeElixir.HA.PendingLogins, []}
-      ] ++ ha_client_child() ++ flows_ha_child() ++ web_child()
+      ] ++ ha_client_child() ++ node_red_child() ++ flows_ha_child() ++ web_child()
 
     opts = [strategy: :one_for_one, name: HomeElixir.Supervisor]
     {:ok, pid} = Supervisor.start_link(children, opts)
@@ -59,6 +59,14 @@ defmodule HomeElixir.Application do
     else
       []
     end
+  end
+
+  # Probes the Node-RED Companion once at startup (see HomeElixir.NodeRedStatus);
+  # a no-op child when disabled (tests run without it).
+  defp node_red_child do
+    if Application.get_env(:home_elixir, :start_node_red, true),
+      do: [HomeElixir.NodeRedStatus],
+      else: []
   end
 
   # The HA "Flows" switcher (one switch per flow). Started after the HA client

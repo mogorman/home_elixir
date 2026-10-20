@@ -38,10 +38,19 @@
     <select id="perm-select" class="form-select form-select-sm mb-3"></select>
     <div class="text-end"><button id="perm-close" class="btn btn-sm btn-secondary">Done</button></div>
   </dialog>
+  <dialog id="warn-dlg" class="border rounded-3" style="max-width:460px">
+    <h6 class="fw-semibold mb-2">Load flow without Node-RED?</h6>
+    <p class="small text-secondary mb-0">This flow uses Node-RED device nodes, but the Node-RED Companion integration isn't installed. Its device(s) won't work properly.</p>
+    <div class="mt-3 text-end d-flex gap-2">
+      <button id="warn-cancel" class="btn btn-sm btn-secondary">Cancel</button>
+      <button id="warn-ok" class="btn btn-sm btn-primary">Load anyway</button>
+    </div>
+  </dialog>
   <script>
     <%= control_js %>
     const IS_ADMIN = <%= is_admin %>;
     const MODE = "<%= mode_string %>";
+    const NODERED_ABSENT = <%= nodered_absent %>;
     const STATUS_LABEL = { green: "Running", yellow: "Changed", red: "Stopped", grey: "Idle", broken: "Broken" };
     let ALL_USERS = [];
     const errDlg = document.getElementById("error-dlg");
@@ -84,6 +93,28 @@
       confirmDlg.close();
       if (name) act(name, "delete");
     };
+    // Enabling a flow that uses Node-RED device nodes while the companion is
+    // absent: confirm first (the flow still loads; its device(s) just won't work).
+    let warnProceed = null;
+    const warnDlg = document.getElementById("warn-dlg");
+    function confirmLoad(f, proceed) {
+      if (NODERED_ABSENT && f.nodered) {
+        warnProceed = proceed;
+        warnDlg.showModal();
+      } else {
+        proceed();
+      }
+    }
+    document.getElementById("warn-ok").onclick = () => {
+      warnDlg.close();
+      if (warnProceed) warnProceed();
+      warnProceed = null;
+    };
+    document.getElementById("warn-cancel").onclick = () => { warnDlg.close(); warnProceed = null; };
+    function nodeRedBadge(f) {
+      if (!(NODERED_ABSENT && f.nodered)) return "";
+      return '<i class="mdi mdi-robot-outline text-warning-emphasis" title="Uses Node-RED device nodes — requires the Node-RED Companion (not installed)"></i>';
+    }
     async function loadUsers() {
       if (!IS_ADMIN) return;
       try { ALL_USERS = (await (await fetch("api/admin/users")).json()).map((u) => u.name); } catch (_) {}
@@ -316,8 +347,8 @@
         tr.style.cursor = "pointer";
         tr.onclick = (ev) => { if (!ev.target.closest("button, a, select, input, .dropdown")) togglePanel(f.name); };
       }
-      tr.innerHTML =
-        `<td style="padding-left:${12 + depth * 20}px">${modLabel(f)}</td>` +
+       tr.innerHTML =
+         `<td style="padding-left:${12 + depth * 20}px"><span class="d-inline-flex align-items-center gap-1">${modLabel(f)}${nodeRedBadge(f)}</span></td>` +
         `<td><span class="status-badge ${f.status === "grey" ? "" : "is-" + f.status}" title="${STATUS_LABEL[f.status] || f.status}">${STATUS_LABEL[f.status] || f.status}</span></td>` +
         `<td class="text-secondary">${timeAgo(f.last_triggered)}</td>`;
       const tdEnabled = document.createElement("td");
@@ -340,7 +371,7 @@
         cb.type = "checkbox";
         cb.className = "form-check-input";
         cb.checked = !!f.loaded;
-        cb.onchange = () => act(f.name, cb.checked ? "load" : "unload");
+        cb.onchange = () => { if (cb.checked) confirmLoad(f, () => act(f.name, "load")); else act(f.name, "unload"); };
         sw.appendChild(cb);
         tdEnabled.appendChild(sw);
 

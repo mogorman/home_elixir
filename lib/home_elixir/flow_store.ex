@@ -532,6 +532,18 @@ defmodule HomeElixir.FlowStore do
     end
   end
 
+  # True when the flow declares a Node-RED `device` node — the only node that
+  # presents entities via the Node-RED Companion, so it can't work without it.
+  defp uses_device_node?(mod) do
+    case flow_nodes(mod) do
+      {:ok, nodes} ->
+        Enum.any?(nodes, fn {_id, {handler, _}} -> handler == HomeElixir.Nodes.Device end)
+
+      {:error, _} ->
+        false
+    end
+  end
+
   # ---- loaded-state persistence (Mnesia; see HomeElixir.FlowState) ----
 
   # One-time migration: import the legacy flows/.loaded set, then drop the file.
@@ -592,7 +604,8 @@ defmodule HomeElixir.FlowStore do
             owner: Map.get(owners, name),
             archived: MapSet.member?(archived, name),
             last_triggered: Map.get(triggered, mod),
-            status: flow_status(loaded, MapSet.member?(ever, name), path, Map.get(sums, name))
+            status: flow_status(loaded, MapSet.member?(ever, name), path, Map.get(sums, name)),
+            nodered: uses_device_node?(mod)
           }
 
           {[flow | acc], cache}
@@ -607,7 +620,8 @@ defmodule HomeElixir.FlowStore do
             owner: Map.get(owners, name),
             archived: MapSet.member?(archived, name),
             last_triggered: nil,
-            status: :broken
+            status: :broken,
+            nodered: false
           }
 
           {[flow | acc], cache}

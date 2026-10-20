@@ -26,7 +26,9 @@ defmodule HomeElixir.Nodes.Device do
   """
   @behaviour HomeElixir.Node
 
-  alias HomeElixir.{HA, Msg}
+  require Logger
+
+  alias HomeElixir.{HA, Msg, NodeRedStatus}
 
   @impl true
   def init(config) do
@@ -39,14 +41,22 @@ defmodule HomeElixir.Nodes.Device do
       name: Map.get(Map.get(config, :config) || %{}, :name)
     }
 
-    case HA.client() do
-      nil ->
-        state
+    if active?() do
+      case HA.client() do
+        nil ->
+          state
 
-      client ->
-        HA.Client.discover(client, build_discovery(config), self())
-        if state.inherit, do: spawn_inherit(client, state)
-        state
+        client ->
+          HA.Client.discover(client, build_discovery(config), self())
+          if state.inherit, do: spawn_inherit(client, state)
+          state
+      end
+    else
+      Logger.warning(
+        "device node #{inspect(config[:node_id])} not registered — Node-RED Companion not installed"
+      )
+
+      state
     end
   end
 
@@ -54,16 +64,18 @@ defmodule HomeElixir.Nodes.Device do
   def handle(%Msg{payload: payload}, state) do
     new = if reset?(payload), do: state.default_state, else: extract_state(payload)
 
-    case HA.client() do
-      nil ->
-        :ok
+    if active?() do
+      case HA.client() do
+        nil ->
+          :ok
 
-      client ->
-        HA.Client.call(client, "nodered/entity", %{
-          server_id: state.server_id,
-          node_id: state.node_id,
-          state: new
-        })
+        client ->
+          HA.Client.call(client, "nodered/entity", %{
+            server_id: state.server_id,
+            node_id: state.node_id,
+            state: new
+          })
+      end
     end
 
     {[nil], Map.put(state, :state, new)}
@@ -97,29 +109,36 @@ defmodule HomeElixir.Nodes.Device do
 
   # ---- internals ----
 
+  # Only a confirmed `:absent` disables the device. `:unknown` (boot window) and
+  # `:loaded` both attempt the call, so a slow HA never silently drops a device.
+  defp active?, do: NodeRedStatus.status() != :absent
+
   defp reset?(payload) do
     is_map(payload) and not is_nil(Map.get(payload, :reset) || Map.get(payload, "reset"))
   end
 
   # Push the state to HA in a detached, fully-caught process so the flow's emit
-  # (and this node) is never blocked on HA's ack.
+  # (and this node) is never blocked on HA's ack. Skipped when the Node-RED
+  # Companion is confirmed absent (nothing to push to).
   defp echo_entity(state, s) do
-    case HA.client() do
-      nil ->
-        :ok
+    if active?() do
+      case HA.client() do
+        nil ->
+          :ok
 
-      client ->
-        spawn(fn ->
-          try do
-            HA.Client.call(client, "nodered/entity", %{
-              server_id: state.server_id,
-              node_id: state.node_id,
-              state: s
-            })
-          catch
-            _kind, _reason -> :ok
-          end
-        end)
+        client ->
+          spawn(fn ->
+            try do
+              HA.Client.call(client, "nodered/entity", %{
+                server_id: state.server_id,
+                node_id: state.node_id,
+                state: s
+              })
+            catch
+              _kind, _reason -> :ok
+            end
+          end)
+      end
     end
   end
 

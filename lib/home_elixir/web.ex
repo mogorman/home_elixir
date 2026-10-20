@@ -287,11 +287,17 @@ defmodule HomeElixir.Web do
          copy_example_endpoint(conn, name)
 
 
-      ["", "api", "ui", "click"] ->
-        click_endpoint(conn)
+       ["", "api", "ui", "click"] ->
+         click_endpoint(conn)
 
-      _ ->
-        not_found(conn)
+       ["", "api", "nodered", "dismiss"] ->
+         nodered_dismiss_endpoint(conn)
+
+       ["", "api", "nodered", "check"] ->
+         if is_admin?(conn), do: nodered_check_endpoint(conn), else: forbidden(conn)
+
+       _ ->
+         not_found(conn)
     end
   end
 
@@ -723,6 +729,18 @@ defmodule HomeElixir.Web do
     |> redirect(to: "/login")
   end
 
+  # Dismiss the "add Node-RED Companion" notice. Any authenticated user can do
+  # this (they're the ones who see it); the flag is global, so it stays dismissed.
+  defp nodered_dismiss_endpoint(conn) do
+    HomeElixir.Config.put_global(:nodered_notice_dismissed, true)
+    json(conn, %{ok: true})
+  end
+
+  # Admin: re-run the Node-RED Companion probe now and return the fresh status.
+  defp nodered_check_endpoint(conn) do
+    json(conn, %{status: HomeElixir.NodeRedStatus.recheck()})
+  end
+
   # Create a user (admin only — the /admin page is the only UI that reaches this,
   # and the route itself is behind the auth guard).
   defp admin_create_user(conn) do
@@ -1100,6 +1118,7 @@ defmodule HomeElixir.Web do
       header_buttons: header_buttons,
       is_admin: is_admin,
       mode_string: to_string(mode),
+      nodered_absent: HomeElixir.NodeRedStatus.status() == :absent,
       control_js: Template.render("control_js.html.eex")
     )
   end
@@ -1166,9 +1185,31 @@ defmodule HomeElixir.Web do
   end
 
   defp admin_page(user) do
+    status = HomeElixir.NodeRedStatus.status()
+
     Template.render("admin.html.eex",
-      base: base_html("Admin", :admin, user)
+      base: base_html("Admin", :admin, user),
+      nodered_card: nodered_admin_card_html(status)
     )
+  end
+
+  # The admin card shown while the Node-RED Companion is absent/unknown, with a
+  # manual re-check. `:loaded` (and once re-checked to loaded) renders nothing.
+  defp nodered_admin_card_html(status) do
+    if status in [:absent, :unknown] do
+      """
+      <div class="card mt-3" id="nodered-card">
+        <div class="card-header fw-semibold">Home Assistant integrations</div>
+        <div class="card-body d-flex align-items-center gap-3 flex-wrap">
+          <span>Node-RED Companion: <strong id="nodered-status" class="text-warning-emphasis">#{status}</strong></span>
+          <span class="text-secondary small">Required for flows that use Node-RED device nodes.</span>
+          <button id="nodered-check" class="btn btn-sm btn-outline-secondary">Re-check</button>
+        </div>
+      </div>
+      """
+    else
+      ""
+    end
   end
 
   defp base_html(title, active, user \\ nil) do
@@ -1177,8 +1218,29 @@ defmodule HomeElixir.Web do
       bootstrap: @bootstrap,
       theme: Template.render("theme.html.eex"),
       theme_script: Template.render("theme_script.html.eex"),
-      nav: navbar_html(active, user)
+      nav: navbar_html(active, user),
+      notice: nodered_notice_html()
     )
+  end
+
+  # The dismissible "add Node-RED Companion" notice. Shown only when the
+  # integration is confirmed absent and the user hasn't dismissed it.
+  defp nodered_notice_html do
+    dismissed = HomeElixir.Config.global_config() |> Map.get("nodered_notice_dismissed", false)
+
+    if HomeElixir.NodeRedStatus.status() == :absent and not dismissed do
+      """
+      <div class="alert alert-info d-flex align-items-center gap-3" style="margin-top:.75rem">
+        <div class="flex-grow-1"><strong>Optional:</strong> add the Node-RED Companion for the full HomeElixir experience — flows using Node-RED device nodes won't run until it's installed. <a href="https://github.com/zachowj/hass-node-red" target="_blank" rel="noopener">Install from HACS</a>, then restart Home Assistant.</div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="nodered-dismiss">Ignore</button>
+      </div>
+      <script>
+        (function(){var b=document.getElementById("nodered-dismiss");if(b)b.onclick=function(){b.closest(".alert").remove();fetch("api/nodered/dismiss",{method:"POST"}).catch(function(){});};})();
+      </script>
+      """
+    else
+      ""
+    end
   end
 
   defp navbar_html(active, user \\ nil) do

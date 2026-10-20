@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.70
+- Node-RED Companion awareness: on startup the app detects whether the Node-RED Companion integration is installed in Home Assistant.
+  - When it's missing, a dismissible notice under the menu explains it's optional and links the HACS install.
+  - Flows that use Node-RED device nodes are flagged in the flows list; enabling one without the companion asks for confirmation (it still loads — only its device is affected).
+  - Device nodes skip registering with Home Assistant when the companion is absent (logged once), and the flow→HA switch sync is paused.
+  - The Admin page shows the companion status with a manual "Re-check" button while it's absent or unknown.
+
 ## 0.1.69
 - Branding: the UI now reads "HomeElixir" (nav, page titles, login) instead of "home_elixir".
 

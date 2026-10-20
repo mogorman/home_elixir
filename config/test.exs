@@ -8,5 +8,6 @@ config :home_elixir,
   start_web: false,
   restore_flows: false,
   start_flows_ha: false,
+  start_node_red: false,
   flow_state_disc: false,
   auth_users: [{"admin", "admin-pass"}]
