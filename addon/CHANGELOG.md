@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.68
+- The menu bar is now sticky — it stays pinned to the top of the page while you scroll.
+
 ## 0.1.67
 - App bar height now matches HA's 56px top bar, so the panel aligns with the sidebar menu notch.
 - Flows list: the enabled toggle is left-aligned to match the name/status/last-triggered columns.

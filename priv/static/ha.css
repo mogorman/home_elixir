@@ -506,7 +506,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 }
 /* Match HA's 56px top-app-bar so the panel aligns with the sidebar menu notch;
    grow back to auto only when the mobile menu is expanded. */
-.app-bar{height:56px;box-sizing:border-box;padding-top:0;padding-bottom:0}
+.app-bar{height:56px;box-sizing:border-box;padding-top:0;padding-bottom:0;position:sticky;top:0}
 .app-bar:has(.navbar-collapse.show){height:auto;padding-top:.5rem;padding-bottom:.5rem}
 
 /* ---- badge ---- */
