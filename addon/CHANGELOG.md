@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.81
+- Web console (IEx) no longer shows "connection closed" after sitting idle: the WebSocket now sends a periodic keepalive ping so the connection survives intermediate idle timeouts.
+
 ## 0.1.80
 - New Documentation tab in the menu: an in-app copy of the HomeElixir docs (`/docs`), rendered from the bundled markdown with syntax-highlighted code blocks.
 

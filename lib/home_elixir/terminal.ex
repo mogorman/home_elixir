@@ -17,6 +17,11 @@ defmodule HomeElixir.Terminal do
 
   @behaviour :cowboy_websocket
 
+  # An idle websocket is reaped by intermediate idle timeouts; a periodic
+  # protocol-level ping (the browser auto-pongs; the frame never reaches the
+  # IEx port) keeps the connection alive.
+  @keepalive_interval 20_000
+
   # Required by the behaviour; this Cowboy build drives websocket_init/1 to
   # start the handler.
   def init(_req, state), do: {:ok, state}
@@ -32,6 +37,7 @@ defmodule HomeElixir.Terminal do
         [:stream, :binary, :exit_status, {:env, env}]
       )
 
+    Process.send_after(self(), :ka, @keepalive_interval)
     {:ok, Map.put(state, :port, port)}
   end
 
@@ -83,12 +89,22 @@ defmodule HomeElixir.Terminal do
     {:ok, state}
   end
 
+  # Protocol control frames (the browser's auto-pong to our keepalive ping, etc.)
+  # are not terminal input — ignore them.
+  def websocket_handle(_frame, state), do: {:ok, state}
+
   def websocket_info({port, {:data, out}}, %{port: port} = state) do
     {:reply, {:binary, out}, state}
   end
 
   def websocket_info({port, :close}, %{port: port} = state) do
     {:stop, :normal, state}
+  end
+
+  # Keepalive tick: send a ping (browser auto-pongs) and schedule the next one.
+  def websocket_info(:ka, state) do
+    Process.send_after(self(), :ka, @keepalive_interval)
+    {:reply, {:ping, ""}, state}
   end
 
   def websocket_info({:exit_status, _port, _code}, state), do: {:stop, :normal, state}
