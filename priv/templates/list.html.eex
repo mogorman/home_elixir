@@ -51,6 +51,7 @@
     const IS_ADMIN = <%= is_admin %>;
     const MODE = "<%= mode_string %>";
     const NODERED_ABSENT = <%= nodered_absent %>;
+    const NODERED_LOADED = <%= nodered_loaded %>;
     const STATUS_LABEL = { green: "Running", yellow: "Changed", red: "Stopped", grey: "Idle", broken: "Broken" };
     let ALL_USERS = [];
     const errDlg = document.getElementById("error-dlg");
@@ -112,8 +113,10 @@
     };
     document.getElementById("warn-cancel").onclick = () => { warnDlg.close(); warnProceed = null; };
     function nodeRedBadge(f) {
-      if (!(NODERED_ABSENT && f.nodered)) return "";
-      return '<i class="mdi mdi-robot-outline text-warning-emphasis" title="Uses Node-RED device nodes — requires the Node-RED Companion (not installed)"></i><span class="text-warning-emphasis fw-bold" style="font-size:.78em">Node-RED</span>';
+      if (!f.nodered) return "";
+      if (NODERED_LOADED) return '<i class="mdi mdi-check-circle text-success" title="Uses Node-RED device nodes — Node-RED Companion detected &amp; working"></i><span class="text-success fw-bold" style="font-size:.78em">Node-RED</span>';
+      if (NODERED_ABSENT) return '<i class="mdi mdi-robot-outline text-warning-emphasis" title="Uses Node-RED device nodes — requires the Node-RED Companion (not installed)"></i><span class="text-warning-emphasis fw-bold" style="font-size:.78em">Node-RED</span>';
+      return "";
     }
     async function loadUsers() {
       if (!IS_ADMIN) return;
@@ -241,9 +244,12 @@
       const tr = document.createElement("tr");
       const td = document.createElement("td");
       td.colSpan = 5;
-      const warn = (NODERED_ABSENT && f.nodered)
-        ? '<div class="alert alert-info d-flex align-items-center gap-2 mb-0 py-2"><i class="mdi mdi-robot-outline"></i><span><strong>Node-RED Companion not installed.</strong> This flow uses Node-RED device nodes, so its device(s) won\'t work until it\'s added.</span></div>'
-        : "";
+      let warn = "";
+      if (f.nodered && NODERED_LOADED) {
+        warn = '<div class="alert alert-success d-flex align-items-center gap-2 mb-0 py-2"><i class="mdi mdi-check-circle"></i><span><strong>Node-RED Companion detected &amp; working.</strong> This flow\'s device nodes are enabled.</span></div>';
+      } else if (f.nodered && NODERED_ABSENT) {
+        warn = '<div class="alert alert-info d-flex align-items-center gap-2 mb-0 py-2"><i class="mdi mdi-robot-outline"></i><span><strong>Node-RED Companion not installed.</strong> This flow uses Node-RED device nodes, so its device(s) won\'t work until it\'s added.</span></div>';
+      }
       td.innerHTML =
         warn +
         '<div class="d-flex gap-3 p-2 flex-column flex-md-row">' +

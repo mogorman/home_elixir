@@ -1119,6 +1119,7 @@ defmodule HomeElixir.Web do
       is_admin: is_admin,
       mode_string: to_string(mode),
       nodered_absent: HomeElixir.NodeRedStatus.status() == :absent,
+      nodered_loaded: HomeElixir.NodeRedStatus.status() == :loaded,
       control_js: Template.render("control_js.html.eex")
     )
   end

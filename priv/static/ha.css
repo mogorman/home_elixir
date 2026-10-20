@@ -534,6 +534,8 @@ dialog{background:var(--surface-card);color:var(--bs-body-color)}
 .alert-info{background:var(--ha-color-primary-95);color:var(--ha-color-primary-30);border-color:var(--ha-color-primary-90)}
 [data-bs-theme="dark"] .alert-secondary{background:#232323}
 [data-bs-theme="dark"] .alert-info{background:#00212e;color:var(--ha-color-primary-60);border-color:#00324a}
+.alert-success{background:rgba(0,136,60,.12);color:var(--bs-success);border-color:rgba(0,136,60,.3)}
+[data-bs-theme="dark"] .alert-success{color:#4cd97b}
 
 /* ---- spinner ---- */
 @keyframes spinner-border{to{transform:rotate(360deg)}}

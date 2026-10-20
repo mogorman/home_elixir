@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.76
+- The per-flow Node-RED indicator now turns green ("detected & working") when the Node-RED Companion is present, instead of only showing the yellow warning when it's missing. Applies to the flows-list badge and the note inside each flow's panel.
+
 ## 0.1.75
 - Admin page now shows a green "Node-RED Companion: detected & working" note (with the detected version) when the integration is set up, instead of nothing. Re-checking now re-renders the card.
 
