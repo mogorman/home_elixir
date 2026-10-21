@@ -36,11 +36,12 @@ assert_arch() { # image expected-arch
   [ "$got" = "$2" ] || { echo "FATAL: $1 arch='$got' expected='$2'" >&2; exit 1; }
 }
 
-# --- regenerate the ExDoc API reference (host, dev env) ---
-# Runs on the host so the prod Docker build never pulls in ex_doc. Output is
-# committed below and served read-only at /static/docs. A failing build (e.g. a
-# compile error) aborts the release via `set -e` — a free preflight.
-echo "==> regenerating ExDoc API reference"
+# --- regenerate the ExDoc module reference (host, dev env) ---
+# Runs on the host so the prod Docker build never pulls in ex_doc. Output
+# (priv/docs/reference.md) is committed below and served as the in-app /reference
+# page. A failing build (e.g. a compile error) aborts the release via `set -e` —
+# a free preflight.
+echo "==> regenerating ExDoc module reference"
 sh scripts/build_docs.sh
 
 # --- git: commit + push pending changes (the release) ---

@@ -133,6 +133,17 @@ defmodule HomeElixir.Web do
     end
   end
 
+  def dispatch(%{method: "GET", request_path: "/reference"} = conn, _opts),
+    do: html(conn, reference_page(cur(conn)))
+
+  # The module reference source, served raw so the /reference page renders it client-side.
+  def dispatch(%{method: "GET", request_path: "/reference.md"} = conn, _opts) do
+    case File.read(reference_path()) do
+      {:ok, md} -> text(conn, 200, md)
+      _ -> not_found(conn)
+    end
+  end
+
   def dispatch(%{method: "GET", request_path: "/api/flows"} = conn, _opts) do
     case HomeElixir.FlowStore.list() do
       flows -> json(conn, visible_flows(conn, flows))
@@ -1238,12 +1249,21 @@ defmodule HomeElixir.Web do
   end
 
   # The Documentation page: the bundled docs (priv/docs/index.md), rendered
-  # client-side by /priv/templates/docs.html.eex (marked + highlight.js).
+  # client-side by priv/templates/docs.html.eex (marked + highlight.js).
   defp docs_page(user \\ nil) do
-    Template.render("docs.html.eex", base: base_html("Documentation", :docs, user))
+    Template.render("docs.html.eex", base: base_html("Documentation", :docs, user), source: "/docs.md")
   end
 
   defp docs_path, do: Application.app_dir(:home_elixir, "priv/docs/index.md") |> Path.expand()
+
+  # The API reference: the full ExDoc module reference (priv/docs/reference.md),
+  # rendered client-side the same way. A normal app page, so it inherits the
+  # app's base handling, auth, navbar and theming under any access path.
+  defp reference_page(user \\ nil) do
+    Template.render("docs.html.eex", base: base_html("API", :reference, user), source: "/reference.md")
+  end
+
+  defp reference_path, do: Application.app_dir(:home_elixir, "priv/docs/reference.md") |> Path.expand()
 
   defp base_html(title, active, user \\ nil) do
     Template.render("base.html.eex",
@@ -1293,7 +1313,7 @@ defmodule HomeElixir.Web do
             <li class="nav-item"><a class="nav-link#{a.(:archived)}" href="archived">Archived</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:examples)}" href="examples">Examples</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:docs)}" href="docs">Documentation</a></li>
-            <li class="nav-item"><a class="nav-link" href="static/docs/index.html">API</a></li>
+            <li class="nav-item"><a class="nav-link#{a.(:reference)}" href="reference">API</a></li>
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:logs)}" href="logs">Logs</a></li>|, else: ""}
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:iex)}" href="terminal">IEx</a></li>|, else: ""}
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:config)}" href="config">Config</a></li>|, else: ""}

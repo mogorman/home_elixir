@@ -1,6 +1,5 @@
 <%= base %>
   <div class="docs" style="max-width: 900px; margin: 0 auto; line-height: 1.6">
-    <p style="margin-bottom:1.5rem"><a class="btn btn-outline-secondary btn-sm" href="static/docs/index.html"><i class="mdi mdi-source-branch"></i> Full API reference — every module &amp; function</a></p>
     <article id="docs" class="docs-content">Loading docs…</article>
   </div>
   <link id="hljs-theme" href="static/hljs/styles/github-dark.min.css" rel="stylesheet">
@@ -13,7 +12,7 @@
     }
     setHljsTheme(document.documentElement.getAttribute("data-bs-theme"));
     document.addEventListener("themechange", function (e) { setHljsTheme(e.detail); });
-    fetch(__BASE__ + "/docs.md")
+    fetch(__BASE__ + "<%= source %>")
       .then((r) => { if (!r.ok) throw new Error(r.status); return r.text(); })
       .then((md) => {
         const el = document.getElementById("docs");

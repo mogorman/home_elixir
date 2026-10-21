@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.85
+- Rework: the API reference is now a normal in-app page (`/reference`) — the full module reference rendered from ExDoc's markdown, so it inherits the app's base handling, auth and navbar. Replaces the static `/static/docs` sub-site, which failed to load under some Home Assistant access paths.
+
 ## 0.1.84
 - Fix: the API reference now opens **in the same panel** (not a new tab) when reached via Home Assistant's ingress, so it renders inside your logged-in session instead of hitting a 401. Browser-back returns to the app.
 
