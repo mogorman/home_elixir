@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.91
+- Moved the **Laundry** flow (0.1.90) from `flows/` to `examples/laundry.ex` — it's a ready-to-copy example, not a bundled default.
+
 ## 0.1.90
 - New **Laundry** flow (`flows/laundry.ex`): when an LG ThinQ washer or dryer finishes a cycle (its `run_completed` sensor flips to `on`), it raises a companion **Live Activity** and a **Signal** message, attributed to the last face the basement Frigate camera recognized — e.g. "matthias finished the washing". Person, Signal service, and face sensor are editable in the flow config; covered by tests.
 

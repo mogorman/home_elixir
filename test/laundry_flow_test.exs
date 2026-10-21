@@ -6,11 +6,11 @@ defmodule HomeElixir.LaundryFlowTest do
   alias HomeElixir.{Registry, HA}
   alias HomeElixir.HA.FakeTransport
 
-  @flow HomeElixir.Flows.Laundry
+  @flow HomeElixir.Flows.Examples.Laundry
   @face "sensor.basementcam_last_recognized_face"
 
   setup_all do
-    Code.compile_file("flows/laundry.ex")
+    Code.compile_file("examples/laundry.ex")
     :ok
   end
 

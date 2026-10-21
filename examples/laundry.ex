@@ -1,4 +1,4 @@
-defmodule HomeElixir.Flows.Laundry do
+defmodule HomeElixir.Flows.Examples.Laundry do
   @moduledoc """
   Washer & dryer "it's done" notifier.
 
