@@ -740,6 +740,12 @@ registry), in registry order. Returns `{:ok, [state_map]}` or `{:error, reason}`
 
 Ensure the shared WS client is running with the current token.
 
+# `entity_history`
+
+State history for a single `entity_id` over `range` (see `history/2`) — the
+single-entity form of `history/2`, named to mirror `device_history/2`.
+Returns `{:ok, [state_map]}` or `{:error, reason}`.
+
 # `filter_states`
 
 The states for `entity_ids` (in that order), from a `get_states` list.

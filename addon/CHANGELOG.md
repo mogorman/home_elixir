@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.87
+- Added `HomeElixir.HA.entity_history/2` — single-entity state history, named to mirror `device_history/2` (the EntityHistory example now uses it; `history/2` remains for lists).
+
 ## 0.1.86
 - Added cross-links between the Documentation (user guide) and API reference pages.
 

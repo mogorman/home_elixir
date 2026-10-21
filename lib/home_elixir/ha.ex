@@ -161,6 +161,13 @@ defmodule HomeElixir.HA do
   end
 
   @doc """
+  State history for a single `entity_id` over `range` (see `history/2`) — the
+  single-entity form of `history/2`, named to mirror `device_history/2`.
+  Returns `{:ok, [state_map]}` or `{:error, reason}`.
+  """
+  def entity_history(entity_id, range \\ nil), do: history(entity_id, range)
+
+  @doc """
   State history for every entity on `device_id` over `range` (see `history/2`).
   Returns `{:ok, [state_map]}` or `{:error, reason}`.
   """

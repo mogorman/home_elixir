@@ -2,10 +2,10 @@ defmodule HomeElixir.Flows.Examples.EntityHistory do
   @moduledoc """
   Example: get the history of one entity's states.
 
-  `entity_id` and `range` are editable in the UI. `range` is a number (look-back
-  in hours) or a `{start, end}` date range; the button/cron fetch
-  `HomeElixir.HA.history/2` and render the rows as a table.
-  """
+   `entity_id` and `range` are editable in the UI. `range` is a number (look-back
+   in hours) or a `{start, end}` date range; the button/cron fetch
+   `HomeElixir.HA.entity_history/2` and render the rows as a table.
+   """
   use HomeElixir.Flow
 
   @behaviour HomeElixir.Node
@@ -19,7 +19,7 @@ defmodule HomeElixir.Flows.Examples.EntityHistory do
   end
 
   def handle(%{payload: "refresh"}) do
-    case HomeElixir.HA.history(entity(), range()) do
+    case HomeElixir.HA.entity_history(entity(), range()) do
       {:ok, states} ->
         FlowState.put(:rows, %{cols: ["State", "Changed"], rows: rows(states)})
 
