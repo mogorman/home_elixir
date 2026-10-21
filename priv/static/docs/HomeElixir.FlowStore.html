@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="ExDoc v0.40.4">
+    <meta name="project" content="home_elixir v0.1.0">
+
+
+    <title>HomeElixir.FlowStore — home_elixir v0.1.0</title>
+
+    <link rel="stylesheet" href="dist/html-elixir-RXHHCTJW.css" />
+
+    <script defer src="dist/sidebar_items-A30BA6AF.js"></script>
+    <script defer src="docs_config.js"></script>
+    <script defer src="dist/html-MI33G4N7.js"></script>
+
+  </head>
+  <body>
+    <script>(()=>{var t="ex_doc:settings",e="dark";var o="dark",s="light";var E="sidebar_state",n="closed";var r="sidebar_width";var a="sidebar-open";var i=new URLSearchParams(window.location.search),S=i.get("theme")||JSON.parse(localStorage.getItem(t)||"{}").theme;(S===o||S!==s&&window.matchMedia("(prefers-color-scheme: dark)").matches)&&document.body.classList.add(e);var d=sessionStorage.getItem(E),A=d!==n&&!window.matchMedia(`screen and (max-width: ${768}px)`).matches;document.body.classList.toggle(a,A);var c=sessionStorage.getItem(r);c&&document.body.style.setProperty("--sidebarWidth",`${c}px`);var p=/(Macintosh|iPhone|iPad|iPod)/.test(window.navigator.userAgent);document.documentElement.classList.toggle("apple-os",p);})();
+</script>
+
+<div class="body-wrapper">
+
+<button id="sidebar-menu" class="sidebar-button sidebar-toggle" aria-label="toggle sidebar" aria-controls="sidebar">
+  <i class="ri-menu-line ri-lg" title="Collapse/expand sidebar"></i>
+</button>
+
+<nav id="sidebar" class="sidebar">
+
+  <div class="sidebar-header">
+    <div class="sidebar-projectInfo">
+
+        <a href="api-reference.html" class="sidebar-projectImage">
+          <img src="assets/logo.svg" alt="home_elixir" />
+        </a>
+
+      <div>
+        <a href="api-reference.html" class="sidebar-projectName" translate="no">
+home_elixir
+        </a>
+        <div class="sidebar-projectVersion" translate="no">
+          v0.1.0
+        </div>
+      </div>
+    </div>
+    <ul id="sidebar-list-nav" class="sidebar-list-nav" role="tablist" data-extras="Pages"></ul>
+  </div>
+</nav>
+
+<output role="status" id="toast"></output>
+
+<main class="content page-module" id="main" data-type="modules">
+  <div id="content" class="content-inner">
+    <div class="top-search">
+      <div class="search-settings">
+        <form class="search-bar" action="search.html">
+          <label class="search-label">
+            <span class="sr-only">Search documentation of home_elixir</span>
+            <div class="search-input-wrapper">
+              <input name="q" type="text" class="search-input" placeholder="Press / to search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+              <button type="button" tabindex="-1" class="search-close-button" aria-hidden="true">
+                <i class="ri-close-line ri-lg" title="Cancel search"></i>
+              </button>
+            </div>
+          </label>
+        </form>
+        <div class="autocomplete">
+        </div>
+        <div class="engine-selector" data-multiple="false">
+          <button type="button" class="engine-button" aria-label="Select search engine" aria-haspopup="true" aria-expanded="false">
+            <i class="ri-search-2-line" aria-hidden="true"></i>
+            <span class="engine-name">Default</span>
+            <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+          </button>
+          <div class="engine-dropdown" hidden role="menu">
+
+              <button type="button"
+                      class="engine-option"
+                      data-engine-url="search.html?q="
+                      role="menuitemradio"
+                      aria-checked="true">
+                <span class="name">Default</span>
+                <span class="help">In-browser search</span>
+              </button>
+
+          </div>
+        </div>
+        <button class="icon-settings display-settings">
+          <i class="ri-settings-3-line"></i>
+          <span class="sr-only">Settings</span>
+        </button>
+      </div>
+    </div>
+
+<div id="top-content">
+  <div class="heading-with-actions top-heading">
+    <h1>
+      <span translate="no">HomeElixir.<wbr />FlowStore</span> 
+      <small class="app-vsn" translate="no">(home_elixir v0.1.0)</small>
+
+    </h1>
+
+<a href="HomeElixir.FlowStore.md" title="Copy Markdown (hold Ctrl/Cmd and click it to open as Markdown)" class="copy-markdown icon-action" rel="help">
+  <i class="ri-markdown-line" aria-hidden="true"></i>
+  <span class="sr-only">Copy Markdown</span>
+</a>
+
+
+
+      <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L1" title="View Source" class="icon-action" rel="help nofollow">
+        <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        <span class="sr-only">View Source</span>
+      </a>
+
+  </div>
+
+
+    <section id="moduledoc">
+<p>Discovers flow <code class="inline">.ex</code> files and loads/unloads them at runtime.</p><p>Flow files live in a directory (default <code class="inline">flows/</code>, overridable via the
+<code class="inline">:home_elixir, :flows_dir</code> config). Each file defines one flow module;
+<a href="#load/1"><code class="inline">load/1</code></a> compiles the file if needed and starts it via <a href="HomeElixir.Registry.html"><code class="inline">HomeElixir.Registry</code></a>,
+<a href="#unload/1"><code class="inline">unload/1</code></a> stops it.</p><p>The module atom for each file is taken from the compiler's result and cached,
+since <a href="https://elixir.hexdocs.pm/String.html#to_atom/1"><code class="inline">String.to_atom/1</code></a> does not reliably yield a matching atom in all VMs.</p>
+    </section>
+
+</div>
+
+  <section id="summary" class="details-list">
+    <h2 class="section-heading">
+      <a class="hover-link" href="#summary">
+        <i class="ri-link-m" aria-hidden="true"></i>
+      </a>
+      <span class="text">Summary</span>
+    </h2>
+<div class="summary-functions summary">
+  <h3>
+    <a href="#functions">Functions</a>
+  </h3>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#archive/1" data-no-tooltip="" translate="no">archive(name)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Archive a flow: force-unload it and hide it from the flow list.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#check/1" data-no-tooltip="" translate="no">check(source)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Compile a source string and report the result, without loading it into the
+flow set. Runs in this GenServer (a stable process), not the request process.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#child_spec/1" data-no-tooltip="" translate="no">child_spec(init_arg)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Returns a specification to start this module under a supervisor.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#click/3" data-no-tooltip="" translate="no">click(name, node, payload \\ nil)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Inject a message into a node of a loaded flow (used by web controls).</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#clone/1" data-no-tooltip="" translate="no">clone(name)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Clone a flow into a sibling file/module with a <code class="inline">Clone</code> suffix. Returns <code class="inline">{:ok, new_name}</code>.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#delete/1" data-no-tooltip="" translate="no">delete(name)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Delete a flow: unload it, remove its file, and drop its saved state.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#flow_ui/1" data-no-tooltip="" translate="no">flow_ui(name)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>UI elements for one flow (loaded or not), with live <code class="inline">value</code> when loaded.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#list/0" data-no-tooltip="" translate="no">list()</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>All flow files in the flows dir, each with its name, path, module, and loaded state.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#load/1" data-no-tooltip="" translate="no">load(name)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Compile a flow from disk and start it (runs its <code class="inline">setup/0</code>, if any).</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#loaded?/1" data-no-tooltip="" translate="no">loaded?(name)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Whether a flow is currently loaded (without compiling it).</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#loaded_source/1" data-no-tooltip="" translate="no">loaded_source(name)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>The source at the flow's last successful load (for editor revert); <code class="inline">:error</code> if never loaded.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#reload/1" data-no-tooltip="" translate="no">reload(name)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Recompile a flow from disk and restart it (or load it if not running).</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#reload_all/0" data-no-tooltip="" translate="no">reload_all()</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Reload every currently-loaded flow from disk.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#rename/2" data-no-tooltip="" translate="no">rename(old_name, new_name)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Rename a flow after the editor changed its module name. The new file has
+already been written by the caller; this unloads the old flow (if running),
+removes the old file, and carries the old flow's ownership to the new name.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#restore/0" data-no-tooltip="" translate="no">restore()</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Load the flows that were loaded last run (persisted in the Mnesia flow-state
+DB). On the very first run (nothing saved yet) this imports the legacy
+<code class="inline">flows/.loaded</code> file if present, else loads every flow file, establishing the
+set. Flows that fail to load are logged and skipped.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#start_link/1" data-no-tooltip="" translate="no">start_link(opts \\ [])</a>
+
+      </div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#ui/0" data-no-tooltip="" translate="no">ui()</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>UI elements declared by loaded flows (name-keyed, for the web UI).</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#unarchive/1" data-no-tooltip="" translate="no">unarchive(name)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Restore an archived flow back to the flow list (does not load it).</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#unload/1" data-no-tooltip="" translate="no">unload(name)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Stop a loaded flow.</p></div>
+
+    </div>
+
+</div>
+
+  </section>
+
+
+  <section id="functions" class="details-list">
+    <h2 class="section-heading">
+      <a class="hover-link" href="#functions">
+        <i class="ri-link-m" aria-hidden="true"></i>
+      </a>
+      <span class="text">Functions</span>
+    </h2>
+
+    <div class="functions-list">
+<section class="detail" id="archive/1">
+
+  <div class="detail-header">
+    <a href="#archive/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">archive(name)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L45" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Archive a flow: force-unload it and hide it from the flow list.</p>
+  </section>
+</section>
+<section class="detail" id="check/1">
+
+  <div class="detail-header">
+    <a href="#check/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">check(source)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L93" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Compile a source string and report the result, without loading it into the
+flow set. Runs in this GenServer (a stable process), not the request process.</p>
+  </section>
+</section>
+<section class="detail" id="child_spec/1">
+
+  <div class="detail-header">
+    <a href="#child_spec/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">child_spec(init_arg)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L14" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Returns a specification to start this module under a supervisor.</p><p>See <a href="https://elixir.hexdocs.pm/Supervisor.html"><code class="inline">Supervisor</code></a>.</p>
+  </section>
+</section>
+<section class="detail" id="click/3">
+
+    <span id="click/2"></span>
+
+  <div class="detail-header">
+    <a href="#click/3" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">click(name, node, payload \\ nil)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L67" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Inject a message into a node of a loaded flow (used by web controls).</p>
+  </section>
+</section>
+<section class="detail" id="clone/1">
+
+  <div class="detail-header">
+    <a href="#clone/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">clone(name)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L54" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Clone a flow into a sibling file/module with a <code class="inline">Clone</code> suffix. Returns <code class="inline">{:ok, new_name}</code>.</p>
+  </section>
+</section>
+<section class="detail" id="delete/1">
+
+  <div class="detail-header">
+    <a href="#delete/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">delete(name)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L51" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Delete a flow: unload it, remove its file, and drop its saved state.</p>
+  </section>
+</section>
+<section class="detail" id="flow_ui/1">
+
+  <div class="detail-header">
+    <a href="#flow_ui/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">flow_ui(name)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L76" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>UI elements for one flow (loaded or not), with live <code class="inline">value</code> when loaded.</p>
+  </section>
+</section>
+<section class="detail" id="list/0">
+
+  <div class="detail-header">
+    <a href="#list/0" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">list()</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L30" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>All flow files in the flows dir, each with its name, path, module, and loaded state.</p>
+  </section>
+</section>
+<section class="detail" id="load/1">
+
+  <div class="detail-header">
+    <a href="#load/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">load(name)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L39" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Compile a flow from disk and start it (runs its <code class="inline">setup/0</code>, if any).</p>
+  </section>
+</section>
+<section class="detail" id="loaded?/1">
+
+  <div class="detail-header">
+    <a href="#loaded?/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">loaded?(name)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L79" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Whether a flow is currently loaded (without compiling it).</p>
+  </section>
+</section>
+<section class="detail" id="loaded_source/1">
+
+  <div class="detail-header">
+    <a href="#loaded_source/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">loaded_source(name)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L82" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>The source at the flow's last successful load (for editor revert); <code class="inline">:error</code> if never loaded.</p>
+  </section>
+</section>
+<section class="detail" id="reload/1">
+
+  <div class="detail-header">
+    <a href="#reload/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">reload(name)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L70" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Recompile a flow from disk and restart it (or load it if not running).</p>
+  </section>
+</section>
+<section class="detail" id="reload_all/0">
+
+  <div class="detail-header">
+    <a href="#reload_all/0" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">reload_all()</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L73" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Reload every currently-loaded flow from disk.</p>
+  </section>
+</section>
+<section class="detail" id="rename/2">
+
+  <div class="detail-header">
+    <a href="#rename/2" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">rename(old_name, new_name)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L61" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Rename a flow after the editor changed its module name. The new file has
+already been written by the caller; this unloads the old flow (if running),
+removes the old file, and carries the old flow's ownership to the new name.</p>
+  </section>
+</section>
+<section class="detail" id="restore/0">
+
+  <div class="detail-header">
+    <a href="#restore/0" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">restore()</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L101" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Load the flows that were loaded last run (persisted in the Mnesia flow-state
+DB). On the very first run (nothing saved yet) this imports the legacy
+<code class="inline">flows/.loaded</code> file if present, else loads every flow file, establishing the
+set. Flows that fail to load are logged and skipped.</p>
+  </section>
+</section>
+<section class="detail" id="start_link/1">
+
+    <span id="start_link/0"></span>
+
+  <div class="detail-header">
+    <a href="#start_link/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">start_link(opts \\ [])</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L25" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+
+  </section>
+</section>
+<section class="detail" id="ui/0">
+
+  <div class="detail-header">
+    <a href="#ui/0" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">ui()</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L64" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>UI elements declared by loaded flows (name-keyed, for the web UI).</p>
+  </section>
+</section>
+<section class="detail" id="unarchive/1">
+
+  <div class="detail-header">
+    <a href="#unarchive/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">unarchive(name)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L48" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Restore an archived flow back to the flow list (does not load it).</p>
+  </section>
+</section>
+<section class="detail" id="unload/1">
+
+  <div class="detail-header">
+    <a href="#unload/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">unload(name)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/flow_store.ex#L42" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Stop a loaded flow.</p>
+  </section>
+</section>
+
+    </div>
+  </section>
+
+    <footer class="footer">
+
+        <p>
+
+          <span class="line">
+            <button class="a-main footer-button display-quick-switch" title="Go to package docs">
+              Go to package docs
+            </button>
+
+              <a href="llms.txt" target="_blank">
+                View llms.txt
+              </a>
+
+
+              <a href="home_elixir.epub">
+                Download ePub version
+              </a>
+
+          </span>
+        </p>
+
+        <p class="built-using">
+          Built using
+          <a href="https://github.com/elixir-lang/ex_doc" title="ExDoc" target="_blank" rel="help noopener" translate="no">ExDoc</a> (v0.40.4) for the
+
+            <a href="https://elixir-lang.org" title="Elixir" target="_blank" translate="no">Elixir programming language</a>
+
+        </p>
+
+
+    </footer>
+  </div>
+</main>
+</div>
+
+  </body>
+</html>

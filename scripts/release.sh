@@ -36,6 +36,16 @@ assert_arch() { # image expected-arch
   [ "$got" = "$2" ] || { echo "FATAL: $1 arch='$got' expected='$2'" >&2; exit 1; }
 }
 
+# --- regenerate the ExDoc API reference (host, dev env) ---
+# Runs on the host so the prod Docker build never pulls in ex_doc. Output is
+# committed below and served read-only at /static/docs. A failing build (e.g. a
+# compile error) aborts the release via `set -e` — a free preflight.
+echo "==> regenerating ExDoc API reference"
+MIX_ENV=dev mix deps.get
+MIX_ENV=dev mix docs
+rm -rf priv/static/docs
+cp -r doc priv/static/docs
+
 # --- git: commit + push pending changes (the release) ---
 if [ "$DO_COMMIT" = 1 ]; then
   if [ -n "$(git status --porcelain)" ]; then

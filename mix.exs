@@ -9,6 +9,21 @@ defmodule HomeElixir.MixProject do
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
+      docs: [
+        main_module: HomeElixir,
+        logo: "priv/static/logo.svg",
+        source_url: "https://github.com/mogorman/home_elixir",
+        # README.md is the user guide (same content as the in-app /docs page).
+        extras: ["README.md"],
+        groups_for_modules: [
+          "Flows": ~r/^HomeElixir\.(Flow|FlowsHA|FlowState|FlowStore|Msg|Node)\b/,
+          "Nodes": ~r/^HomeElixir\.Nodes\./,
+          "Home Assistant": ~r/^HomeElixir\.(HA|Nodered|NodeRedStatus)\b/,
+          "Web":
+            ~r/^HomeElixir\.(Web|WebUI|Template|Terminal|Auth|AuthGuard|UI|EntityBrowser|Examples|Log|LogHandler)\b/,
+          "Core": ~r/^HomeElixir\.(Application|Config|Dep)\b/
+        ]
+      ],
       # Release for running as a service (NixOS, systemd, ...). Must live in
       # project() (not application()): Mix 1.20's release task reads
       # :releases from the project config.
@@ -66,7 +81,9 @@ defmodule HomeElixir.MixProject do
       {:plug, "~> 1.18"},
       {:plug_cowboy, "~> 2.7"},
       {:crontab, "~> 1.1"},
-      {:oauth2, "~> 2.1"}
+      {:oauth2, "~> 2.1"},
+      # Docs only (hex.pm-style API reference); never in the runtime image.
+      {:ex_doc, "~> 0.34", only: [:dev, :test], runtime: false}
     ]
   end
 end

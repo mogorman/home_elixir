@@ -1056,9 +1056,11 @@ defmodule HomeElixir.Web do
             case Path.extname(path) do
               ".js" -> "text/javascript"
               ".css" -> "text/css"
+              ".html" -> "text/html"
               ".svg" -> "image/svg+xml"
               ".png" -> "image/png"
               ".ico" -> "image/x-icon"
+              ".woff2" -> "font/woff2"
               _ -> "application/octet-stream"
             end
 
@@ -1291,6 +1293,7 @@ defmodule HomeElixir.Web do
             <li class="nav-item"><a class="nav-link#{a.(:archived)}" href="archived">Archived</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:examples)}" href="examples">Examples</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:docs)}" href="docs">Documentation</a></li>
+            <li class="nav-item"><a class="nav-link" href="static/docs/index.html" target="_blank" rel="noopener">API</a></li>
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:logs)}" href="logs">Logs</a></li>|, else: ""}
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:iex)}" href="terminal">IEx</a></li>|, else: ""}
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:config)}" href="config">Config</a></li>|, else: ""}

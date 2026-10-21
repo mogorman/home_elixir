@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="ExDoc v0.40.4">
+    <meta name="project" content="home_elixir v0.1.0">
+
+
+    <title>API Reference — home_elixir v0.1.0</title>
+
+    <link rel="stylesheet" href="dist/html-elixir-RXHHCTJW.css" />
+
+    <script defer src="dist/sidebar_items-A30BA6AF.js"></script>
+    <script defer src="docs_config.js"></script>
+    <script defer src="dist/html-MI33G4N7.js"></script>
+
+  </head>
+  <body>
+    <script>(()=>{var t="ex_doc:settings",e="dark";var o="dark",s="light";var E="sidebar_state",n="closed";var r="sidebar_width";var a="sidebar-open";var i=new URLSearchParams(window.location.search),S=i.get("theme")||JSON.parse(localStorage.getItem(t)||"{}").theme;(S===o||S!==s&&window.matchMedia("(prefers-color-scheme: dark)").matches)&&document.body.classList.add(e);var d=sessionStorage.getItem(E),A=d!==n&&!window.matchMedia(`screen and (max-width: ${768}px)`).matches;document.body.classList.toggle(a,A);var c=sessionStorage.getItem(r);c&&document.body.style.setProperty("--sidebarWidth",`${c}px`);var p=/(Macintosh|iPhone|iPad|iPod)/.test(window.navigator.userAgent);document.documentElement.classList.toggle("apple-os",p);})();
+</script>
+
+<div class="body-wrapper">
+
+<button id="sidebar-menu" class="sidebar-button sidebar-toggle" aria-label="toggle sidebar" aria-controls="sidebar">
+  <i class="ri-menu-line ri-lg" title="Collapse/expand sidebar"></i>
+</button>
+
+<nav id="sidebar" class="sidebar">
+
+  <div class="sidebar-header">
+    <div class="sidebar-projectInfo">
+
+        <a href="api-reference.html" class="sidebar-projectImage">
+          <img src="assets/logo.svg" alt="home_elixir" />
+        </a>
+
+      <div>
+        <a href="api-reference.html" class="sidebar-projectName" translate="no">
+home_elixir
+        </a>
+        <div class="sidebar-projectVersion" translate="no">
+          v0.1.0
+        </div>
+      </div>
+    </div>
+    <ul id="sidebar-list-nav" class="sidebar-list-nav" role="tablist" data-extras="Pages"></ul>
+  </div>
+</nav>
+
+<output role="status" id="toast"></output>
+
+<main class="content page-extra" id="main" data-type="extras">
+  <div id="content" class="content-inner">
+    <div class="top-search">
+      <div class="search-settings">
+        <form class="search-bar" action="search.html">
+          <label class="search-label">
+            <span class="sr-only">Search documentation of home_elixir</span>
+            <div class="search-input-wrapper">
+              <input name="q" type="text" class="search-input" placeholder="Press / to search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+              <button type="button" tabindex="-1" class="search-close-button" aria-hidden="true">
+                <i class="ri-close-line ri-lg" title="Cancel search"></i>
+              </button>
+            </div>
+          </label>
+        </form>
+        <div class="autocomplete">
+        </div>
+        <div class="engine-selector" data-multiple="false">
+          <button type="button" class="engine-button" aria-label="Select search engine" aria-haspopup="true" aria-expanded="false">
+            <i class="ri-search-2-line" aria-hidden="true"></i>
+            <span class="engine-name">Default</span>
+            <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+          </button>
+          <div class="engine-dropdown" hidden role="menu">
+
+              <button type="button"
+                      class="engine-option"
+                      data-engine-url="search.html?q="
+                      role="menuitemradio"
+                      aria-checked="true">
+                <span class="name">Default</span>
+                <span class="help">In-browser search</span>
+              </button>
+
+          </div>
+        </div>
+        <button class="icon-settings display-settings">
+          <i class="ri-settings-3-line"></i>
+          <span class="sr-only">Settings</span>
+        </button>
+      </div>
+    </div>
+
+<div id="top-content">
+  <div class="heading-with-actions top-heading">
+    <h1>API Reference <small class="app-vsn">home_elixir v#0.1.0</small></h1>
+<a href="api-reference.md" title="Copy Markdown (hold Ctrl/Cmd and click it to open as Markdown)" class="copy-markdown icon-action" rel="help">
+  <i class="ri-markdown-line" aria-hidden="true"></i>
+  <span class="sr-only">Copy Markdown</span>
+</a>
+
+
+      <a href="https://github.com/mogorman/home_elixir" title="View Source" class="icon-action" rel="help nofollow">
+        <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        <span class="sr-only">View Source</span>
+      </a>
+
+  </div>
+
+    <section class="details-list">
+      <h2 id="modules" class="section-heading">Modules</h2>
+      <div class="summary">
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.html" translate="no">HomeElixir</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>A Node-RED-style flow engine for Home Assistant, in Elixir.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Auth.html" translate="no">HomeElixir.<wbr />Auth</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Local accounts (Mnesia), in-memory sessions (ETS), and PBKDF2 password
+hashing via OTP <code class="inline">:crypto</code> — no external deps, so the hermetic Nix build is
+untouched.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.AuthGuard.html" translate="no">HomeElixir.<wbr />AuthGuard</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Wraps <a href="HomeElixir.Web.html"><code class="inline">HomeElixir.Web</code></a> and enforces a session on every route except the public
+ones (<code class="inline">/login</code>, <code class="inline">/api/login</code>, static assets, favicon). On success it assigns
+<code class="inline">conn.assigns.user = {username, role}</code> and hands the conn to <a href="HomeElixir.Web.html"><code class="inline">HomeElixir.Web</code></a>;
+on failure it redirects HTML requests to <code class="inline">/login</code> and answers <code class="inline">/api/*</code> with 401.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Config.html" translate="no">HomeElixir.<wbr />Config</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Layered, editable configuration for flows.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Dep.html" translate="no">HomeElixir.<wbr />Dep</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Install external Hex dependencies at runtime, Livebook-style, without editing
+<code class="inline">mix.exs</code>.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.EntityBrowser.html" translate="no">HomeElixir.<wbr />EntityBrowser</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Build an Area &gt; Device &gt; Entity tree of Home Assistant entities, for the
+editor's entity browser. <a href="#build/3"><code class="inline">build/3</code></a> is pure and assembles the tree from three
+read-only HA lists; <a href="#tree/0"><code class="inline">tree/0</code></a> fetches them from the shared HA client.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Examples.html" translate="no">HomeElixir.<wbr />Examples</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Bundled example flows, kept in a separate read-only <code class="inline">examples/</code> dir (outside the
+user's <code class="inline">flows/</code> dir). They can be listed, viewed, and copied into the user's
+flows (verbatim) so they can be edited. They are never loaded or run in place.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Flow.html" translate="no">HomeElixir.<wbr />Flow</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Declare a flow as an Elixir module.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.FlowState.html" translate="no">HomeElixir.<wbr />FlowState</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Persistent per-flow state, namespaced by the calling flow's module.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.FlowStore.html" translate="no">HomeElixir.<wbr />FlowStore</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Discovers flow <code class="inline">.ex</code> files and loads/unloads them at runtime.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.FlowsHA.html" translate="no">HomeElixir.<wbr />FlowsHA</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Exposes every flow as a switch in a single &quot;Flows&quot; device in Home Assistant,
+via the Node-RED Companion integration. Each switch's state is the flow's
+loaded state; toggling it in HA loads/unloads the flow.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.HA.html" translate="no">HomeElixir.<wbr />HA</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Access to the shared, named <a href="HomeElixir.HA.Client.html"><code class="inline">HomeElixir.HA.Client</code></a>.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.HA.Client.html" translate="no">HomeElixir.<wbr />HA.<wbr />Client</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>A client for the Home Assistant WebSocket API.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.HA.LiveUpdate.html" translate="no">HomeElixir.<wbr />HA.<wbr />LiveUpdate</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Send and dismiss Android/iOS Home Assistant companion <strong>Live Activities</strong> to a
+person's devices — the reusable core. Flows just call <a href="#update/3"><code class="inline">update/3</code></a> / <a href="#dismiss/2"><code class="inline">dismiss/2</code></a>.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.HA.OAuth.html" translate="no">HomeElixir.<wbr />HA.<wbr />OAuth</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Home Assistant local OAuth (authorization code + PKCE).</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.HA.OAuthStrategy.html" translate="no">HomeElixir.<wbr />HA.<wbr />OAuthStrategy</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>The <a href="https://oauth2.hexdocs.pm/2.1.1/OAuth2.Strategy.AuthCode.html"><code class="inline">OAuth2.Strategy.AuthCode</code></a> flow, minus the <code class="inline">Authorization: Basic</code> header.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.HA.PendingLogins.html" translate="no">HomeElixir.<wbr />HA.<wbr />PendingLogins</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Shared store for in-flight OAuth logins, keyed by the <code class="inline">state</code> value.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.HA.Transport.Mint.html" translate="no">HomeElixir.<wbr />HA.<wbr />Transport.<wbr />Mint</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>WebSocket transport backed by Mint + Mint.WebSocket.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Log.html" translate="no">HomeElixir.<wbr />Log</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>In-memory ring buffer of recent log lines, fed by <code class="inline">HomeElixir.LogHandler</code>.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Msg.html" translate="no">HomeElixir.<wbr />Msg</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>A message flowing through a flow, Node-RED-style. <code class="inline">payload</code> is the primary
+value; <code class="inline">topic</code> and <code class="inline">data</code> carry metadata; extra fields live in <code class="inline">data</code>.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Node.html" translate="no">HomeElixir.<wbr />Node</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Behaviour for flow nodes.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.NodeRedStatus.html" translate="no">HomeElixir.<wbr />NodeRedStatus</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Tracks whether the Node-RED Companion integration is installed in Home
+Assistant. Probed once at startup (and re-checkable on demand from the admin
+page).</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Nodered.html" translate="no">HomeElixir.<wbr />Nodered</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Helpers for managing Node-RED-integration entities from Elixir.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Nodes.Device.html" translate="no">HomeElixir.<wbr />Nodes.<wbr />Device</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Presents a device (entity) to Home Assistant via the Node-RED integration and
+owns its state bidirectionally.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Nodes.Function.html" translate="no">HomeElixir.<wbr />Nodes.<wbr />Function</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Applies a function to each message. Config is <code class="inline">fun: &amp;Mod.fun/1</code> (a remote
+function). It receives the <a href="HomeElixir.Msg.html"><code class="inline">HomeElixir.Msg</code></a> and returns a new <code class="inline">Msg</code> (or a raw
+value, wrapped as <code class="inline">payload</code>), or <code class="inline">nil</code> to drop the message.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Nodes.Inject.html" translate="no">HomeElixir.<wbr />Nodes.<wbr />Inject</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Passthrough source node: re-emits each incoming message unchanged. Use it as
+the entry point of a flow that starts from an external trigger (a web button
+via the <code class="inline">ui:</code> config) rather than from an HA event.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Nodes.Logger.html" translate="no">HomeElixir.<wbr />Nodes.<wbr />Logger</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Logs each incoming message and produces no output. A debug/observation node
+(the Node-RED <code class="inline">debug</code> equivalent), useful as a flow endpoint and for e2e.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Nodes.Schedule.html" translate="no">HomeElixir.<wbr />Nodes.<wbr />Schedule</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Source node: fires on wall-clock times given by a 5-field cron expression
+(e.g. <code class="inline">&quot;*/2 * * * *&quot;</code> every 2 minutes, <code class="inline">&quot;0 15 * * 1&quot;</code> Monday at 3pm).</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Nodes.Service.html" translate="no">HomeElixir.<wbr />Nodes.<wbr />Service</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Sink node: calls a Home Assistant service when a message arrives.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Nodes.Sink.html" translate="no">HomeElixir.<wbr />Nodes.<wbr />Sink</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Records every incoming message (most recent first). Useful as a flow endpoint
+and for tests; read it back via <a href="HomeElixir.Registry.html#node_state/2"><code class="inline">HomeElixir.Registry.node_state/2</code></a>.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Nodes.StateChanged.html" translate="no">HomeElixir.<wbr />Nodes.<wbr />StateChanged</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Source node: emits a message when a Home Assistant entity's state changes.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Registry.html" translate="no">HomeElixir.<wbr />Registry</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Loads and unloads flows and tracks which are running.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Terminal.html" translate="no">HomeElixir.<wbr />Terminal</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Cowboy WebSocket handler that gives the browser a real IEx bridged over
+xterm.js.</p></div>
+
+</div>
+<div class="summary-row">
+  <div class="summary-signature">
+    <a href="HomeElixir.Web.html" translate="no">HomeElixir.<wbr />Web</a>
+
+  </div>
+
+    <div class="summary-synopsis"><p>Web UI + JSON API for managing flows: a list page, an inline-highlighted
+editor for flow files, and a live-updating log page.</p></div>
+
+</div>
+
+      </div>
+    </section>
+
+
+</div>
+    <footer class="footer">
+
+        <p>
+
+          <span class="line">
+            <button class="a-main footer-button display-quick-switch" title="Go to package docs">
+              Go to package docs
+            </button>
+
+              <a href="llms.txt" target="_blank">
+                View llms.txt
+              </a>
+
+
+              <a href="home_elixir.epub">
+                Download ePub version
+              </a>
+
+          </span>
+        </p>
+
+        <p class="built-using">
+          Built using
+          <a href="https://github.com/elixir-lang/ex_doc" title="ExDoc" target="_blank" rel="help noopener" translate="no">ExDoc</a> (v0.40.4) for the
+
+            <a href="https://elixir-lang.org" title="Elixir" target="_blank" translate="no">Elixir programming language</a>
+
+        </p>
+
+
+    </footer>
+  </div>
+</main>
+</div>
+
+  </body>
+</html>

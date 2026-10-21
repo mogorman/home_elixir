@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.82
+- New **API** reference in the menu (and linked from Documentation): the full ExDoc module docs — every module, function and type, with search, like a published hex.pm package. Regenerated automatically on each release.
+
 ## 0.1.81
 - Web console (IEx) no longer shows "connection closed" after sitting idle: the WebSocket now sends a periodic keepalive ping so the connection survives intermediate idle timeouts.
 

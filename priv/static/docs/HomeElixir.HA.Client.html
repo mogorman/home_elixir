@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="ExDoc v0.40.4">
+    <meta name="project" content="home_elixir v0.1.0">
+
+
+    <title>HomeElixir.HA.Client — home_elixir v0.1.0</title>
+
+    <link rel="stylesheet" href="dist/html-elixir-RXHHCTJW.css" />
+
+    <script defer src="dist/sidebar_items-A30BA6AF.js"></script>
+    <script defer src="docs_config.js"></script>
+    <script defer src="dist/html-MI33G4N7.js"></script>
+
+  </head>
+  <body>
+    <script>(()=>{var t="ex_doc:settings",e="dark";var o="dark",s="light";var E="sidebar_state",n="closed";var r="sidebar_width";var a="sidebar-open";var i=new URLSearchParams(window.location.search),S=i.get("theme")||JSON.parse(localStorage.getItem(t)||"{}").theme;(S===o||S!==s&&window.matchMedia("(prefers-color-scheme: dark)").matches)&&document.body.classList.add(e);var d=sessionStorage.getItem(E),A=d!==n&&!window.matchMedia(`screen and (max-width: ${768}px)`).matches;document.body.classList.toggle(a,A);var c=sessionStorage.getItem(r);c&&document.body.style.setProperty("--sidebarWidth",`${c}px`);var p=/(Macintosh|iPhone|iPad|iPod)/.test(window.navigator.userAgent);document.documentElement.classList.toggle("apple-os",p);})();
+</script>
+
+<div class="body-wrapper">
+
+<button id="sidebar-menu" class="sidebar-button sidebar-toggle" aria-label="toggle sidebar" aria-controls="sidebar">
+  <i class="ri-menu-line ri-lg" title="Collapse/expand sidebar"></i>
+</button>
+
+<nav id="sidebar" class="sidebar">
+
+  <div class="sidebar-header">
+    <div class="sidebar-projectInfo">
+
+        <a href="api-reference.html" class="sidebar-projectImage">
+          <img src="assets/logo.svg" alt="home_elixir" />
+        </a>
+
+      <div>
+        <a href="api-reference.html" class="sidebar-projectName" translate="no">
+home_elixir
+        </a>
+        <div class="sidebar-projectVersion" translate="no">
+          v0.1.0
+        </div>
+      </div>
+    </div>
+    <ul id="sidebar-list-nav" class="sidebar-list-nav" role="tablist" data-extras="Pages"></ul>
+  </div>
+</nav>
+
+<output role="status" id="toast"></output>
+
+<main class="content page-module" id="main" data-type="modules">
+  <div id="content" class="content-inner">
+    <div class="top-search">
+      <div class="search-settings">
+        <form class="search-bar" action="search.html">
+          <label class="search-label">
+            <span class="sr-only">Search documentation of home_elixir</span>
+            <div class="search-input-wrapper">
+              <input name="q" type="text" class="search-input" placeholder="Press / to search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+              <button type="button" tabindex="-1" class="search-close-button" aria-hidden="true">
+                <i class="ri-close-line ri-lg" title="Cancel search"></i>
+              </button>
+            </div>
+          </label>
+        </form>
+        <div class="autocomplete">
+        </div>
+        <div class="engine-selector" data-multiple="false">
+          <button type="button" class="engine-button" aria-label="Select search engine" aria-haspopup="true" aria-expanded="false">
+            <i class="ri-search-2-line" aria-hidden="true"></i>
+            <span class="engine-name">Default</span>
+            <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+          </button>
+          <div class="engine-dropdown" hidden role="menu">
+
+              <button type="button"
+                      class="engine-option"
+                      data-engine-url="search.html?q="
+                      role="menuitemradio"
+                      aria-checked="true">
+                <span class="name">Default</span>
+                <span class="help">In-browser search</span>
+              </button>
+
+          </div>
+        </div>
+        <button class="icon-settings display-settings">
+          <i class="ri-settings-3-line"></i>
+          <span class="sr-only">Settings</span>
+        </button>
+      </div>
+    </div>
+
+<div id="top-content">
+  <div class="heading-with-actions top-heading">
+    <h1>
+      <span translate="no">HomeElixir.<wbr />HA.<wbr />Client</span> 
+      <small class="app-vsn" translate="no">(home_elixir v0.1.0)</small>
+
+    </h1>
+
+<a href="HomeElixir.HA.Client.md" title="Copy Markdown (hold Ctrl/Cmd and click it to open as Markdown)" class="copy-markdown icon-action" rel="help">
+  <i class="ri-markdown-line" aria-hidden="true"></i>
+  <span class="sr-only">Copy Markdown</span>
+</a>
+
+
+
+      <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/ha/client.ex#L1" title="View Source" class="icon-action" rel="help nofollow">
+        <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        <span class="sr-only">View Source</span>
+      </a>
+
+  </div>
+
+
+    <section id="moduledoc">
+<p>A client for the Home Assistant WebSocket API.</p><p>Maintains a single authenticated WebSocket connection (through a transport,
+default <a href="HomeElixir.HA.Transport.Mint.html"><code class="inline">HomeElixir.HA.Transport.Mint</code></a>), and offers:</p><ul><li><a href="#call/3"><code class="inline">call/3</code></a> — id-correlated request/response</li><li><a href="#subscribe_events/3"><code class="inline">subscribe_events/3</code></a> — HA event fan-out to a process</li><li>automatic reconnection (and re-auth + re-subscribe) after a drop</li></ul><p>A transport is a GenServer following a small convention: it is started with
+<code class="inline">module.start_link(owner: pid, url: url, token: token)</code>, sends
+<code class="inline">{:ha_transport, :connected}</code>, <code class="inline">{:ha_transport, :text, binary}</code> and
+<code class="inline">{:ha_transport, :closed, reason}</code> to its owner, and handles
+<code class="inline">GenServer.cast(transport, {:ha_send, json})</code> to send an outbound frame.</p>
+    </section>
+
+</div>
+
+  <section id="summary" class="details-list">
+    <h2 class="section-heading">
+      <a class="hover-link" href="#summary">
+        <i class="ri-link-m" aria-hidden="true"></i>
+      </a>
+      <span class="text">Summary</span>
+    </h2>
+<div class="summary-functions summary">
+  <h3>
+    <a href="#functions">Functions</a>
+  </h3>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#call/4" data-no-tooltip="" translate="no">call(client, type, payload \\ %{}, timeout \\ 5000)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Send a request and await its correlated result.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#channels_for/2" data-no-tooltip="" translate="no">channels_for(client, to)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>The current <code class="inline">[{id, node_id}]</code> for every channel discovered by <code class="inline">to</code> (the <code class="inline">node_id</code>
+is read from each discovery frame).</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#child_spec/1" data-no-tooltip="" translate="no">child_spec(init_arg)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Returns a specification to start this module under a supervisor.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#discover/3" data-no-tooltip="" translate="no">discover(client, discovery_frame, to)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Register a message-id channel for a long-lived HA feature (e.g. a Node-RED
+device). A fresh id from the shared monotonically-increasing counter (the same
+one <a href="#call/3"><code class="inline">call/3</code></a> uses, so HA's &quot;ids must increase&quot; rule holds) is injected into
+<code class="inline">discovery_frame</code>'s <code class="inline">&quot;id&quot;</code>; frames arriving with that id are forwarded to <code class="inline">to</code>
+as <code class="inline">{:ha_channel, id, frame}</code>. The frame is sent now if connected and re-sent
+on every (re)connect, so the entity re-establishes after a dropped connection.
+Returns the channel <code class="inline">id</code> (so the caller can route inbound channel frames).</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#fire/3" data-no-tooltip="" translate="no">fire(client, type, payload \\ %{})</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Send a request and ignore its response (fire-and-forget).</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#start_link/1" data-no-tooltip="" translate="no">start_link(opts \\ [])</a>
+
+      </div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#status/1" data-no-tooltip="" translate="no">status(client)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Current connection status: <code class="inline">:connecting</code>, <code class="inline">:authenticating</code>, <code class="inline">:connected</code> or <code class="inline">:disconnected</code>.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#subscribe_events/4" data-no-tooltip="" translate="no">subscribe_events(client, event_type, to, timeout \\ 5000)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>Subscribe to Home Assistant events. Matching events are sent to <code class="inline">to</code> as
+<code class="inline">{:ha_event, ref, event}</code>. Returns the subscription <code class="inline">ref</code>.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#token/1" data-no-tooltip="" translate="no">token(client)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>The access token this client authenticates with.</p></div>
+
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-signature">
+        <a href="#transport_pid/1" data-no-tooltip="" translate="no">transport_pid(client)</a>
+
+      </div>
+
+        <div class="summary-synopsis"><p>The pid of the active transport (for diagnostics/tests); <code class="inline">nil</code> when down.</p></div>
+
+    </div>
+
+</div>
+
+  </section>
+
+
+  <section id="functions" class="details-list">
+    <h2 class="section-heading">
+      <a class="hover-link" href="#functions">
+        <i class="ri-link-m" aria-hidden="true"></i>
+      </a>
+      <span class="text">Functions</span>
+    </h2>
+
+    <div class="functions-list">
+<section class="detail" id="call/4">
+
+    <span id="call/2"></span>
+
+    <span id="call/3"></span>
+
+  <div class="detail-header">
+    <a href="#call/4" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">call(client, type, payload \\ %{}, timeout \\ 5000)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/ha/client.ex#L44" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Send a request and await its correlated result.</p><p>Returns the <code class="inline">result</code> field on success (may be <code class="inline">nil</code>), or
+<code class="inline">{:error, %{code: code, message: message}}</code> when Home Assistant reports an
+error. Returns <code class="inline">{:error, {:not_connected, status}}</code> if not yet connected.</p>
+  </section>
+</section>
+<section class="detail" id="channels_for/2">
+
+  <div class="detail-header">
+    <a href="#channels_for/2" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">channels_for(client, to)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/ha/client.ex#L91" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>The current <code class="inline">[{id, node_id}]</code> for every channel discovered by <code class="inline">to</code> (the <code class="inline">node_id</code>
+is read from each discovery frame).</p><p>Re-derive this rather than trusting the <code class="inline">id</code> returned by <a href="#discover/3"><code class="inline">discover/3</code></a>: a
+reconnect's re-discovery reassigns a fresh id to each channel, so a cached
+id→thing map goes stale and inbound frames on the new ids are dropped.</p>
+  </section>
+</section>
+<section class="detail" id="child_spec/1">
+
+  <div class="detail-header">
+    <a href="#child_spec/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">child_spec(init_arg)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/ha/client.ex#L19" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Returns a specification to start this module under a supervisor.</p><p>See <a href="https://elixir.hexdocs.pm/Supervisor.html"><code class="inline">Supervisor</code></a>.</p>
+  </section>
+</section>
+<section class="detail" id="discover/3">
+
+  <div class="detail-header">
+    <a href="#discover/3" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">discover(client, discovery_frame, to)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/ha/client.ex#L79" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Register a message-id channel for a long-lived HA feature (e.g. a Node-RED
+device). A fresh id from the shared monotonically-increasing counter (the same
+one <a href="#call/3"><code class="inline">call/3</code></a> uses, so HA's &quot;ids must increase&quot; rule holds) is injected into
+<code class="inline">discovery_frame</code>'s <code class="inline">&quot;id&quot;</code>; frames arriving with that id are forwarded to <code class="inline">to</code>
+as <code class="inline">{:ha_channel, id, frame}</code>. The frame is sent now if connected and re-sent
+on every (re)connect, so the entity re-establishes after a dropped connection.
+Returns the channel <code class="inline">id</code> (so the caller can route inbound channel frames).</p>
+  </section>
+</section>
+<section class="detail" id="fire/3">
+
+    <span id="fire/2"></span>
+
+  <div class="detail-header">
+    <a href="#fire/3" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">fire(client, type, payload \\ %{})</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/ha/client.ex#L54" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Send a request and ignore its response (fire-and-forget).</p><p>Use for <code class="inline">call_service</code> and similar, where the caller does not need HA's ack.
+Returns <code class="inline">:ok</code> (the request is dropped if not connected).</p>
+  </section>
+</section>
+<section class="detail" id="start_link/1">
+
+    <span id="start_link/0"></span>
+
+  <div class="detail-header">
+    <a href="#start_link/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">start_link(opts \\ [])</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/ha/client.ex#L27" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+
+  </section>
+</section>
+<section class="detail" id="status/1">
+
+  <div class="detail-header">
+    <a href="#status/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">status(client)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/ha/client.ex#L94" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Current connection status: <code class="inline">:connecting</code>, <code class="inline">:authenticating</code>, <code class="inline">:connected</code> or <code class="inline">:disconnected</code>.</p>
+  </section>
+</section>
+<section class="detail" id="subscribe_events/4">
+
+    <span id="subscribe_events/3"></span>
+
+  <div class="detail-header">
+    <a href="#subscribe_events/4" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">subscribe_events(client, event_type, to, timeout \\ 5000)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/ha/client.ex#L66" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>Subscribe to Home Assistant events. Matching events are sent to <code class="inline">to</code> as
+<code class="inline">{:ha_event, ref, event}</code>. Returns the subscription <code class="inline">ref</code>.</p><p>The subscription is registered immediately; if not yet connected it is sent
+automatically on (re)connect, so callers need not wait for a connection.</p>
+  </section>
+</section>
+<section class="detail" id="token/1">
+
+  <div class="detail-header">
+    <a href="#token/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">token(client)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/ha/client.ex#L97" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>The access token this client authenticates with.</p>
+  </section>
+</section>
+<section class="detail" id="transport_pid/1">
+
+  <div class="detail-header">
+    <a href="#transport_pid/1" class="detail-link" data-no-tooltip="" aria-label="Link to this function">
+      <i class="ri-link-m" aria-hidden="true"></i>
+    </a>
+    <div class="heading-with-actions">
+      <h1 class="signature" translate="no">transport_pid(client)</h1>
+
+
+        <a href="https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/ha/client.ex#L100" class="icon-action" rel="help nofollow" aria-label="View Source">
+          <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </a>
+
+    </div>
+  </div>
+
+  <section class="docstring">
+
+<p>The pid of the active transport (for diagnostics/tests); <code class="inline">nil</code> when down.</p>
+  </section>
+</section>
+
+    </div>
+  </section>
+
+    <footer class="footer">
+
+        <p>
+
+          <span class="line">
+            <button class="a-main footer-button display-quick-switch" title="Go to package docs">
+              Go to package docs
+            </button>
+
+              <a href="llms.txt" target="_blank">
+                View llms.txt
+              </a>
+
+
+              <a href="home_elixir.epub">
+                Download ePub version
+              </a>
+
+          </span>
+        </p>
+
+        <p class="built-using">
+          Built using
+          <a href="https://github.com/elixir-lang/ex_doc" title="ExDoc" target="_blank" rel="help noopener" translate="no">ExDoc</a> (v0.40.4) for the
+
+            <a href="https://elixir-lang.org" title="Elixir" target="_blank" translate="no">Elixir programming language</a>
+
+        </p>
+
+
+    </footer>
+  </div>
+</main>
+</div>
+
+  </body>
+</html>
