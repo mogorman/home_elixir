@@ -33,6 +33,7 @@ HomeElixir.Registry.html
 HomeElixir.Terminal.html
 HomeElixir.Web.html
 HomeElixir.html
+Mix.Tasks.Docs.InjectBase.html
 api-reference.html
 assets/logo.svg
 dist/html-MI33G4N7.js
@@ -42,8 +43,8 @@ dist/lato-latin-700-normal-2XVSBPG4.woff2
 dist/lato-latin-ext-400-normal-N27NCBWW.woff2
 dist/lato-latin-ext-700-normal-Q2L5DVMW.woff2
 dist/remixicon-ZWU5GQ4X.woff2
-dist/search_data-7A23BD09.js
-dist/sidebar_items-A30BA6AF.js
+dist/search_data-850CB26B.js
+dist/sidebar_items-C67403F1.js
 index.html
 readme.html
 search.html

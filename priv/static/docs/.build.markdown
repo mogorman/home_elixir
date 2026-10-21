@@ -32,6 +32,7 @@ HomeElixir.Registry.md
 HomeElixir.Terminal.md
 HomeElixir.Web.md
 HomeElixir.md
+Mix.Tasks.Docs.InjectBase.md
 api-reference.md
 llms.txt
 readme.md

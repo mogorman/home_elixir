@@ -79,3 +79,8 @@ editor for flow files, and a live-updating log page.
   - [HomeElixir.Dep](HomeElixir.Dep.md): Install external Hex dependencies at runtime, Livebook-style, without editing
 `mix.exs`.
 
+## Mix Tasks
+
+- [mix docs.inject_base](Mix.Tasks.Docs.InjectBase.md): Injects a client-side `<base href="<base>/static/docs/">` into each
+`priv/static/docs/*.html` right after `<head>`.
+

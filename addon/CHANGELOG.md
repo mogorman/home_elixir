@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.83
+- Fix: the API reference (ExDoc) now works when the add-on is reached through Home Assistant's ingress. Each docs page is anchored to its own root with a `<base>`, so its links resolve under the ingress prefix instead of relying on the browser's URL.
+
 ## 0.1.82
 - New **API** reference in the menu (and linked from Documentation): the full ExDoc module docs — every module, function and type, with search, like a published hex.pm package. Regenerated automatically on each release.
 
