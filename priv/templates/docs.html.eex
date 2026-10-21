@@ -1,5 +1,6 @@
 <%= base %>
   <div class="docs" style="max-width: 900px; margin: 0 auto; line-height: 1.6">
+    <p style="margin-bottom:1.5rem"><a class="btn btn-outline-secondary btn-sm" href="<%= related_href %>"><i class="mdi mdi-source-branch"></i> <%= related_label %></a></p>
     <article id="docs" class="docs-content">Loading docs…</article>
   </div>
   <link id="hljs-theme" href="static/hljs/styles/github-dark.min.css" rel="stylesheet">

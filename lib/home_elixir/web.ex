@@ -1251,7 +1251,12 @@ defmodule HomeElixir.Web do
   # The Documentation page: the bundled docs (priv/docs/index.md), rendered
   # client-side by priv/templates/docs.html.eex (marked + highlight.js).
   defp docs_page(user \\ nil) do
-    Template.render("docs.html.eex", base: base_html("Documentation", :docs, user), source: "/docs.md")
+    Template.render("docs.html.eex",
+      base: base_html("Documentation", :docs, user),
+      source: "/docs.md",
+      related_href: "reference",
+      related_label: "Full API reference — every module & function"
+    )
   end
 
   defp docs_path, do: Application.app_dir(:home_elixir, "priv/docs/index.md") |> Path.expand()
@@ -1260,7 +1265,12 @@ defmodule HomeElixir.Web do
   # rendered client-side the same way. A normal app page, so it inherits the
   # app's base handling, auth, navbar and theming under any access path.
   defp reference_page(user \\ nil) do
-    Template.render("docs.html.eex", base: base_html("API", :reference, user), source: "/reference.md")
+    Template.render("docs.html.eex",
+      base: base_html("API", :reference, user),
+      source: "/reference.md",
+      related_href: "docs",
+      related_label: "User guide"
+    )
   end
 
   defp reference_path, do: Application.app_dir(:home_elixir, "priv/docs/reference.md") |> Path.expand()

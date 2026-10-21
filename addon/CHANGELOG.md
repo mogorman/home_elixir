@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.86
+- Added cross-links between the Documentation (user guide) and API reference pages.
+
 ## 0.1.85
 - Rework: the API reference is now a normal in-app page (`/reference`) — the full module reference rendered from ExDoc's markdown, so it inherits the app's base handling, auth and navbar. Replaces the static `/static/docs` sub-site, which failed to load under some Home Assistant access paths.
 
