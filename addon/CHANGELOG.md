@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.84
+- Fix: the API reference now opens **in the same panel** (not a new tab) when reached via Home Assistant's ingress, so it renders inside your logged-in session instead of hitting a 401. Browser-back returns to the app.
+
 ## 0.1.83
 - Fix: the API reference (ExDoc) now works when the add-on is reached through Home Assistant's ingress. Each docs page is anchored to its own root with a `<base>`, so its links resolve under the ingress prefix instead of relying on the browser's URL.
 
