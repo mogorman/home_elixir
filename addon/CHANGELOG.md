@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.90
+- New **Laundry** flow (`flows/laundry.ex`): when an LG ThinQ washer or dryer finishes a cycle (its `run_completed` sensor flips to `on`), it raises a companion **Live Activity** and a **Signal** message, attributed to the last face the basement Frigate camera recognized — e.g. "matthias finished the washing". Person, Signal service, and face sensor are editable in the flow config; covered by tests.
+
 ## 0.1.89
 - Chores (no behavior change): de-duplicated internals — a shared Mint REST helper replaces a second hand-rolled HTTP stack in the Flows-HA sync, one shared Mnesia/CA-cert helper replaces per-module copies, ISO-8601 timestamps now use the stdlib, and a couple of test-only APIs were removed.
 
