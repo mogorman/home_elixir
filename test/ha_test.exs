@@ -54,6 +54,36 @@ defmodule HomeElixir.HATest do
     end)
   end
 
+  # ---- whoami_url (OAuth identity endpoint) ----
+
+  test "whoami_url prefers the external HA origin (wss + /api/websocket)" do
+    Application.put_env(:home_elixir, :ha_external_url, "https://ha.example.com")
+
+    try do
+      assert HA.whoami_url() == "wss://ha.example.com/api/websocket"
+    after
+      Application.delete_env(:home_elixir, :ha_external_url)
+    end
+  end
+
+  test "whoami_url keeps the port and downgrades http to ws" do
+    Application.put_env(:home_elixir, :ha_external_url, "http://ha.example.com:8123")
+
+    try do
+      assert HA.whoami_url() == "ws://ha.example.com:8123/api/websocket"
+    after
+      Application.delete_env(:home_elixir, :ha_external_url)
+    end
+  end
+
+  test "whoami_url falls back to config_url when no external origin" do
+    Application.delete_env(:home_elixir, :ha_external_url)
+
+    with_url("ws://supervisor/core/api/websocket", fn ->
+      assert HA.whoami_url() == "ws://supervisor/core/api/websocket"
+    end)
+  end
+
   # ---- token/0 priority ----
 
   test "token: supervisor > env > config" do

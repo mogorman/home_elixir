@@ -746,6 +746,10 @@ State history for a single `entity_id` over `range` (see `history/2`) — the
 single-entity form of `history/2`, named to mirror `device_history/2`.
 Returns `{:ok, [state_map]}` or `{:error, reason}`.
 
+# `external_url`
+
+The externally-reachable HA origin (config `:ha_external_url`), or `nil`.
+
 # `filter_states`
 
 The states for `entity_ids` (in that order), from a `get_states` list.
@@ -820,6 +824,14 @@ The public web origin (config `:web_base_url`), or `nil`.
 Resolve who an HA access token belongs to via the WebSocket `auth/current_user`
 command, on a transient one-shot client. Returns `{:ok, {name, is_admin}}` or
 `{:error, reason}`.
+
+# `whoami_url`
+
+The WebSocket endpoint to validate an OAuth token's identity against. In
+add-on mode `config_url/0` is the Supervisor core proxy (which only accepts
+`SUPERVISOR_TOKEN`), but an OAuth token is valid for the real HA core, so this
+prefers the externally-reachable origin (`:ha_external_url`); when that is
+unset it falls back to `config_url/0` (standalone setups point it at core).
 
 ---
 

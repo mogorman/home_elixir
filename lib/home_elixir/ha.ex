@@ -49,6 +49,11 @@ defmodule HomeElixir.HA do
     Application.get_env(:home_elixir, :web_base_url)
   end
 
+  @doc "The externally-reachable HA origin (config `:ha_external_url`), or `nil`."
+  def external_url do
+    Application.get_env(:home_elixir, :ha_external_url)
+  end
+
   @doc """
   The HA REST base URL (`scheme://host[:port][/prefix]`) for HTTP API calls,
   derived from the configured endpoint (which may be a `wss://`/`ws://`
@@ -305,7 +310,7 @@ defmodule HomeElixir.HA do
   `{:error, reason}`.
   """
   def whoami(token) do
-    case config_url() do
+    case whoami_url() do
       nil ->
         {:error, "Home Assistant is not configured"}
 
@@ -322,6 +327,27 @@ defmodule HomeElixir.HA do
         after
           8_000 -> {:error, :connect_timeout}
         end
+    end
+  end
+
+  @doc """
+  The WebSocket endpoint to validate an OAuth token's identity against. In
+  add-on mode `config_url/0` is the Supervisor core proxy (which only accepts
+  `SUPERVISOR_TOKEN`), but an OAuth token is valid for the real HA core, so this
+  prefers the externally-reachable origin (`:ha_external_url`); when that is
+  unset it falls back to `config_url/0` (standalone setups point it at core).
+  """
+  def whoami_url do
+    case external_url() do
+      nil ->
+        config_url()
+
+      ext ->
+        ext
+        |> rest_origin()
+        |> String.replace_prefix("https://", "wss://")
+        |> String.replace_prefix("http://", "ws://")
+        |> Kernel.<>("/api/websocket")
     end
   end
 

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.88
+- Fix: external "Log in with Home Assistant" now works alongside the embedded panel. The OAuth token's identity is validated against your real HA core (`ha_external_url`) instead of the Supervisor proxy (which only accepts `SUPERVISOR_TOKEN`), so login succeeds and the add-on's Supervisor connection stays intact.
+
 ## 0.1.87
 - Added `HomeElixir.HA.entity_history/2` — single-entity state history, named to mirror `device_history/2` (the EntityHistory example now uses it; `history/2` remains for lists).
 
