@@ -407,9 +407,12 @@ defmodule HomeElixir.HA do
 
   # ---- REST over Mint (core HTTP, no `req`) + WS list fetch ----
 
-  # GET `path` (relative to rest_base()) with the shared token; the raw body on
-  # HTTP 200, else an error. Shared by the REST-backed helpers.
-  defp rest_get(path, token) do
+  @doc """
+  GET `path` (relative to `rest_base/0`) with `token`; the raw response body on
+  HTTP 200, else `{:error, reason}`. Shared by the REST-backed helpers and the
+  Flows-HA `/api/states` read.
+  """
+  def rest_get(path, token) do
     base = rest_base()
 
     if is_nil(base) or is_nil(token) do
@@ -456,26 +459,20 @@ defmodule HomeElixir.HA do
 
   # unix seconds -> "YYYY-MM-DDTHH:MM:SSZ" (UTC; `Z` keeps the URL query clean —
   # a `+` offset would be read as a space by HA).
-  defp iso(unix) do
-    dt = DateTime.from_unix!(unix)
-
-    :io_lib.format("~4..0B-~2..0B-~2..0BT~2..0B:~2..0B:~2..0BZ", [
-      dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second
-    ])
-    |> IO.iodata_to_binary()
-  end
+  defp iso(unix), do: DateTime.from_unix!(unix) |> DateTime.to_iso8601()
 
   defp iso_dt(v) when is_integer(v), do: iso(v)
   defp iso_dt(v) when is_binary(v), do: v
-  defp iso_dt(%DateTime{} = dt), do: DateTime.to_unix(dt) |> iso()
+  defp iso_dt(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
 
 
   # TLS verifies the peer against the system bundle (a self-contained release
-  # doesn't ship OTP's built-in cacerts). Same lookup as the WS transport.
+  # doesn't ship OTP's built-in cacerts). Shared with the WS transport.
   defp mint_opts(:https), do: [protocols: [:http1], transport_opts: [cacerts: system_cacerts()]]
   defp mint_opts(:http), do: [protocols: [:http1]]
 
-  defp system_cacerts do
+  @doc false
+  def system_cacerts do
     case Enum.find(
            [
              "/etc/ssl/certs/ca-certificates.crt",

@@ -136,7 +136,6 @@ defmodule HomeElixir.NodeRedTest do
     stop_ha()
     stop_prober()
     assert NodeRedStatus.status() == :unknown
-    refute NodeRedStatus.present?()
   end
 
   test "recheck reports unknown with no HA client" do
@@ -169,7 +168,6 @@ defmodule HomeElixir.NodeRedTest do
     )
 
     poll(fn -> NodeRedStatus.status() == :loaded end)
-    assert NodeRedStatus.present?()
     stop_prober()
   end
 

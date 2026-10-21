@@ -278,7 +278,7 @@ defmodule HomeElixir.Web do
   def dispatch(%{method: "GET", request_path: "/static/" <> rest} = conn, _opts),
     do: static_file(conn, rest)
 
-  def dispatch(%{method: "GET"} = conn, _opts), do: handle_get(conn)
+  def dispatch(%{method: "GET"} = conn, _opts), do: not_found(conn)
 
   # ---- POST ----
 
@@ -432,8 +432,6 @@ defmodule HomeElixir.Web do
       _ -> {:error, "forbidden"}
     end
   end
-
-  defp handle_get(conn), do: not_found(conn)
 
   # Copy a bundled example into the user's flows (verbatim). The new flow is
   # idle and editable; the client navigates to its editor.

@@ -777,6 +777,12 @@ WebSocket URL). Keeps any proxy path prefix: `ws://supervisor/core/api/websocket
 becomes `http://supervisor/core`, so callers append `/api/...` as usual.
 `nil` when no HA endpoint is configured.
 
+# `rest_get`
+
+GET `path` (relative to `rest_base/0`) with `token`; the raw response body on
+HTTP 200, else `{:error, reason}`. Shared by the REST-backed helpers and the
+Flows-HA `/api/states` read.
+
 # `rest_prefix`
 
 The REST path prefix implied by the configured endpoint (`"/core"` for the
@@ -898,10 +904,6 @@ Each entry is `{code_verifier, expiry_ms}` and is consumed exactly once
 Returns a specification to start this module under a supervisor.
 
 See `Supervisor`.
-
-# `get`
-
-Non-destructively read the verifier for `state` (nil if absent/expired).
 
 # `put`
 
@@ -1154,10 +1156,6 @@ connection at boot never raises a false "missing" warning.
 Returns a specification to start this module under a supervisor.
 
 See `Supervisor`.
-
-# `present?`
-
-True when the Node-RED integration is present.
 
 # `recheck`
 

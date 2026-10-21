@@ -37,9 +37,6 @@ defmodule HomeElixir.NodeRedStatus do
     end
   end
 
-  @doc "True when the Node-RED integration is present."
-  def present?, do: status() == :loaded
-
   @doc "The detected integration version, when present (`nil` otherwise)."
   def version do
     case GenServer.whereis(__MODULE__) do

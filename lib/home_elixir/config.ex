@@ -218,12 +218,7 @@ defmodule HomeElixir.Config do
   defp to_atom(k) when is_atom(k), do: k
   defp to_atom(k) when is_binary(k), do: String.to_atom(k)
 
-  defp tx(fun) do
-    case :mnesia.transaction(fun) do
-      {:atomic, result} -> result
-      {:aborted, reason} -> raise "Config: mnesia aborted: #{inspect(reason)}"
-    end
-  end
+  defp tx(fun), do: HomeElixir.Mnesia.tx("Config", fun)
 
   defp read(scope) do
     tx(fn ->
@@ -236,8 +231,5 @@ defmodule HomeElixir.Config do
 
   defp write(scope, data), do: tx(fn -> :mnesia.write({@table, scope, data}) end)
 
-  # Disk only on a named node (matches FlowState's disc?/0).
-  defp disc? do
-    Application.get_env(:home_elixir, :flow_state_disc, false) and node() != :nonode@nohost
-  end
+  defp disc?, do: HomeElixir.Mnesia.disc?()
 end

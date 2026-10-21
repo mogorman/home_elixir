@@ -29,7 +29,7 @@ defmodule HomeElixir.HA.OAuthTest do
     assert q["code_challenge_method"] == "S256"
 
     # The stored code_verifier must hash to the challenge in the URL (S256).
-    verifier = HomeElixir.HA.PendingLogins.get(state)
+    verifier = HomeElixir.HA.PendingLogins.take(state)
     assert is_binary(verifier)
 
     challenge =

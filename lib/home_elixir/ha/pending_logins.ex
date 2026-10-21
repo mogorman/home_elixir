@@ -29,11 +29,6 @@ defmodule HomeElixir.HA.PendingLogins do
     GenServer.call(@name, {:take, state})
   end
 
-  @doc "Non-destructively read the verifier for `state` (nil if absent/expired)."
-  def get(state) do
-    GenServer.call(@name, {:get, state})
-  end
-
   @impl true
   def handle_call({:put, state, verifier, exp}, _from, map) do
     {:reply, :ok, Map.put(map, state, {verifier, exp})}
@@ -44,9 +39,6 @@ defmodule HomeElixir.HA.PendingLogins do
     {result, _} = read(map, state)
     {:reply, result, Map.delete(map, state)}
   end
-
-  @impl true
-  def handle_call({:get, state}, _from, map), do: {:reply, read(map, state) |> elem(0), map}
 
   # {value_or_nil, _} — value is the verifier if present and unexpired.
   defp read(map, state) do

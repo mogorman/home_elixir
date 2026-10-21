@@ -21,7 +21,7 @@ defmodule HomeElixir.MixProject do
           "Home Assistant": ~r/^HomeElixir\.(HA|Nodered|NodeRedStatus)\b/,
           "Web":
             ~r/^HomeElixir\.(Web|WebUI|Template|Terminal|Auth|AuthGuard|UI|EntityBrowser|Examples|Log|LogHandler)\b/,
-          "Core": ~r/^HomeElixir\.(Application|Config|Dep)\b/
+          "Core": ~r/^HomeElixir\.(Application|Config|Dep|Mnesia)\b/
         ]
       ],
       # Release for running as a service (NixOS, systemd, ...). Must live in

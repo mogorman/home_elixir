@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.89
+- Chores (no behavior change): de-duplicated internals — a shared Mint REST helper replaces a second hand-rolled HTTP stack in the Flows-HA sync, one shared Mnesia/CA-cert helper replaces per-module copies, ISO-8601 timestamps now use the stdlib, and a couple of test-only APIs were removed.
+
 ## 0.1.88
 - Fix: external "Log in with Home Assistant" now works alongside the embedded panel. The OAuth token's identity is validated against your real HA core (`ha_external_url`) instead of the Supervisor proxy (which only accepts `SUPERVISOR_TOKEN`), so login succeeds and the add-on's Supervisor connection stays intact.
 

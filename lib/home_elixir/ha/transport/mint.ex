@@ -173,33 +173,13 @@ defmodule HomeElixir.HA.Transport.Mint do
   end
 
   # TLS (wss://) must verify the peer against a CA bundle. A self-contained
-  # release doesn't ship OTP's built-in cacerts, so load the system bundle.
+  # release doesn't ship OTP's built-in cacerts, so load the system bundle
+  # (shared lookup in HomeElixir.HA).
   defp connect_opts(:https) do
-    [protocols: [:http1], transport_opts: [cacerts: system_cacerts()]]
+    [protocols: [:http1], transport_opts: [cacerts: HomeElixir.HA.system_cacerts()]]
   end
 
   defp connect_opts(_), do: [protocols: [:http1]]
-
-  defp system_cacerts do
-    case Enum.find(
-           [
-             "/etc/ssl/certs/ca-certificates.crt",
-             "/etc/pki/tls/certs/ca-bundle.crt",
-             "/etc/ssl/cert.pem"
-           ],
-           &File.exists?/1
-         ) do
-      nil ->
-        []
-
-      path ->
-        path
-        |> File.read!()
-        |> :public_key.pem_decode()
-        |> Enum.filter(fn {tag, _, _} -> tag == :Certificate end)
-        |> Enum.map(fn {_, der, _} -> der end)
-    end
-  end
 
   defp parse_url(url) do
     uri = URI.parse(url)

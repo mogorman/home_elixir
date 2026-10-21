@@ -72,10 +72,7 @@ defmodule HomeElixir.Auth do
     end
   end
 
-  # Match FlowState's disk mode: a users table on disk only on a named node.
-  defp disc? do
-    Application.get_env(:home_elixir, :flow_state_disc, false) and node() != :nonode@nohost
-  end
+  defp disc?, do: HomeElixir.Mnesia.disc?()
 
   # ---- seeding (runs in the table-owning GenServer process) ----
 
@@ -287,25 +284,7 @@ defmodule HomeElixir.Auth do
     :crypto.pbkdf2_hmac(@key, password, salt, @iterations, 32) == stored_hash
   end
 
-  # Run `fun` in a Mnesia transaction; unwrap {atomic, result}, re-raise on abort.
-  # (Reads like mnesia:read/2 work outside a transaction; writes/deletes do not.)
-  defp tx(fun) do
-    case :mnesia.transaction(fun) do
-      {:atomic, result} -> result
-      {:aborted, reason} -> raise "Auth: mnesia aborted: #{inspect(reason)}#{stranded_hint(reason)}"
-    end
-  end
-
-  # {:no_exists, table} = a hostname change stranded the disc data under the old
-  # node name (this node has no copy). Say so instead of a cryptic abort.
-  defp stranded_hint(reason) do
-    if is_tuple(reason) and elem(reason, 0) == :no_exists do
-      " — the Mnesia data is stranded under the previous hostname. Back up and delete " <>
-        "priv/mnesia to re-seed (users come from config; flow ownership resets)."
-    else
-      ""
-    end
-  end
+  defp tx(fun), do: HomeElixir.Mnesia.tx("Auth", fun)
 
   # {id, salt, hash, role} or nil.
   defp read_user(name) do

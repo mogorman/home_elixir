@@ -187,87 +187,16 @@ defmodule HomeElixir.FlowsHA do
 
   # Read the device's entities from HA's REST `/api/states` (the reliable source
   # for the device's entities — the WS `get_states` list does not return them),
-  # over Mint (the core's HTTP client; the HA WS transport is Mint too). Returns
-  # `{:ok, node_ids}` on a 200, `:error` otherwise (transport failure, non-200,
-  # misconfig) so the caller removes nothing rather than acting on a partial view.
+  # via the shared Mint REST helper. Returns `{:ok, node_ids}` on a 200, `:error`
+  # otherwise (transport failure, non-200, misconfig) so the caller removes
+  # nothing rather than acting on a partial view.
   defp rest_device_switch_ids do
-    base = HA.rest_base()
-    token = HA.token()
-
-    if is_binary(base) and is_binary(token) do
-      with {scheme, host, port} <- parse_rest(base),
-           {:ok, 200, body} <-
-             http_get(scheme, host, port, HA.rest_prefix() <> "/api/states", [
-               {"authorization", "Bearer " <> token}
-             ]),
-           {:ok, states} <- Jason.decode(body) do
-        if is_list(states), do: {:ok, flow_switch_ids(states)}, else: :error
-      else
-        _ -> :error
-      end
+    with {:ok, body} <- HA.rest_get("/api/states", HA.token()),
+         {:ok, states} <- Jason.decode(body),
+         true <- is_list(states) do
+      {:ok, flow_switch_ids(states)}
     else
-      :error
-    end
-  end
-
-  # Derive the connect target (`scheme, host, port`) from a REST base URL.
-  defp parse_rest(base) do
-    uri = URI.parse(base)
-    https? = uri.scheme == "https"
-    {if(https?, do: :https, else: :http), uri.host, uri.port || if(https?, do: 443, else: 80)}
-  end
-
-  # A single HTTP GET: connect, request, then read until Mint reports `:done`.
-  # Returns `{:ok, status, body}` or `{:error, reason}`. Mint's socket is
-  # `active: :once`, so response bytes arrive as messages (same pattern as the
-  # WS transport's handshake).
-  defp http_get(scheme, host, port, path, headers) do
-    try do
-      with {:ok, conn} <- Mint.HTTP.connect(scheme, host, port, protocols: [:http1]),
-           {:ok, conn, ref} <- Mint.HTTP.request(conn, "GET", path, headers, "") do
-        read_response(conn, ref, {nil, <<>>})
-      else
-        {:error, _conn, reason} -> {:error, reason}
-        {:error, reason} -> {:error, reason}
-      end
-    rescue
-      _ -> {:error, :http_error}
-    catch
-      _kind, _reason -> {:error, :http_error}
-    end
-  end
-
-  defp read_response(conn, ref, {status, body}) do
-    receive do
-      {:ssl, _r, _d} = msg -> step_response(conn, ref, msg, {status, body})
-      {:tcp, _r, _d} = msg -> step_response(conn, ref, msg, {status, body})
-      {:ssl_closed, _} -> {:error, :closed}
-      {:tcp_closed, _} -> {:error, :closed}
-      {:ssl_error, _r, reason} -> {:error, reason}
-      {:tcp_error, _r, reason} -> {:error, reason}
-    after
-      8_000 -> {:error, :timeout}
-    end
-  end
-
-  defp step_response(conn, ref, msg, {status, body}) do
-    case Mint.HTTP.stream(conn, msg) do
-      {:ok, conn, responses} ->
-        {status, body, done?} =
-          Enum.reduce(responses, {status, body, false}, fn
-            {:status, ^ref, code}, {_, b, _} -> {code, b, false}
-            {:data, ^ref, chunk}, {s, b, _} -> {s, b <> chunk, false}
-            {:done, ^ref}, {s, b, _} -> {s, b, true}
-            _other, acc -> acc
-          end)
-
-        if done?, do: {:ok, status, body}, else: read_response(conn, ref, {status, body})
-
-      {:error, _conn, reason, _responses} ->
-        {:error, reason}
-
-      :unknown ->
-        read_response(conn, ref, {status, body})
+      _ -> :error
     end
   end
 
