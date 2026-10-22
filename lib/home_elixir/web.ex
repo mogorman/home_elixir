@@ -593,7 +593,8 @@ defmodule HomeElixir.Web do
 
   # ---- download / import (flow files) ----
 
-  # Bundle the caller's visible flows as a JSON map (name => source) and send it.
+  # Bundle the caller's visible flows (name => source) and send it in the
+  # requested format (?format=zip|tar|json, default zip).
   defp download_all_endpoint(conn) do
     flows =
       case HomeElixir.FlowStore.list() do
@@ -601,24 +602,46 @@ defmodule HomeElixir.Web do
         list -> visible_flows(conn, list)
       end
 
-    data =
-      for f <- flows, {:ok, src} <- [File.read(f.path)], into: %{} do
-        {f.name, src}
-      end
+    pairs = for f <- flows, {:ok, src} <- [File.read(f.path)], into: [], do: {f.name, src}
 
-    attachment(conn, "home-elixir-flows.json", Jason.encode!(data, pretty: true), "application/json")
+    format =
+      conn
+      |> Map.get(:query_string, "")
+      |> URI.decode_query()
+      |> Map.get("format", "zip")
+      |> HomeElixir.Bundle.parse_format()
+
+    case HomeElixir.Bundle.produce(pairs, format) do
+      {:ok, {bytes, filename, ctype}} -> attachment(conn, filename, bytes, ctype)
+      {:error, reason} -> bundle_error(conn, format, reason)
+    end
   end
 
-  # Import a JSON bundle of flows (name => source). Each source lands by its
-  # defmodule name under the same per-flow rules as save; written, not loaded.
+  # Import a bundle of flows. The format is declared in the x-bundle-format header
+  # (zip|tar|json). Each source lands by its defmodule name under the same
+  # per-flow rules as save; written, not loaded.
   defp import_endpoint(conn) do
-    case Jason.decode(body(conn)) do
-      {:ok, %{} = bundle} ->
-        json(conn, Map.put(do_import(Map.to_list(bundle), cur(conn)), "ok", true))
+    format =
+      (List.first(get_req_header(conn, "x-bundle-format")) || "")
+      |> HomeElixir.Bundle.parse_format()
+
+    case format do
+      :none ->
+        bad_request(conn, "x-bundle-format must be zip, tar, or json")
 
       _ ->
-        bad_request(conn, "expected a JSON object of {flowName: source}")
+        case HomeElixir.Bundle.consume(body(conn), format) do
+          {:ok, pairs} -> json(conn, Map.put(do_import(pairs, cur(conn)), "ok", true))
+          {:error, reason} -> bundle_error(conn, format, reason)
+        end
     end
+  end
+
+  # A bundle error: 400 for a bad/unparseable archive, 501 when the format isn't
+  # available in this build (e.g. :zip absent from the OTP).
+  defp bundle_error(conn, format, reason) do
+    status = if HomeElixir.Bundle.available?(format), do: 400, else: 501
+    conn |> put_resp_content_type("application/json") |> send_resp(status, Jason.encode!(%{error: reason}))
   end
 
   # Write each imported source, applying the same per-flow rules as save (new =
@@ -1222,8 +1245,8 @@ defmodule HomeElixir.Web do
       cond do
         examples? or mode == :archived -> ""
 
-        true ->
-          ~s|<a href="edit" class="btn btn-sm btn-primary">New flow</a><button id="upload-flow" class="btn btn-sm btn-outline-secondary">Upload</button><button id="download-all" class="btn btn-sm btn-outline-secondary">Download all</button><button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>|
+      true ->
+        ~s|<a href="edit" class="btn btn-sm btn-primary">New flow</a><button id="upload-flow" class="btn btn-sm btn-outline-secondary">Upload</button><span class="dropdown"><button id="download-all" class="btn btn-sm btn-outline-secondary">Download all <i class="mdi mdi-chevron-down"></i></button><div class="dropdown-menu dropdown-menu-end" id="download-all-menu"><button class="dropdown-item" data-fmt="zip">Zip</button><button class="dropdown-item" data-fmt="tar">Tar</button><button class="dropdown-item" data-fmt="json">JSON</button></div></span><button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>|
       end
 
     Template.render("list.html.eex",

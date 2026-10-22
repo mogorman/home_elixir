@@ -41,11 +41,13 @@ defmodule HomeElixir.WebAuthTest do
     run(conn)
   end
 
-  defp post(path, body, token) do
+  defp post(path, body, token, headers \\ []) do
     conn = Plug.Test.conn(:post, path, body)
 
     conn =
       if token, do: Plug.Conn.put_req_header(conn, "cookie", "he_session=" <> token), else: conn
+
+    conn = Enum.reduce(headers, conn, fn {k, v}, c -> Plug.Conn.put_req_header(c, k, v) end)
 
     run(conn)
   end
@@ -187,7 +189,7 @@ defmodule HomeElixir.WebAuthTest do
 
   test "download-all returns a JSON map of the visible flows" do
     tmp = Application.get_env(:home_elixir, :flows_dir)
-    r = get("/api/flows/download-all", session_cookie("admin", "admin"))
+    r = get("/api/flows/download-all?format=json", session_cookie("admin", "admin"))
     assert r.status == 200
     assert header(r, "content-disposition") =~ "home-elixir-flows.json"
     assert header(r, "content-type") =~ "application/json"
@@ -197,12 +199,23 @@ defmodule HomeElixir.WebAuthTest do
     assert Map.get(bundle, "beta") == File.read!(Path.join(tmp, "beta.ex"))
   end
 
+  test "download-all as tar returns a round-trippable tarball" do
+    if HomeElixir.Bundle.available?(:tar) do
+      r = get("/api/flows/download-all?format=tar", session_cookie("admin", "admin"))
+      assert r.status == 200
+      assert header(r, "content-type") =~ "application/x-tar"
+
+      assert {:ok, pairs} = HomeElixir.Bundle.consume(r.body, :tar)
+      assert Map.has_key?(Map.new(pairs), "alpha")
+    end
+  end
+
   test "import a JSON bundle creates new flows" do
     tmp = Application.get_env(:home_elixir, :flows_dir)
     on_exit(fn -> FlowState.forget_flow("wa_new") end)
 
     bundle = Jason.encode!(%{"wa_new" => "defmodule HomeElixir.Flows.WANew do\n  use HomeElixir.Flow\nend\n"})
-    r = post("/api/flows/import", bundle, session_cookie("admin", "admin"))
+    r = post("/api/flows/import", bundle, session_cookie("admin", "admin"), [{"x-bundle-format", "json"}])
     assert r.status == 200
 
     body = Jason.decode!(r.body)
@@ -224,7 +237,7 @@ defmodule HomeElixir.WebAuthTest do
         "junk" => "just some text, no module"
       })
 
-    r = post("/api/flows/import", bundle, session_cookie("alice", "user"))
+    r = post("/api/flows/import", bundle, session_cookie("alice", "user"), [{"x-bundle-format", "json"}])
     assert r.status == 200
 
     body = Jason.decode!(r.body)
@@ -235,9 +248,46 @@ defmodule HomeElixir.WebAuthTest do
     assert File.exists?(Path.join(tmp, "wa_new2.ex"))
   end
 
-  test "import rejects a body that is not a JSON object" do
-    r = post("/api/flows/import", "not json", session_cookie("admin", "admin"))
+  test "import rejects a non-JSON body and a missing format header" do
+    r = post("/api/flows/import", "not json", session_cookie("admin", "admin"), [{"x-bundle-format", "json"}])
     assert r.status == 400
+
+    r2 = post("/api/flows/import", "anything", session_cookie("admin", "admin"))
+    assert r2.status == 400
+  end
+
+  test "import a tar bundle creates new flows" do
+    if HomeElixir.Bundle.available?(:tar) do
+      tmp = Application.get_env(:home_elixir, :flows_dir)
+      on_exit(fn -> FlowState.forget_flow("wa_tarn") end)
+
+      assert {:ok, {bytes, _fn, _ct}} =
+               HomeElixir.Bundle.produce([{"wa_tarn", "defmodule HomeElixir.Flows.WATarn do\n  use HomeElixir.Flow\nend\n"}], :tar)
+
+      r = post("/api/flows/import", bytes, session_cookie("admin", "admin"), [{"x-bundle-format", "tar"}])
+      assert r.status == 200
+      assert Jason.decode!(r.body)["created"] == 1
+      assert File.exists?(Path.join(tmp, "wa_tarn.ex"))
+    end
+  end
+
+  test "import and download-all round-trip as zip" do
+    if HomeElixir.Bundle.available?(:zip) do
+      tmp = Application.get_env(:home_elixir, :flows_dir)
+      on_exit(fn -> FlowState.forget_flow("wa_zipn") end)
+
+      src = "defmodule HomeElixir.Flows.WAZipn do\n  use HomeElixir.Flow\nend\n"
+      assert {:ok, {bytes, _fn, _ct}} = HomeElixir.Bundle.produce([{"wa_zipn", src}], :zip)
+
+      r = post("/api/flows/import", bytes, session_cookie("admin", "admin"), [{"x-bundle-format", "zip"}])
+      assert r.status == 200
+      assert Jason.decode!(r.body)["created"] == 1
+
+      got = get("/api/flows/download-all?format=zip", session_cookie("admin", "admin"))
+      assert got.status == 200
+      assert {:ok, pairs} = HomeElixir.Bundle.consume(got.body, :zip)
+      assert Map.get(Map.new(pairs), "wa_zipn") == File.read!(Path.join(tmp, "wa_zipn.ex"))
+    end
   end
 
   # ---- ingress / proxy base path (/api/ingress/<uuid>/) ----

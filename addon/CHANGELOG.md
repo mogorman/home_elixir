@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.93
+- Flow import/export now supports **zip**, **tar**, and **json** bundles. "Download all" is a format picker (Zip / Tar / JSON); Upload accepts a single `.ex`, a `home-elixir-flows.json`, or a `.zip`/`.tar` (also `.tar.gz`) of flows. `GET /api/flows/download-all?format=zip|tar|json` and `POST /api/flows/import` (with an `x-bundle-format` header) back it. Zip uses OTP's `:zip` (in the release image); tar uses the system `tar`; json is pure Elixir. Per-flow ownership rules still apply on import.
+
 ## 0.1.92
 - Flow import/export in the web UI: **Download** a single flow (per-flow menu), **Download all** of your visible flows as a JSON bundle (`home-elixir-flows.json`), and **Upload** — either a single `.ex` file (saved like the editor) or the JSON bundle to import several at once. New endpoints `GET /api/flows/<name>/download`, `GET /api/flows/download-all`, and `POST /api/flows/import` (per-flow ownership rules apply; imported flows are written, not auto-loaded).
 

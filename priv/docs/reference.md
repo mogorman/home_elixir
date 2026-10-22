@@ -96,6 +96,56 @@ Resolve a session token to `{user_id, role}` or `{:error, :unauthorized}`.
 
 ---
 
+# `HomeElixir.Bundle`
+[🔗](https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/bundle.ex#L1)
+
+Pack and unpack a set of flow sources for import/export, in three formats:
+
+  * `:json` — a `{flowName => source}` object. Pure Elixir (Jason); always available.
+  * `:tar`  — a `.tar` of the `.ex` files, via the system `tar`.
+  * `:zip`  — a `.zip` of the `.ex` files, via OTP's `:zip` module (present in the
+    release image's full OTP; may be absent in a stripped build).
+
+`produce/2` turns `[{name, source}]` into bytes; `consume/2` turns bytes back into
+`[{label, source}]`. A flow's identity is always taken from its source's `defmodule`
+downstream (the name here is a label/fallback only).
+
+# `available?`
+
+Whether a format is usable in this build.
+
+# `consume`
+
+Parse a bundle back into `[{label, source}]`. Returns `{:ok, pairs}` or
+`{:error, reason}`.
+
+# `content_type`
+
+The content type for a format.
+
+# `filename`
+
+The download filename for a format.
+
+# `formats`
+
+The supported formats.
+
+# `parse_format`
+
+Parse a format string (`zip`/`tar`/`json`); `:none` if unknown.
+
+# `produce`
+
+Produce the flow bundle as bytes. `flows` is `[{name, source}]`.
+Returns `{:ok, {bytes, filename, content_type}}` or `{:error, reason}`.
+
+---
+
+
+
+---
+
 # `HomeElixir.Config`
 [🔗](https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/config.ex#L1)
 

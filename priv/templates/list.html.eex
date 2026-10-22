@@ -46,7 +46,7 @@
       <button id="warn-ok" class="btn btn-sm btn-primary">Load anyway</button>
     </div>
   </dialog>
-  <input type="file" id="upload-input" accept=".ex,.json" hidden>
+  <input type="file" id="upload-input" accept=".ex,.zip,.tar,.json" hidden>
   <script>
     <%= control_js %>
     const IS_ADMIN = <%= is_admin %>;
@@ -483,7 +483,18 @@
       a.remove();
     }
     const downloadAllBtn = document.getElementById("download-all");
-    if (downloadAllBtn) downloadAllBtn.onclick = () => downloadUrl("api/flows/download-all", "home-elixir-flows.json");
+    const downloadAllMenu = document.getElementById("download-all-menu");
+    if (downloadAllBtn && downloadAllMenu) {
+      downloadAllBtn.onclick = (ev) => { ev.stopPropagation(); closeMenus(downloadAllMenu); downloadAllMenu.classList.toggle("show"); };
+      downloadAllMenu.querySelectorAll("[data-fmt]").forEach((el) => {
+        el.onclick = () => {
+          closeMenus();
+          const fmt = el.dataset.fmt;
+          const ext = fmt === "json" ? ".json" : "." + fmt;
+          downloadUrl("api/flows/download-all?format=" + fmt, "home-elixir-flows" + ext);
+        };
+      });
+    }
 
     function showError(msg) {
       errDlg.querySelector("pre").textContent = msg;
@@ -497,19 +508,31 @@
         const file = uploadInput.files[0];
         uploadInput.value = "";
         if (!file) return;
-        const isJson = /\.json$/i.test(file.name);
+        const n = file.name.toLowerCase();
+        const isEx = n.endsWith(".ex");
+        const isJson = n.endsWith(".json");
+        const isZip = n.endsWith(".zip");
+        const fmt = isJson ? "json" : isZip ? "zip" : "tar"; // else .tar / .tar.gz
         showLoading("Uploading " + file.name + "…");
         try {
-          const r = await fetch(isJson ? "api/flows/import" : "api/flows/save", {
-            method: "POST",
-            headers: { "Content-Type": isJson ? "application/json" : "text/plain" },
-            body: await file.text()
-          });
+          const url = isEx ? "api/flows/save" : "api/flows/import";
+          let headers, body;
+          if (isEx) {
+            headers = { "Content-Type": "text/plain" };
+            body = await file.text();
+          } else if (isJson) {
+            headers = { "Content-Type": "application/json", "x-bundle-format": "json" };
+            body = await file.text();
+          } else {
+            headers = { "Content-Type": "application/octet-stream", "x-bundle-format": fmt };
+            body = await file.arrayBuffer(); // binary: zip or tar
+          }
+          const r = await fetch(url, { method: "POST", headers: headers, body: body });
           if (!r.ok) {
             showError("Upload " + file.name + " failed:\n" + (await r.text().catch(() => r.statusText)));
             return;
           }
-          if (isJson) {
+          if (!isEx) {
             const s = await r.json();
             const parts = [s.created + " created, " + s.updated + " updated"];
             if (s.skipped && s.skipped.length) parts.push(s.skipped.length + " skipped");
