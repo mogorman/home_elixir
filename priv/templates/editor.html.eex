@@ -38,8 +38,24 @@
      #entities-card .card-body { flex: 1 1 auto; overflow: auto; }
      #cron-overlay { position: fixed; inset: 0; z-index: 1070; display: flex;
            align-items: center; justify-content: center; background: rgba(0, 0, 0, .45); }
-     #cron-card { width: min(560px, 94vw); }
-  </style>
+      #cron-card { width: min(560px, 94vw); }
+     .cfg-box { border: 1px solid; border-radius: 10px; padding: 6px 10px 8px; margin-top: 1rem; }
+     .cfg-box.flow { border-color: rgba(74, 144, 255, .65); background: rgba(74, 144, 255, .05); }
+     .cfg-box.global { border-color: rgba(150, 150, 150, .45); background: rgba(150, 150, 150, .04); }
+     .cfg-sec-label { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin: 2px 2px .45rem; }
+     .cfg-box.flow .cfg-sec-label { color: #6aa0ff; }
+     .cfg-box.global .cfg-sec-label { color: var(--bs-secondary-color); }
+     .cfg-row { display: flex; align-items: center; gap: .6rem; padding: 4px 6px; border-radius: 7px; cursor: pointer; }
+     .cfg-row:hover { background: var(--ha-color-fill-neutral-quiet-hover); }
+     .cfg-row.editing { background: var(--ha-color-fill-neutral-quiet-resting); }
+     .cfg-key { flex: 0 0 168px; font-family: ui-monospace, monospace; font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+     .cfg-val { flex: 1; font-size: .86rem; color: var(--bs-secondary-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+     .cfg-row.editing .cfg-val { color: var(--bs-body-color); }
+     .cfg-val .shadow { margin-left: .5rem; font-size: .68rem; opacity: .85; }
+     .cfg-val .in { width: 100%; max-width: 260px; }
+     .cfg-del { opacity: .55; }
+     .cfg-row:hover .cfg-del { opacity: 1; }
+   </style>
   <div class="card">
     <div class="card-body">
       <div id="ro-banner" class="d-none mb-2 small" style="padding:.5rem .75rem;border:1px solid var(--bs-border-color);border-left:3px solid var(--bs-warning);border-radius:4px;background:var(--bs-tertiary-bg)">
@@ -69,8 +85,6 @@
   <div id="cfg-card" class="card mt-3 d-none">
     <div class="card-header fw-semibold">Config</div>
     <div class="card-body">
-      <p class="text-secondary small mb-2">This flow's config. A flow value (blue)
-      overrides the global one (grey); saving writes at the row's scope.</p>
       <div id="flow-cfg" class="small">loading…</div>
     </div>
   </div>
@@ -284,13 +298,116 @@
         return;
       }
       box.innerHTML = "";
-      if (!items.length) {
-        box.innerHTML = '<span class="text-secondary small">no config (load the flow to seed defaults)</span>';
-        return;
+      const add = document.createElement("div");
+      add.className = "d-flex gap-2 mb-1";
+      const nk = document.createElement("input");
+      nk.className = "form-control form-control-sm"; nk.placeholder = "new key"; nk.style.maxWidth = "168px"; nk.spellcheck = false;
+      const nv = document.createElement("input");
+      nv.className = "form-control form-control-sm"; nv.placeholder = "value"; nv.style.flex = "1"; nv.style.maxWidth = "260px";
+      const ab = document.createElement("button");
+      ab.className = "btn btn-sm btn-primary"; ab.textContent = "Add";
+      ab.onclick = async () => {
+        const key = nk.value.trim();
+        if (!key) return;
+        const r = await fetch(`api/flows/${FLOWNAME}/config`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, value: nv.value, scope: "flow" }) });
+        if (r.ok) loadFlowConfig();
+        else { const e = await r.json().catch(() => ({})); alert("add " + key + ": " + (e.error || r.statusText)); }
+      };
+      add.append(nk, nv, ab);
+      box.appendChild(add);
+
+      const flowItems = items.filter((it) => it.flow_value !== null && it.flow_value !== undefined);
+      const globalItems = items.filter((it) => it.global_value !== null && it.global_value !== undefined);
+      if (flowItems.length) box.appendChild(cfgSection("Flow", "flow", flowItems));
+      if (globalItems.length) box.appendChild(cfgSection("Global", "global", globalItems));
+      if (!flowItems.length && !globalItems.length) {
+        const empty = document.createElement("span");
+        empty.className = "text-secondary small";
+        empty.textContent = "no config (load the flow to seed defaults)";
+        box.appendChild(empty);
       }
-      // flow-scoped values first, then global (stable within each group)
-      items.sort((a, b) => (a.source === "global" ? 1 : 0) - (b.source === "global" ? 1 : 0));
-      for (const it of items) box.appendChild(cfgRow(it, FLOWNAME, loadFlowConfig));
+    }
+    function cfgSection(title, cls, items) {
+      const wrap = document.createElement("div");
+      wrap.className = "cfg-box " + cls;
+      const label = document.createElement("div");
+      label.className = "cfg-sec-label";
+      label.textContent = title + "  " + items.length;
+      wrap.appendChild(label);
+      for (const it of items) wrap.appendChild(cfgCell(it, cls));
+      return wrap;
+    }
+    // A label-first config row: key (label) + value (label). Clicking a normal
+    // row turns the value into a text box (Save); clicking a shadowed Flow value
+    // (one also set globally) unshadows it (drops the flow override).
+    function cfgCell(it, scope) {
+      const val = scope === "global" ? it.global_value : it.flow_value;
+      const shadowed = scope === "flow" && it.global_value !== null && it.global_value !== undefined;
+      const post = async (value) => {
+        const r = await fetch("api/flows/" + FLOWNAME + "/config", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: it.key, value, scope }) });
+        if (r.ok) loadFlowConfig();
+        else { const e = await r.json().catch(() => ({})); alert("config " + it.key + ": " + (e.error || r.statusText)); }
+      };
+      const row = document.createElement("div");
+      row.className = "cfg-row";
+      const key = document.createElement("span");
+      key.className = "cfg-key"; key.title = it.key; key.textContent = it.key;
+      const valBox = document.createElement("span");
+      valBox.className = "cfg-val";
+      const del = document.createElement("button");
+      del.className = "btn btn-sm btn-outline-danger cfg-del";
+      del.textContent = "Delete";
+      del.title = shadowed ? "Remove this flow value (falls back to Global)" : "Remove this " + scope + " value";
+      del.onclick = (e) => { e.stopPropagation(); post(null); };
+      valBox.appendChild(del);
+      row.append(key, valBox);
+
+      function showLabel() {
+        valBox.classList.remove("editing");
+        for (const c of Array.from(valBox.children)) if (c !== del) c.remove();
+        const s = document.createElement("span");
+        s.textContent = val === null || val === undefined ? "(unset)" : String(val);
+        if (it.secret) s.textContent = "••••••••";
+        if (shadowed) {
+          const tag = document.createElement("span");
+          tag.className = "shadow";
+          tag.textContent = scope === "flow" ? "overrides Global" : "shadowed by Flow";
+          s.appendChild(tag);
+        }
+        valBox.insertBefore(s, del);
+      }
+      function showEdit() {
+        valBox.classList.add("editing");
+        for (const c of Array.from(valBox.children)) if (c !== del) c.remove();
+        const input = document.createElement("input");
+        input.className = "form-control form-control-sm in";
+        input.type = it.secret ? "password" : "text";
+        input.autocomplete = "off";
+        input.value = val === null || val === undefined ? "" : String(val);
+        if (it.secret) { input.readOnly = true; input.addEventListener("focus", () => (input.readOnly = false)); input.addEventListener("blur", () => (input.readOnly = true)); }
+        const save = document.createElement("button");
+        save.className = "btn btn-sm btn-outline-primary";
+        save.textContent = "Save";
+        save.onclick = (e) => { e.stopPropagation(); post(input.value); };
+        if (it.secret) {
+          const t = document.createElement("button");
+          t.className = "btn btn-sm btn-outline-secondary"; t.textContent = "show";
+          t.onclick = (e) => { e.stopPropagation(); const shown = input.type === "text"; input.type = shown ? "password" : "text"; t.textContent = shown ? "show" : "hide"; };
+          valBox.append(input, t, save, del);
+        } else {
+          valBox.append(input, save, del);
+        }
+      }
+      showLabel();
+      row.onclick = () => {
+        if (valBox.classList.contains("editing")) return;
+        if (shadowed) post(null); else showEdit();
+      };
+      return row;
     }
     const flowlogBox = document.getElementById("flowlogs");
     let flowLastId = 0, flowSyncing = false;

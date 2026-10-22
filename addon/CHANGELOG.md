@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.99
+- **Editor config panel redesigned** to be tighter and clearer. It now shows two sections — **Flow** (blue) and **Global** (grey) — and a section with no keys isn't rendered at all. Values display as plain labels; click a row to turn it into a text box with inline Save/Delete. A **shadowed** Flow value (one that also exists in Global) is tagged "overrides Global", and clicking it **unshadows** it (drops the flow override so it falls back to the global value). Secret values stay masked and gain a show/hide toggle.
+
 ## 0.1.98
 - **Editor:** added spacing between the flow editor and the Config panel below it (they were touching).
 
