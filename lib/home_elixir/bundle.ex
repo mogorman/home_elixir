@@ -88,7 +88,7 @@ defmodule HomeElixir.Bundle do
   end
 
   def produce(flows, :zip) do
-    with :ok <- require_zip() do
+    with :ok <- require_zip_create() do
       base = tmp("he_bundle")
       File.mkdir_p!(base)
       zip = Path.join(base, "out.zip")
@@ -173,6 +173,16 @@ defmodule HomeElixir.Bundle do
   # ---- internals ----
 
   defp require_tar, do: if(available?(:tar), do: :ok, else: {:error, "tar not available"})
+
+  # Producing a zip only needs :zip.create/2, which survives even in OTP builds
+  # (e.g. OTP 29) whose :zip *reading* API is absent — so download is offered even
+  # when import isn't. Import (consume/2) still needs the full read API (available?).
+  defp require_zip_create do
+    if Code.ensure_loaded?(:zip) and function_exported?(:zip, :create, 2),
+      do: :ok,
+      else: {:error, "zip not available in this build"}
+  end
+
   defp require_zip, do: if(available?(:zip), do: :ok, else: {:error, "zip not available in this build"})
 
   # Read the *.ex files under a dir as {flow_name, contents} (the .ex suffix is

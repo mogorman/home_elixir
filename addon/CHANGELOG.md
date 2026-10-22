@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.96
+- **Fix: "Download all → Zip" failed** (501) while tar/json worked. The release image's OTP (29) ships a `:zip` with only `create` and no read API, so the zip-availability check (which also required the read functions) wrongly disabled zip export. Downloading a zip now only requires `:zip.create`, so it works; zip *import* still needs the read API and is unaffected (use tar/json to import zips on such builds).
+
 ## 0.1.95
 - **Fix: downloads failing with 503 behind a reverse proxy.** The download endpoints no longer send a `Content-Disposition: attachment` header (which the Caddy→HA proxy chain drops with a 503); they return a small JSON envelope and the browser builds the file client-side. Applies to single-flow download, Download-all (zip/tar/json), and Backup.
 - Fixed unreadable buttons in **dark mode** (e.g. the Cancel/Delete-dialog buttons rendered near-white on near-white).
