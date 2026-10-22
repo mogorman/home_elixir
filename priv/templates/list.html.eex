@@ -411,7 +411,7 @@
             if (a === "delete") confirmDelete(f.name);
             else if (a === "perms") openPerms(f);
             else if (a === "clone") cloneFlow(f);
-            else if (a === "download") downloadUrl("api/flows/" + f.name + "/download", f.name.split("/").pop() + ".ex");
+            else if (a === "download") downloadJson("api/flows/" + f.name + "/download", f.name.split("/").pop() + ".ex");
             else act(f.name, a);
           };
         });
@@ -475,13 +475,29 @@
     const reloadAllBtn = document.getElementById("reload-all");
     if (reloadAllBtn) reloadAllBtn.onclick = reloadAll;
 
-    function downloadUrl(path, filename) {
-      const a = document.createElement("a");
-      a.href = __BASE__ + path;
-      if (filename) a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+    // Downloads come back as a JSON envelope (no Content-Disposition — the proxy
+    // in front of HA drops attachment responses), so the file is built client-side.
+    function b64ToBytes(b64) {
+      const bin = atob(b64);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+    async function downloadJson(path, filename) {
+      try {
+        const r = await fetch(path);
+        if (!r.ok) { alert("Download failed (" + r.status + ")"); return; }
+        const doc = await r.json();
+        const blob = new Blob([b64ToBytes(doc.data)], { type: doc.content_type || "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = doc.filename || filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (e) { alert("Download failed: " + e); }
     }
     const downloadAllBtn = document.getElementById("download-all");
     const downloadAllMenu = document.getElementById("download-all-menu");
@@ -492,14 +508,14 @@
           closeMenus();
           const fmt = el.dataset.fmt;
           const ext = fmt === "json" ? ".json" : "." + fmt;
-          downloadUrl("api/flows/download-all?format=" + fmt, "home-elixir-flows" + ext);
+          downloadJson("api/flows/download-all?format=" + fmt, "home-elixir-flows" + ext);
         };
       });
     }
 
     // Full-state backup / restore (admin-only; the buttons only render for admin).
     const backupBtn = document.getElementById("backup-all");
-    if (backupBtn) backupBtn.onclick = () => downloadUrl("api/backup", "home-elixir-backup.json");
+    if (backupBtn) backupBtn.onclick = () => downloadJson("api/backup", "home-elixir-backup.json");
     const restoreBtn = document.getElementById("restore-all");
     const restoreInput = document.getElementById("restore-input");
     if (restoreBtn && restoreInput) {

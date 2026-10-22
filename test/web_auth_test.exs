@@ -56,6 +56,12 @@ defmodule HomeElixir.WebAuthTest do
     Enum.find_value(result.headers, fn {k, v} -> if k == name, do: v end)
   end
 
+  # Decode the download JSON envelope {filename, content_type, data(base64)} -> {filename, ctype, bytes}.
+  defp decode_download(result) do
+    doc = Jason.decode!(result.body)
+    {doc["filename"], doc["content_type"], Base.decode64!(doc["data"])}
+  end
+
   defp session_cookie(user, role), do: Auth.create_session(user, role)
 
   test "unauthenticated requests are blocked" do
@@ -173,12 +179,13 @@ defmodule HomeElixir.WebAuthTest do
 
   # ---- download / import flow files ----
 
-  test "download returns the flow source as an attachment" do
+  test "download returns the flow source" do
     src = File.read!(Path.join(Application.get_env(:home_elixir, :flows_dir), "alpha.ex"))
     r = get("/api/flows/alpha/download", session_cookie("admin", "admin"))
     assert r.status == 200
-    assert header(r, "content-disposition") =~ ~s|filename="alpha.ex"|
-    assert r.body == src
+    {filename, _ct, bytes} = decode_download(r)
+    assert filename == "alpha.ex"
+    assert bytes == src
   end
 
   test "download is forbidden for a flow you don't own" do
@@ -187,14 +194,15 @@ defmodule HomeElixir.WebAuthTest do
     assert r.status == 403
   end
 
-  test "download-all returns a JSON map of the visible flows" do
+  test "download-all returns the visible flows as a JSON bundle" do
     tmp = Application.get_env(:home_elixir, :flows_dir)
     r = get("/api/flows/download-all?format=json", session_cookie("admin", "admin"))
     assert r.status == 200
-    assert header(r, "content-disposition") =~ "home-elixir-flows.json"
-    assert header(r, "content-type") =~ "application/json"
+    {filename, ct, bytes} = decode_download(r)
+    assert filename == "home-elixir-flows.json"
+    assert ct =~ "application/json"
 
-    bundle = Jason.decode!(r.body)
+    bundle = Jason.decode!(bytes)
     assert Map.get(bundle, "alpha") == File.read!(Path.join(tmp, "alpha.ex"))
     assert Map.get(bundle, "beta") == File.read!(Path.join(tmp, "beta.ex"))
   end
@@ -203,9 +211,10 @@ defmodule HomeElixir.WebAuthTest do
     if HomeElixir.Bundle.available?(:tar) do
       r = get("/api/flows/download-all?format=tar", session_cookie("admin", "admin"))
       assert r.status == 200
-      assert header(r, "content-type") =~ "application/x-tar"
+      {_fn, ct, bytes} = decode_download(r)
+      assert ct =~ "application/x-tar"
 
-      assert {:ok, pairs} = HomeElixir.Bundle.consume(r.body, :tar)
+      assert {:ok, pairs} = HomeElixir.Bundle.consume(bytes, :tar)
       assert Map.has_key?(Map.new(pairs), "alpha")
     end
   end
@@ -285,7 +294,8 @@ defmodule HomeElixir.WebAuthTest do
 
       got = get("/api/flows/download-all?format=zip", session_cookie("admin", "admin"))
       assert got.status == 200
-      assert {:ok, pairs} = HomeElixir.Bundle.consume(got.body, :zip)
+      {_fn, _ct, bytes} = decode_download(got)
+      assert {:ok, pairs} = HomeElixir.Bundle.consume(bytes, :zip)
       assert Map.get(Map.new(pairs), "wa_zipn") == File.read!(Path.join(tmp, "wa_zipn.ex"))
     end
   end
@@ -293,9 +303,11 @@ defmodule HomeElixir.WebAuthTest do
   test "backup download is admin-only and returns a state doc" do
     r = get("/api/backup", session_cookie("admin", "admin"))
     assert r.status == 200
-    assert header(r, "content-type") =~ "application/json"
+    {filename, ct, bytes} = decode_download(r)
+    assert filename == "home-elixir-backup.json"
+    assert ct =~ "application/json"
 
-    doc = Jason.decode!(r.body)
+    doc = Jason.decode!(bytes)
     assert doc["home_elixir_backup"] == 1
     assert is_map(doc["flows"])
     assert is_list(doc["users"])

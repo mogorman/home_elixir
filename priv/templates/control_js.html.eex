@@ -16,30 +16,14 @@
   // Idle safety net: catch a session that lapses while the page sits open.
   setInterval(() => { window.fetch("api/me"); }, 30000);
 })();
-// Dep-install progress: the current phase as plain text in the header bar (after
-// the brand, in #dep-banner). Fades in on each phase; fades out + clears when the
-// build finishes (or fails). The element lives in the navbar (web.ex); style it here.
-(function () {
-  const style = document.createElement("style");
-  style.textContent =
-    ".dep-banner{margin-left:.5rem;color:#6c757d;font-size:.85rem;white-space:nowrap;" +
-    "opacity:0;transition:opacity .3s ease}";
-  document.head.appendChild(style);
-})();
+// Dep-install progress: reuse the shared nav spinner (near the username) rather
+// than a separate indicator in the bar.
 function depBanner(msg) {
-  const el = document.getElementById("dep-banner");
-  if (!el) return;
   if (msg.phase === "done") {
-    el.style.opacity = "0";
-    setTimeout(() => { el.textContent = ""; }, 300);
+    if (typeof hideLoading === "function") hideLoading();
     return;
   }
-  // A dep install is in progress: the phase text below supersedes the generic
-  // nav spinner, so hide it to avoid two indicators in the bar at once.
-  if (typeof hideLoading === "function") hideLoading();
-  el.textContent = msg.message || "";
-  el.style.opacity = "0";
-  requestAnimationFrame(() => requestAnimationFrame(() => { el.style.opacity = "1"; }));
+  if (typeof showLoading === "function") showLoading(msg.message || "");
 }
 function setSnapshot(el, value) {
   el.innerHTML = "";

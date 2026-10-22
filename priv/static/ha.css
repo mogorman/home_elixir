@@ -413,6 +413,12 @@ dialog{background:var(--surface-card);color:var(--bs-body-color)}
   --bs-tertiary-bg: #232323;
   --bs-bg-body-tertiary: #232323;
   --bs-border-color: rgba(255,255,255,.12);
+  /* the neutral fill scale above is light-theme-only; left as-is, dark mode paints
+     buttons (and the base .btn) near-white with near-white text. Dark surfaces: */
+  --ha-color-fill-neutral-normal-resting:#2e2e2e;
+  --ha-color-fill-neutral-normal-hover:#3a3a3a;
+  --ha-color-fill-neutral-quiet-resting:#232323;
+  --ha-color-fill-neutral-quiet-hover:#2e2e2e;
 }
 
 /* ---- top app bar (full-width breakout over the body padding) ---- */

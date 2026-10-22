@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.95
+- **Fix: downloads failing with 503 behind a reverse proxy.** The download endpoints no longer send a `Content-Disposition: attachment` header (which the Caddy→HA proxy chain drops with a 503); they return a small JSON envelope and the browser builds the file client-side. Applies to single-flow download, Download-all (zip/tar/json), and Backup.
+- Fixed unreadable buttons in **dark mode** (e.g. the Cancel/Delete-dialog buttons rendered near-white on near-white).
+- Removed the top-nav **API** link — the API reference is still reachable from Documentation.
+- Consolidated the progress indicators into a single spinner next to the username (dependency-install progress now uses it instead of a separate banner).
+
 ## 0.1.94
 - Full-state **Backup / Restore** (admin only, in the flows list header). **Backup** downloads a single `home-elixir-backup.json` capturing everything the app persists — flow source files, config (global + per-flow), user accounts (with password hashes), and flow state (ownership/metadata + per-flow live runtime). **Restore** uploads the same file to put it back (non-destructive: overwrites what's present, leaves absent keys alone, so it doubles as a partial import). New endpoints `GET /api/backup` and `POST /api/restore`. Config and per-flow runtime carry arbitrary terms as lossless base64 blobs; the rest is plain JSON.
 

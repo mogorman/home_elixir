@@ -203,7 +203,7 @@ defmodule HomeElixir.Web do
   def dispatch(%{method: "GET", request_path: "/api/backup"} = conn, _opts) do
     if is_admin?(conn) do
       doc = HomeElixir.Backup.snapshot()
-      attachment(conn, "home-elixir-backup.json", Jason.encode!(doc, pretty: true), "application/json")
+      download_json(conn, "home-elixir-backup.json", Jason.encode!(doc, pretty: true), "application/json")
     else
       forbidden(conn)
     end
@@ -238,7 +238,7 @@ defmodule HomeElixir.Web do
 
             "download" ->
               case File.read(flow_path(name)) do
-                {:ok, source} -> attachment(conn, Path.basename(name) <> ".ex", source, "text/x-elixir")
+                {:ok, source} -> download_json(conn, Path.basename(name) <> ".ex", source, "text/x-elixir")
                 _ -> not_found(conn)
               end
 
@@ -626,7 +626,7 @@ defmodule HomeElixir.Web do
       |> HomeElixir.Bundle.parse_format()
 
     case HomeElixir.Bundle.produce(pairs, format) do
-      {:ok, {bytes, filename, ctype}} -> attachment(conn, filename, bytes, ctype)
+      {:ok, {bytes, filename, ctype}} -> download_json(conn, filename, bytes, ctype)
       {:error, reason} -> bundle_error(conn, format, reason)
     end
   end
@@ -1191,12 +1191,11 @@ defmodule HomeElixir.Web do
   defp text(conn, status, data),
     do: conn |> put_resp_content_type("text/plain") |> send_resp(status, data)
 
-  # Send a file download: sets the download filename + content type.
-  defp attachment(conn, filename, data, content_type) do
-    conn
-    |> put_resp_content_type(content_type)
-    |> put_resp_header("content-disposition", ~s|attachment; filename="#{filename}"|)
-    |> send_resp(200, data)
+  # Send a downloadable file as a JSON envelope {filename, content_type,
+  # data(base64)}. No Content-Disposition header: the reverse-proxy in front of
+  # HA drops attachment responses (503), so the browser builds the file client-side.
+  defp download_json(conn, filename, data, content_type) do
+    json(conn, %{filename: filename, content_type: content_type, data: Base.encode64(data)})
   end
 
   # Serves bundled assets under priv/static (currently the highlight.js build).
@@ -1472,14 +1471,12 @@ defmodule HomeElixir.Web do
         <a class="navbar-brand fw-semibold d-flex align-items-center gap-2" href="./"><img src="static/logo.svg" width="24" height="24" alt="">HomeElixir</a>
         <button class="navbar-toggler" id="nav-toggler" type="button" aria-label="Menu" aria-expanded="false"><span class="navbar-toggler-icon"></span></button>
         <div class="collapse navbar-collapse" id="nav-collapse">
-          <span id="dep-banner" class="navbar-text dep-banner"></span>
           <ul class="navbar-nav gap-1 flex-wrap">
             <li class="nav-item"><a class="nav-link#{a.(:flows)}" href="./">Flows</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:controls)}" href="controls">Controls</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:archived)}" href="archived">Archived</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:examples)}" href="examples">Examples</a></li>
             <li class="nav-item"><a class="nav-link#{a.(:docs)}" href="docs">Documentation</a></li>
-            <li class="nav-item"><a class="nav-link#{a.(:reference)}" href="reference">API</a></li>
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:logs)}" href="logs">Logs</a></li>|, else: ""}
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:iex)}" href="terminal">IEx</a></li>|, else: ""}
             #{if admin?, do: ~s|<li class="nav-item"><a class="nav-link#{a.(:config)}" href="config">Config</a></li>|, else: ""}
