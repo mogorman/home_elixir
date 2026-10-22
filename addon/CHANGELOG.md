@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.98
+- **Editor:** added spacing between the flow editor and the Config panel below it (they were touching).
+
 ## 0.1.97
 - **Laundry example** now attributes the "it's done" message to who **started** the cycle, not who happens to be on the camera when it finishes. On start (the `*_run_state` sensor flipping to the running value, config `running_state`, default `Running`) it captures the last basement-cam face and stores it as the starter (per machine); on finish it notifies that person, falling back to the current face if it never saw a start.
 
