@@ -56,6 +56,15 @@
      .cfg-acts { flex: 0 0 196px; margin-left: .85rem; display: flex; align-items: center; justify-content: flex-end; gap: .4rem; }
      .cfg-del { opacity: .55; }
      .cfg-row:hover .cfg-del { opacity: 1; }
+     @media (max-width: 576px) {
+       .cfg-row { flex-wrap: wrap; row-gap: 6px; padding: 6px 4px; }
+       .cfg-key { flex: 0 0 100%; margin-right: 0; margin-bottom: 2px; }
+       .cfg-val { flex: 1 1 100%; min-width: 0; }
+       .cfg-acts { flex: 0 0 100%; margin-left: 0; justify-content: flex-start; }
+       .cfg-add { flex-wrap: wrap; }
+       .cfg-add input { flex: 1 1 45%; max-width: none !important; }
+       .cfg-add button { flex: 1 1 100%; }
+     }
    </style>
   <div class="card">
     <div class="card-body">
@@ -300,7 +309,7 @@
       }
       box.innerHTML = "";
       const add = document.createElement("div");
-      add.className = "d-flex gap-2 mb-1";
+      add.className = "cfg-add d-flex gap-2 mb-1";
       const nk = document.createElement("input");
       nk.className = "form-control form-control-sm"; nk.placeholder = "new key"; nk.style.maxWidth = "168px"; nk.spellcheck = false;
       const nv = document.createElement("input");

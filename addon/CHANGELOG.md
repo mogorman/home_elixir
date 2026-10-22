@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.101
+- **Editor config panel now works on phones.** On narrow screens each row stacks — the key, the value (a full-width text box when editing), and the action buttons each get their own line — and the Add row wraps, so nothing overflows horizontally. The desktop single-line layout is unchanged.
+
 ## 0.1.100
 - **Editor config panel:** the row action buttons (Delete, and Save/show when editing) now sit in their own fixed, right-aligned column with a little breathing room from the value, so they stay put and don't float or wrap when a row switches into edit mode. Space is reserved up front for the full Save/show/Delete set, so the page never reflows.
 
