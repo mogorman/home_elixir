@@ -1,16 +1,21 @@
 defmodule HomeElixir.Flows.Examples.Laundry do
   @moduledoc """
-  Washer & dryer "it's done" notifier.
+  Washer & dryer "it's done" notifier, attributed to who **started** the cycle.
 
-  When either LG ThinQ machine finishes a cycle — its `*_run_completed` binary
-  sensor flips `off`/`unavailable` → `on` — the flow:
+  When either LG ThinQ machine **starts** a cycle — its `*_run_state` sensor
+  flips to the running value (default `Running`) — the flow reads the last
+  recognized face from the basement Frigate camera
+  (`sensor.basementcam_last_recognized_face`) and **stores it as the starter**
+  (that's the person who put the laundry in). It keeps that person until the
+  next start overwrites it.
 
-    1. reads the last recognized face from the basement Frigate camera
-       (`sensor.basementcam_last_recognized_face`), using it when it isn't
-       `None` (falls back to "you" otherwise);
-    2. raises an Android/iOS **Live Activity** on the companion (`person.mog`),
+  When the machine **finishes** — its `*_run_completed` binary sensor flips
+  `off`/`unavailable` → `on` — the flow notifies the stored starter (falling
+  back to the face it sees at that moment if it never saw a start):
+
+    1. raises an Android/iOS **Live Activity** on the companion (`person.mog`),
        e.g. "matthias finished the washing"; and
-    3. sends a **Signal** message with the same line.
+    2. sends a **Signal** message with the same line.
 
   The badge on the /controls page shows the last result.
 
@@ -22,10 +27,11 @@ defmodule HomeElixir.Flows.Examples.Laundry do
     * `person`         — the person whose companion gets the Live Activity (default `mog`)
     * `signal_service` — the Signal `notify` service to message (default `signal_mog`)
     * `face_sensor`    — the Frigate "last recognized face" sensor (default `sensor.basementcam_last_recognized_face`)
+    * `running_state`  — the run-state value that means a cycle just started (default `Running`)
 
-  The two trigger sensors are fixed here (the LG ThinQ `run_completed`
-  binary sensors); change `@wash_sensor` / `@dry_sensor` if your machine exposes
-  different ones.
+  The trigger sensors are fixed here (the LG ThinQ `run_state` / `run_completed`
+  sensors); change `@wash_sensor` / `@dry_sensor` / `@wash_run_state` /
+  `@dry_run_state` if your machine exposes different ones.
   """
   use HomeElixir.Flow
 
@@ -37,30 +43,50 @@ defmodule HomeElixir.Flows.Examples.Laundry do
   alias HomeElixir.HA
   alias HomeElixir.HA.LiveUpdate
 
-  # Trigger: the LG ThinQ "run completed" binary sensors.
+  # Triggers: the LG ThinQ "run completed" binary sensors (finish) and the
+  # "run state" sensors (start — when they flip to the running value).
   @wash_sensor "binary_sensor.washer_run_completed"
   @dry_sensor "binary_sensor.dryer_run_completed"
+  @wash_run_state "sensor.washer_run_state"
+  @dry_run_state "sensor.dryer_run_state"
 
   # Defaults (overridable in the flow config).
   @person "mog"
   @signal_service "signal_mog"
   @face_sensor "sensor.basementcam_last_recognized_face"
+  @running_state "Running"
 
   def setup do
     HomeElixir.Config.seed(%{
       person: @person,
       signal_service: @signal_service,
-      face_sensor: @face_sensor
+      face_sensor: @face_sensor,
+      running_state: @running_state
     })
   end
 
-  # ---- handler: fires on a finish (the run-completed sensor's new state "on";
-  # HA only emits state_changed on a real change, so this is the rising edge) ----
+  # ---- handler: the flow sees every state_changed event and pattern-matches.
 
+  # Start: the run-state sensor flips to the running value. Whoever is on the
+  # basement camera right now started it — store them and use them for the
+  # matching finish (until the next start overwrites them).
+  def handle(%{payload: payload, topic: topic}) when topic in [@wash_run_state, @dry_run_state] do
+    if payload == HomeElixir.Config.get(:running_state, @running_state) do
+      key = if topic == @wash_run_state, do: :washer_starter, else: :dryer_starter
+      starter = face()
+      FlowState.put(key, starter)
+      Logger.info("laundry: #{topic} started — attributing to #{starter}")
+    end
+
+    nil
+  end
+
+  # Finish: the run-completed sensor's rising edge ("on"). Notify the person we
+  # stored at start; fall back to the current face if we never saw a start.
   def handle(%{payload: "on", topic: topic}) do
     case topic do
-      @wash_sensor -> finish("washing", "mdi:washing-machine", "he_laundry_wash")
-      @dry_sensor -> finish("drying", "mdi:hair-dryer", "he_laundry_dry")
+      @wash_sensor -> finish("washing", "mdi:washing-machine", "he_laundry_wash", :washer_starter)
+      @dry_sensor -> finish("drying", "mdi:hair-dryer", "he_laundry_dry", :dryer_starter)
       _ -> nil
     end
   end
@@ -79,9 +105,11 @@ defmodule HomeElixir.Flows.Examples.Laundry do
 
   # ---- internals ----
 
-  defp finish(activity, icon, tag) do
+  defp finish(activity, icon, tag, starter_key) do
     person = HomeElixir.Config.get(:person, @person)
-    message = "#{face()} finished the #{activity}"
+    starter = FlowState.get(starter_key, nil)
+    who = if is_binary(starter) and starter != "", do: starter, else: face()
+    message = "#{who} finished the #{activity}"
 
     FlowState.put(:last, message)
 

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.97
+- **Laundry example** now attributes the "it's done" message to who **started** the cycle, not who happens to be on the camera when it finishes. On start (the `*_run_state` sensor flipping to the running value, config `running_state`, default `Running`) it captures the last basement-cam face and stores it as the starter (per machine); on finish it notifies that person, falling back to the current face if it never saw a start.
+
 ## 0.1.96
 - **Fix: "Download all → Zip" failed** (501) while tar/json worked. The release image's OTP (29) ships a `:zip` with only `create` and no read API, so the zip-availability check (which also required the read functions) wrongly disabled zip export. Downloading a zip now only requires `:zip.create`, so it works; zip *import* still needs the read API and is unaffected (use tar/json to import zips on such builds).
 

@@ -3,7 +3,7 @@ defmodule HomeElixir.LaundryFlowTest do
 
   use ExUnit.Case, async: false
 
-  alias HomeElixir.{Registry, HA}
+  alias HomeElixir.{Registry, HA, FlowState}
   alias HomeElixir.HA.FakeTransport
 
   @flow HomeElixir.Flows.Examples.Laundry
@@ -89,6 +89,32 @@ defmodule HomeElixir.LaundryFlowTest do
     refute Enum.any?(FakeTransport.sent(t), &(&1 =~ "signal_mog"))
   end
 
+  test "finish attributes the person seen at start, not at finish" do
+    t = start_ha!()
+
+    on_exit(fn ->
+      FlowState.as(@flow, fn ->
+        FlowState.delete(:washer_starter)
+        FlowState.delete(:dryer_starter)
+      end)
+
+      Registry.unload(@flow)
+      stop_ha()
+    end)
+
+    {:ok, _} = Registry.load(@flow)
+    sub = wait_sub_id(t)
+
+    # Start the wash while matthias is on the camera → stored as the starter.
+    emit(t, sub, "sensor.washer_run_state", "Idle", "Running")
+    settle(t, face_states("matthias"))
+
+    # Finish later, when someone else is on the camera. The stored starter wins.
+    emit(t, sub, "binary_sensor.washer_run_completed", "off", "on")
+    frame = pump(t, face_states("jodie"), &(&1 =~ "\"service\":\"signal_mog\""))
+    assert frame["service_data"]["message"] == "matthias finished the washing"
+  end
+
   # ---- helpers ----
 
   defp face_states(face) do
@@ -154,6 +180,27 @@ defmodule HomeElixir.LaundryFlowTest do
     data = %{entity_id: entity, old_state: %{"state" => old}, new_state: %{"state" => new}}
     event = %{"event_type" => "state_changed", "data" => data}
     FakeTransport.send_text(t, Jason.encode!(%{"id" => sub, "type" => "event", "event" => event}))
+  end
+
+  # Respond to the start handler's face lookup so it stores the starter.
+  defp settle(t, states, remaining \\ 60) do
+    handled =
+      Enum.any?(FakeTransport.sent(t), fn f ->
+        case Jason.decode(f) do
+          {:ok, %{"type" => "get_states", "id" => id}} ->
+            FakeTransport.send_text(
+              t,
+              Jason.encode!(%{id: id, type: "result", success: true, result: states})
+            )
+
+            true
+
+          _ ->
+            false
+        end
+      end)
+
+    if handled, do: :ok, else: (Process.sleep(5); if remaining > 0, do: settle(t, states, remaining - 1))
   end
 
   defp sent_until(t, pred, remaining \\ 2_000) do
