@@ -59,6 +59,10 @@ Drop a session token (logout / user deletion).
 
 # `delete_user`
 
+# `dump_users`
+
+All users with credentials, `[%{name, role, salt, hash}]` (for backup).
+
 # `ensure_ha_user`
 
 Auto-authenticate a user from HA ingress (X-Remote-User-Name). Creates them if new.
@@ -84,11 +88,42 @@ Validate an HA token: resolves its identity via HA's WebSocket
 
 Resolve a session token to `{user_id, role}` or `{:error, :unauthorized}`.
 
+# `restore_user`
+
 # `set_role`
 
 # `start_link`
 
 # `user_from_conn`
+
+---
+
+
+
+---
+
+# `HomeElixir.Backup`
+[🔗](https://github.com/mogorman/home_elixir/blob/main/lib/home_elixir/backup.ex#L1)
+
+Whole-application backup and restore.
+
+A backup is one JSON document capturing everything the app persists: flow
+source files, config (global + per-flow), user accounts (with password
+hashes), and flow state (metadata + per-flow runtime). Config and per-flow
+runtime hold arbitrary Erlang terms, so they're carried as base64
+`:erlang.term_to_binary` blobs for a lossless round-trip; the rest is JSON.
+
+Restore is non-destructive: it sets whatever the document contains and leaves
+absent keys alone (so it doubles as a partial import).
+
+# `restore`
+
+Apply a backup document (the map from `snapshot/0`, or `Jason.decode/1` of one).
+Returns a per-section summary. Raises `ArgumentError` if the magic key is absent.
+
+# `snapshot`
+
+Capture the full app state as a JSON-encodable map.
 
 ---
 
@@ -176,6 +211,10 @@ in the UI and can be overridden without editing code:
 flow reloads and restarts. Backed by Mnesia (started by `HomeElixir.Application`
 before any flow loads).
 
+# `all_scopes`
+
+Every stored scope as `[{scope, %{key => value}}]` (for backup).
+
 # `delete`
 
 Remove a value for a scope — subsequent reads fall back to the next layer.
@@ -219,6 +258,10 @@ Declare editable keys + defaults for the current flow. `scope:` defaults to
 Only-if-absent across the whole resolution chain, so it never shadows a value
 already set at any layer (flow/global/app/system) — a user's edit or app
 config always wins over a re-seed.
+
+# `set_scope`
+
+Replace a scope's whole config map (for restore).
 
 # `start`
 
@@ -454,6 +497,10 @@ From outside a node (tests, scripts), target a flow explicitly with `as/2`:
 
 # `delete`
 
+# `dump_meta`
+
+# `dump_runtime`
+
 # `ever_loaded_names`
 
 # `flow_owner`
@@ -483,6 +530,10 @@ From outside a node (tests, scripts), target a flow explicitly with `as/2`:
 # `record_load`
 
 # `record_triggered`
+
+# `restore_meta`
+
+# `restore_runtime`
 
 # `save_loaded_names`
 

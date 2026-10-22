@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.94
+- Full-state **Backup / Restore** (admin only, in the flows list header). **Backup** downloads a single `home-elixir-backup.json` capturing everything the app persists — flow source files, config (global + per-flow), user accounts (with password hashes), and flow state (ownership/metadata + per-flow live runtime). **Restore** uploads the same file to put it back (non-destructive: overwrites what's present, leaves absent keys alone, so it doubles as a partial import). New endpoints `GET /api/backup` and `POST /api/restore`. Config and per-flow runtime carry arbitrary terms as lossless base64 blobs; the rest is plain JSON.
+
 ## 0.1.93
 - Flow import/export now supports **zip**, **tar**, and **json** bundles. "Download all" is a format picker (Zip / Tar / JSON); Upload accepts a single `.ex`, a `home-elixir-flows.json`, or a `.zip`/`.tar` (also `.tar.gz`) of flows. `GET /api/flows/download-all?format=zip|tar|json` and `POST /api/flows/import` (with an `x-bundle-format` header) back it. Zip uses OTP's `:zip` (in the release image); tar uses the system `tar`; json is pure Elixir. Per-flow ownership rules still apply on import.
 

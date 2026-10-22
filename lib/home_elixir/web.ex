@@ -199,6 +199,16 @@ defmodule HomeElixir.Web do
     download_all_endpoint(conn)
   end
 
+  # Download a full-state backup (admin only): flow sources + config + users + flow state.
+  def dispatch(%{method: "GET", request_path: "/api/backup"} = conn, _opts) do
+    if is_admin?(conn) do
+      doc = HomeElixir.Backup.snapshot()
+      attachment(conn, "home-elixir-backup.json", Jason.encode!(doc, pretty: true), "application/json")
+    else
+      forbidden(conn)
+    end
+  end
+
   def dispatch(%{method: "GET", request_path: "/api/flows/" <> rest} = conn, _opts) do
     # Flow names may be path-style ("LivingRoom/counter"), so only the last
     # segment is the sub-route.
@@ -312,6 +322,10 @@ defmodule HomeElixir.Web do
        # Import a .zip of flows (raw body); lands each .ex by its defmodule name.
        ["", "api", "flows", "import"] ->
          import_endpoint(conn)
+
+       # Restore a full-state backup (admin only): JSON body from /api/backup.
+       ["", "api", "restore"] ->
+         restore_endpoint(conn)
 
        # Flow names may be path-style ("LivingRoom/counter"), so the name is
        # everything between "flows" and the trailing action segment.
@@ -642,6 +656,27 @@ defmodule HomeElixir.Web do
   defp bundle_error(conn, format, reason) do
     status = if HomeElixir.Bundle.available?(format), do: 400, else: 501
     conn |> put_resp_content_type("application/json") |> send_resp(status, Jason.encode!(%{error: reason}))
+  end
+
+  # Restore a full-state backup (admin only). Body is the JSON from /api/backup.
+  defp restore_endpoint(conn) do
+    unless is_admin?(conn) do
+      forbidden(conn)
+    else
+      case Jason.decode(body(conn)) do
+        {:ok, doc} ->
+          if is_map(doc) and doc["home_elixir_backup"] do
+            summary = HomeElixir.Backup.restore(doc)
+            HomeElixir.UI.Hub.push(:flow_changed, %{})
+            json(conn, summary)
+          else
+            bad_request(conn, "not a HomeElixir backup")
+          end
+
+        _ ->
+          bad_request(conn, "invalid JSON backup")
+      end
+    end
   end
 
   # Write each imported source, applying the same per-flow rules as save (new =
@@ -1241,12 +1276,20 @@ defmodule HomeElixir.Web do
       true -> "Flows"
     end
 
+    backup_buttons =
+      if is_admin do
+        ~s|<button id="backup-all" class="btn btn-sm btn-outline-secondary">Backup</button><button id="restore-all" class="btn btn-sm btn-outline-secondary">Restore</button>|
+      else
+        ""
+      end
+
     header_buttons =
       cond do
         examples? or mode == :archived -> ""
 
       true ->
-        ~s|<a href="edit" class="btn btn-sm btn-primary">New flow</a><button id="upload-flow" class="btn btn-sm btn-outline-secondary">Upload</button><span class="dropdown"><button id="download-all" class="btn btn-sm btn-outline-secondary">Download all <i class="mdi mdi-chevron-down"></i></button><div class="dropdown-menu dropdown-menu-end" id="download-all-menu"><button class="dropdown-item" data-fmt="zip">Zip</button><button class="dropdown-item" data-fmt="tar">Tar</button><button class="dropdown-item" data-fmt="json">JSON</button></div></span><button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>|
+        ~s|<a href="edit" class="btn btn-sm btn-primary">New flow</a><button id="upload-flow" class="btn btn-sm btn-outline-secondary">Upload</button><span class="dropdown"><button id="download-all" class="btn btn-sm btn-outline-secondary">Download all <i class="mdi mdi-chevron-down"></i></button><div class="dropdown-menu dropdown-menu-end" id="download-all-menu"><button class="dropdown-item" data-fmt="zip">Zip</button><button class="dropdown-item" data-fmt="tar">Tar</button><button class="dropdown-item" data-fmt="json">JSON</button></div></span><button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>| <>
+          backup_buttons
       end
 
     Template.render("list.html.eex",

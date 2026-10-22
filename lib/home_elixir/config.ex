@@ -172,6 +172,19 @@ defmodule HomeElixir.Config do
   @doc "All global config (%{key => value})."
   def global_config, do: read(@global)
 
+  # ---- backup / restore ----
+
+  @doc "Every stored scope as `[{scope, %{key => value}}]` (for backup)."
+  def all_scopes do
+    tx(fn ->
+      :mnesia.match_object({@table, :_, :_})
+      |> Enum.map(fn {@table, scope, data} -> {scope, data} end)
+    end)
+  end
+
+  @doc "Replace a scope's whole config map (for restore)."
+  def set_scope(scope, data), do: write(scope, data)
+
   # ---- helpers ----
 
   # Does a key look sensitive? The UI masks these and reveals on click.

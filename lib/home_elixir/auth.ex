@@ -151,6 +151,21 @@ defmodule HomeElixir.Auth do
   @doc "All users as [%{name, role}]."
   def list_users, do: GenServer.call(__MODULE__, :list_users)
 
+  # ---- backup / restore (raw Mnesia, callable from any process) ----
+
+  @doc "All users with credentials, `[%{name, role, salt, hash}]` (for backup)."
+  def dump_users do
+    tx(fn ->
+      :mnesia.match_object({@table, :_, :_, :_, :_})
+      |> Enum.map(fn {@table, id, salt, hash, role} -> %{name: id, role: role, salt: salt, hash: hash} end)
+    end)
+  end
+
+  # Restore a user record verbatim (salt + hash preserved, bypassing re-hashing).
+  def restore_user(name, salt, hash, role) do
+    tx(fn -> :mnesia.write(rec(name, salt, hash, role)) end)
+  end
+
   # ---- login (callable from any process) ----
 
   @doc "Auto-authenticate a user from HA ingress (X-Remote-User-Name). Creates them if new."

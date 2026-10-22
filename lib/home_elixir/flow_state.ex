@@ -402,6 +402,31 @@ defmodule HomeElixir.FlowState do
       :ok
     end)
   end
+
+  # ---- backup / restore ----
+
+  # The full app-metadata map (owners, loaded, ever_loaded, archived, last_triggered).
+  def dump_meta, do: tx(fn -> read_data(@meta_flow) end)
+
+  def restore_meta(data), do: tx(fn -> :mnesia.write({@table, @meta_flow, data}) end)
+
+  # Per-flow runtime state as %{module_name_string => data} (excluding the meta
+  # record). Module names are stringified for transport, re-atomized on restore.
+  def dump_runtime do
+    tx(fn ->
+      :mnesia.match_object({@table, :_, :_})
+      |> Enum.reject(fn {@table, key, _} -> key == @meta_flow end)
+      |> Enum.into(%{}, fn {@table, key, data} -> {Atom.to_string(key), data} end)
+    end)
+  end
+
+  def restore_runtime(states) do
+    tx(fn ->
+      Enum.each(states, fn {name, data} -> :mnesia.write({@table, String.to_atom(name), data}) end)
+      :ok
+    end)
+  end
+
   defp tx(fun), do: HomeElixir.Mnesia.tx("FlowState", fun)
 
   # Read the flow's key->value map, or %{} if the flow has no state yet.

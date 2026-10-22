@@ -47,6 +47,7 @@
     </div>
   </dialog>
   <input type="file" id="upload-input" accept=".ex,.zip,.tar,.json" hidden>
+  <input type="file" id="restore-input" accept=".json" hidden>
   <script>
     <%= control_js %>
     const IS_ADMIN = <%= is_admin %>;
@@ -494,6 +495,37 @@
           downloadUrl("api/flows/download-all?format=" + fmt, "home-elixir-flows" + ext);
         };
       });
+    }
+
+    // Full-state backup / restore (admin-only; the buttons only render for admin).
+    const backupBtn = document.getElementById("backup-all");
+    if (backupBtn) backupBtn.onclick = () => downloadUrl("api/backup", "home-elixir-backup.json");
+    const restoreBtn = document.getElementById("restore-all");
+    const restoreInput = document.getElementById("restore-input");
+    if (restoreBtn && restoreInput) {
+      restoreBtn.onclick = () => restoreInput.click();
+      restoreInput.onchange = async () => {
+        const file = restoreInput.files[0];
+        restoreInput.value = "";
+        if (!file) return;
+        if (!confirm("Restore this backup? It overwrites matching flows, config, users and flow state.")) return;
+        showLoading("Restoring " + file.name + "…");
+        try {
+          const r = await fetch("api/restore", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: await file.text()
+          });
+          const s = await r.json().catch(() => ({}));
+          if (!r.ok) { showError("Restore failed:\n" + (s.error || r.statusText)); return; }
+          alert("Restored: " + (s.flows || 0) + " flows, " + (s.config || 0) + " config scopes, " + (s.users || 0) + " users, " + (s.flow_state || 0) + " flow states.");
+        } catch (e) {
+          showError("Restore failed: " + e);
+        } finally {
+          hideLoading();
+          refresh();
+        }
+      };
     }
 
     function showError(msg) {

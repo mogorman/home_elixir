@@ -290,6 +290,30 @@ defmodule HomeElixir.WebAuthTest do
     end
   end
 
+  test "backup download is admin-only and returns a state doc" do
+    r = get("/api/backup", session_cookie("admin", "admin"))
+    assert r.status == 200
+    assert header(r, "content-type") =~ "application/json"
+
+    doc = Jason.decode!(r.body)
+    assert doc["home_elixir_backup"] == 1
+    assert is_map(doc["flows"])
+    assert is_list(doc["users"])
+
+    assert get("/api/backup", session_cookie("alice", "user")).status == 403
+  end
+
+  test "restore is admin-only and applies a backup doc" do
+    doc = Jason.encode!(HomeElixir.Backup.snapshot())
+
+    r = post("/api/restore", doc, session_cookie("admin", "admin"))
+    assert r.status == 200
+    assert Jason.decode!(r.body)["ok"] == true
+
+    assert post("/api/restore", doc, session_cookie("alice", "user")).status == 403
+    assert post("/api/restore", "not json", session_cookie("admin", "admin")).status == 400
+  end
+
   # ---- ingress / proxy base path (/api/ingress/<uuid>/) ----
 
   test "unauthenticated ingress panel root redirects to the prefixed login" do
