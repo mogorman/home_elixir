@@ -45,14 +45,15 @@
      .cfg-sec-label { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin: 2px 2px .45rem; }
      .cfg-box.flow .cfg-sec-label { color: #6aa0ff; }
      .cfg-box.global .cfg-sec-label { color: var(--bs-secondary-color); }
-     .cfg-row { display: flex; align-items: center; gap: .6rem; padding: 4px 6px; border-radius: 7px; cursor: pointer; }
+     .cfg-row { display: flex; align-items: center; padding: 4px 6px; min-height: 42px; border-radius: 7px; cursor: pointer; }
      .cfg-row:hover { background: var(--ha-color-fill-neutral-quiet-hover); }
      .cfg-row.editing { background: var(--ha-color-fill-neutral-quiet-resting); }
-     .cfg-key { flex: 0 0 168px; font-family: ui-monospace, monospace; font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+     .cfg-key { flex: 0 0 168px; margin-right: .75rem; font-family: ui-monospace, monospace; font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
      .cfg-val { flex: 1; font-size: .86rem; color: var(--bs-secondary-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
      .cfg-row.editing .cfg-val { color: var(--bs-body-color); }
      .cfg-val .shadow { margin-left: .5rem; font-size: .68rem; opacity: .85; }
-     .cfg-val .in { width: 100%; max-width: 260px; }
+     .cfg-val .in { width: 100%; }
+     .cfg-acts { flex: 0 0 196px; margin-left: .85rem; display: flex; align-items: center; justify-content: flex-end; gap: .4rem; }
      .cfg-del { opacity: .55; }
      .cfg-row:hover .cfg-del { opacity: 1; }
    </style>
@@ -358,17 +359,20 @@
       key.className = "cfg-key"; key.title = it.key; key.textContent = it.key;
       const valBox = document.createElement("span");
       valBox.className = "cfg-val";
+      const acts = document.createElement("span");
+      acts.className = "cfg-acts";
       const del = document.createElement("button");
       del.className = "btn btn-sm btn-outline-danger cfg-del";
       del.textContent = "Delete";
       del.title = shadowed ? "Remove this flow value (falls back to Global)" : "Remove this " + scope + " value";
       del.onclick = (e) => { e.stopPropagation(); post(null); };
-      valBox.appendChild(del);
-      row.append(key, valBox);
+      acts.appendChild(del);
+      row.append(key, valBox, acts);
 
+      function onlyDel() { for (const c of Array.from(acts.children)) if (c !== del) c.remove(); }
       function showLabel() {
         valBox.classList.remove("editing");
-        for (const c of Array.from(valBox.children)) if (c !== del) c.remove();
+        valBox.innerHTML = "";
         const s = document.createElement("span");
         s.textContent = val === null || val === undefined ? "(unset)" : String(val);
         if (it.secret) s.textContent = "••••••••";
@@ -378,28 +382,30 @@
           tag.textContent = scope === "flow" ? "overrides Global" : "shadowed by Flow";
           s.appendChild(tag);
         }
-        valBox.insertBefore(s, del);
+        valBox.appendChild(s);
+        onlyDel();
       }
       function showEdit() {
         valBox.classList.add("editing");
-        for (const c of Array.from(valBox.children)) if (c !== del) c.remove();
+        valBox.innerHTML = "";
         const input = document.createElement("input");
         input.className = "form-control form-control-sm in";
         input.type = it.secret ? "password" : "text";
         input.autocomplete = "off";
         input.value = val === null || val === undefined ? "" : String(val);
         if (it.secret) { input.readOnly = true; input.addEventListener("focus", () => (input.readOnly = false)); input.addEventListener("blur", () => (input.readOnly = true)); }
+        valBox.appendChild(input);
+        onlyDel();
         const save = document.createElement("button");
         save.className = "btn btn-sm btn-outline-primary";
         save.textContent = "Save";
         save.onclick = (e) => { e.stopPropagation(); post(input.value); };
+        acts.insertBefore(save, del);
         if (it.secret) {
           const t = document.createElement("button");
           t.className = "btn btn-sm btn-outline-secondary"; t.textContent = "show";
           t.onclick = (e) => { e.stopPropagation(); const shown = input.type === "text"; input.type = shown ? "password" : "text"; t.textContent = shown ? "show" : "hide"; };
-          valBox.append(input, t, save, del);
-        } else {
-          valBox.append(input, save, del);
+          acts.insertBefore(t, save);
         }
       }
       showLabel();

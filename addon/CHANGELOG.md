@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.100
+- **Editor config panel:** the row action buttons (Delete, and Save/show when editing) now sit in their own fixed, right-aligned column with a little breathing room from the value, so they stay put and don't float or wrap when a row switches into edit mode. Space is reserved up front for the full Save/show/Delete set, so the page never reflows.
+
 ## 0.1.99
 - **Editor config panel redesigned** to be tighter and clearer. It now shows two sections — **Flow** (blue) and **Global** (grey) — and a section with no keys isn't rendered at all. Values display as plain labels; click a row to turn it into a text box with inline Save/Delete. A **shadowed** Flow value (one that also exists in Global) is tagged "overrides Global", and clicking it **unshadows** it (drops the flow override so it falls back to the global value). Secret values stay masked and gain a show/hide toggle.
 
