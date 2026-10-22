@@ -195,6 +195,10 @@ defmodule HomeElixir.Web do
     if websocket?(conn), do: upgrade_to_ui_ws(conn), else: text(conn, 400, "web socket only")
   end
 
+  def dispatch(%{method: "GET", request_path: "/api/flows/download-all"} = conn, _opts) do
+    download_all_endpoint(conn)
+  end
+
   def dispatch(%{method: "GET", request_path: "/api/flows/" <> rest} = conn, _opts) do
     # Flow names may be path-style ("LivingRoom/counter"), so only the last
     # segment is the sub-route.
@@ -220,6 +224,12 @@ defmodule HomeElixir.Web do
               case HomeElixir.FlowStore.loaded_source(name) do
                 {:ok, src} -> json(conn, %{source: src})
                 :error -> not_found(conn)
+              end
+
+            "download" ->
+              case File.read(flow_path(name)) do
+                {:ok, source} -> attachment(conn, Path.basename(name) <> ".ex", source, "text/x-elixir")
+                _ -> not_found(conn)
               end
 
             _ ->
@@ -298,6 +308,10 @@ defmodule HomeElixir.Web do
 
       ["", "api", "config"] ->
         global_config_set_endpoint(conn)
+
+       # Import a .zip of flows (raw body); lands each .ex by its defmodule name.
+       ["", "api", "flows", "import"] ->
+         import_endpoint(conn)
 
        # Flow names may be path-style ("LivingRoom/counter"), so the name is
        # everything between "flows" and the trailing action segment.
@@ -576,6 +590,74 @@ defmodule HomeElixir.Web do
       {:error, msg} -> text(conn, 400, msg)
     end
   end
+
+  # ---- download / import (flow files) ----
+
+  # Bundle the caller's visible flows as a JSON map (name => source) and send it.
+  defp download_all_endpoint(conn) do
+    flows =
+      case HomeElixir.FlowStore.list() do
+        :timeout -> []
+        list -> visible_flows(conn, list)
+      end
+
+    data =
+      for f <- flows, {:ok, src} <- [File.read(f.path)], into: %{} do
+        {f.name, src}
+      end
+
+    attachment(conn, "home-elixir-flows.json", Jason.encode!(data, pretty: true), "application/json")
+  end
+
+  # Import a JSON bundle of flows (name => source). Each source lands by its
+  # defmodule name under the same per-flow rules as save; written, not loaded.
+  defp import_endpoint(conn) do
+    case Jason.decode(body(conn)) do
+      {:ok, %{} = bundle} ->
+        json(conn, Map.put(do_import(Map.to_list(bundle), cur(conn)), "ok", true))
+
+      _ ->
+        bad_request(conn, "expected a JSON object of {flowName: source}")
+    end
+  end
+
+  # Write each imported source, applying the same per-flow rules as save (new =
+  # anyone, existing = owner/admin). Returns a summary of created/updated/skipped.
+  defp do_import(pairs, user) do
+    Enum.reduce(pairs, %{created: 0, updated: 0, skipped: []}, fn {label, src}, acc ->
+      case name_from_source(src) do
+        nil ->
+          Map.update(acc, :skipped, [], & &1 ++ [%{name: label, reason: "no defmodule"}])
+
+        name ->
+          exists = File.exists?(flow_path(name))
+
+          case import_perm(user, name) do
+            :ok ->
+              save_flow(name, src)
+              unless exists, do: HomeElixir.FlowState.assign_owner_if_new(name, elem(user, 0))
+              HomeElixir.UI.Hub.push(:flow_changed, %{})
+              Map.update(acc, if(exists, do: :updated, else: :created), 0, &(&1 + 1))
+
+            {:error, reason} ->
+              Map.update(acc, :skipped, [], & &1 ++ [%{name: name, reason: reason}])
+          end
+      end
+    end)
+  end
+
+  # Can this user create/overwrite a flow by this name? Same rules as save_guard.
+  defp import_perm({_id, "admin"}, _name), do: :ok
+
+  defp import_perm({id, _}, name) do
+    cond do
+      not File.exists?(flow_path(name)) -> :ok
+      HomeElixir.FlowState.flow_owner(name) == id -> :ok
+      true -> {:error, "not your flow"}
+    end
+  end
+
+  defp import_perm(_, _), do: :ok
 
   # ---- config endpoints ----
 
@@ -1051,6 +1133,14 @@ defmodule HomeElixir.Web do
   defp text(conn, status, data),
     do: conn |> put_resp_content_type("text/plain") |> send_resp(status, data)
 
+  # Send a file download: sets the download filename + content type.
+  defp attachment(conn, filename, data, content_type) do
+    conn
+    |> put_resp_content_type(content_type)
+    |> put_resp_header("content-disposition", ~s|attachment; filename="#{filename}"|)
+    |> send_resp(200, data)
+  end
+
   # Serves bundled assets under priv/static (currently the highlight.js build).
   defp static_file(conn, name) do
     root = Application.app_dir(:home_elixir, "priv/static") |> Path.expand()
@@ -1131,7 +1221,9 @@ defmodule HomeElixir.Web do
     header_buttons =
       cond do
         examples? or mode == :archived -> ""
-        true -> ~s|<a href="edit" class="btn btn-sm btn-primary">New flow</a><button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>|
+
+        true ->
+          ~s|<a href="edit" class="btn btn-sm btn-primary">New flow</a><button id="upload-flow" class="btn btn-sm btn-outline-secondary">Upload</button><button id="download-all" class="btn btn-sm btn-outline-secondary">Download all</button><button id="reload-all" class="btn btn-sm btn-outline-secondary">Reload all</button>|
       end
 
     Template.render("list.html.eex",

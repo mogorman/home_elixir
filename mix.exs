@@ -51,7 +51,7 @@ defmodule HomeElixir.MixProject do
        # :ssl/:public_key/:crypto are started so Mint can open TLS (wss://)
        # connections — e.g. a remote Home Assistant. Mint uses :ssl but does not
        # declare it (it also works plain), so the release must list it here.
-       extra_applications: [:logger, :ssl, :public_key, :crypto],
+        extra_applications: [:logger, :ssl, :public_key, :crypto],
       mod: {HomeElixir.Application, []}
     ]
   end

@@ -169,6 +169,77 @@ defmodule HomeElixir.WebAuthTest do
     refute File.exists?(Path.join(tmp, "beta.ex"))
   end
 
+  # ---- download / import flow files ----
+
+  test "download returns the flow source as an attachment" do
+    src = File.read!(Path.join(Application.get_env(:home_elixir, :flows_dir), "alpha.ex"))
+    r = get("/api/flows/alpha/download", session_cookie("admin", "admin"))
+    assert r.status == 200
+    assert header(r, "content-disposition") =~ ~s|filename="alpha.ex"|
+    assert r.body == src
+  end
+
+  test "download is forbidden for a flow you don't own" do
+    FlowState.set_flow_owner("alpha", "bob")
+    r = get("/api/flows/alpha/download", session_cookie("alice", "user"))
+    assert r.status == 403
+  end
+
+  test "download-all returns a JSON map of the visible flows" do
+    tmp = Application.get_env(:home_elixir, :flows_dir)
+    r = get("/api/flows/download-all", session_cookie("admin", "admin"))
+    assert r.status == 200
+    assert header(r, "content-disposition") =~ "home-elixir-flows.json"
+    assert header(r, "content-type") =~ "application/json"
+
+    bundle = Jason.decode!(r.body)
+    assert Map.get(bundle, "alpha") == File.read!(Path.join(tmp, "alpha.ex"))
+    assert Map.get(bundle, "beta") == File.read!(Path.join(tmp, "beta.ex"))
+  end
+
+  test "import a JSON bundle creates new flows" do
+    tmp = Application.get_env(:home_elixir, :flows_dir)
+    on_exit(fn -> FlowState.forget_flow("wa_new") end)
+
+    bundle = Jason.encode!(%{"wa_new" => "defmodule HomeElixir.Flows.WANew do\n  use HomeElixir.Flow\nend\n"})
+    r = post("/api/flows/import", bundle, session_cookie("admin", "admin"))
+    assert r.status == 200
+
+    body = Jason.decode!(r.body)
+    assert body["created"] == 1
+    assert body["updated"] == 0
+    assert body["ok"] == true
+    assert File.exists?(Path.join(tmp, "wa_new.ex"))
+  end
+
+  test "import updates an owned flow, skips a foreign flow and a no-module entry" do
+    tmp = Application.get_env(:home_elixir, :flows_dir)
+    FlowState.set_flow_owner("alpha", "bob")
+    on_exit(fn -> FlowState.forget_flow("wa_new2") end)
+
+    bundle =
+      Jason.encode!(%{
+        "alpha" => "defmodule HomeElixir.Flows.Alpha do\nend\n",
+        "wa_new2" => "defmodule HomeElixir.Flows.WANew2 do\nend\n",
+        "junk" => "just some text, no module"
+      })
+
+    r = post("/api/flows/import", bundle, session_cookie("alice", "user"))
+    assert r.status == 200
+
+    body = Jason.decode!(r.body)
+    assert body["created"] == 1
+    assert body["updated"] == 0
+    assert length(body["skipped"]) == 2
+    assert "alpha" in Enum.map(body["skipped"], & &1["name"])
+    assert File.exists?(Path.join(tmp, "wa_new2.ex"))
+  end
+
+  test "import rejects a body that is not a JSON object" do
+    r = post("/api/flows/import", "not json", session_cookie("admin", "admin"))
+    assert r.status == 400
+  end
+
   # ---- ingress / proxy base path (/api/ingress/<uuid>/) ----
 
   test "unauthenticated ingress panel root redirects to the prefixed login" do

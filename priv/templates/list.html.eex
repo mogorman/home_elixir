@@ -46,6 +46,7 @@
       <button id="warn-ok" class="btn btn-sm btn-primary">Load anyway</button>
     </div>
   </dialog>
+  <input type="file" id="upload-input" accept=".ex,.json" hidden>
   <script>
     <%= control_js %>
     const IS_ADMIN = <%= is_admin %>;
@@ -390,6 +391,7 @@
           '<button class="dropdown-item" data-a="reload">Reload</button>' +
           (IS_ADMIN ? '<button class="dropdown-item" data-a="perms">Permissions</button>' : "") +
           '<button class="dropdown-item" data-a="clone">Clone</button>' +
+          '<button class="dropdown-item" data-a="download">Download</button>' +
           '<button class="dropdown-item" data-a="archive">Archive</button>' +
           '<hr class="dropdown-divider">' +
           '<button class="dropdown-item text-danger" data-a="delete">Delete</button>';
@@ -408,6 +410,7 @@
             if (a === "delete") confirmDelete(f.name);
             else if (a === "perms") openPerms(f);
             else if (a === "clone") cloneFlow(f);
+            else if (a === "download") downloadUrl("api/flows/" + f.name + "/download", f.name.split("/").pop() + ".ex");
             else act(f.name, a);
           };
         });
@@ -470,6 +473,56 @@
     }
     const reloadAllBtn = document.getElementById("reload-all");
     if (reloadAllBtn) reloadAllBtn.onclick = reloadAll;
+
+    function downloadUrl(path, filename) {
+      const a = document.createElement("a");
+      a.href = __BASE__ + path;
+      if (filename) a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    const downloadAllBtn = document.getElementById("download-all");
+    if (downloadAllBtn) downloadAllBtn.onclick = () => downloadUrl("api/flows/download-all", "home-elixir-flows.json");
+
+    function showError(msg) {
+      errDlg.querySelector("pre").textContent = msg;
+      errDlg.showModal();
+    }
+    const uploadBtn = document.getElementById("upload-flow");
+    const uploadInput = document.getElementById("upload-input");
+    if (uploadBtn && uploadInput) {
+      uploadBtn.onclick = () => uploadInput.click();
+      uploadInput.onchange = async () => {
+        const file = uploadInput.files[0];
+        uploadInput.value = "";
+        if (!file) return;
+        const isJson = /\.json$/i.test(file.name);
+        showLoading("Uploading " + file.name + "…");
+        try {
+          const r = await fetch(isJson ? "api/flows/import" : "api/flows/save", {
+            method: "POST",
+            headers: { "Content-Type": isJson ? "application/json" : "text/plain" },
+            body: await file.text()
+          });
+          if (!r.ok) {
+            showError("Upload " + file.name + " failed:\n" + (await r.text().catch(() => r.statusText)));
+            return;
+          }
+          if (isJson) {
+            const s = await r.json();
+            const parts = [s.created + " created, " + s.updated + " updated"];
+            if (s.skipped && s.skipped.length) parts.push(s.skipped.length + " skipped");
+            alert("Import: " + parts.join(", "));
+          }
+        } catch (e) {
+          showError("Upload " + file.name + " failed: " + e);
+        } finally {
+          hideLoading();
+          refresh();
+        }
+      };
+    }
     for (const th of document.querySelectorAll("th.sortable")) th.onclick = () => sortBy(th.dataset.sort);
     if (IS_ADMIN) loadUsers().then(refresh);
     else refresh();

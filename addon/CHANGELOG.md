@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.92
+- Flow import/export in the web UI: **Download** a single flow (per-flow menu), **Download all** of your visible flows as a JSON bundle (`home-elixir-flows.json`), and **Upload** — either a single `.ex` file (saved like the editor) or the JSON bundle to import several at once. New endpoints `GET /api/flows/<name>/download`, `GET /api/flows/download-all`, and `POST /api/flows/import` (per-flow ownership rules apply; imported flows are written, not auto-loaded).
+
 ## 0.1.91
 - Moved the **Laundry** flow (0.1.90) from `flows/` to `examples/laundry.ex` — it's a ready-to-copy example, not a bundled default.
 
