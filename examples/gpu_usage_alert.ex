@@ -91,7 +91,7 @@ defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
   # just the three GPUs).
   def handle(%{payload: payload, topic: topic}) when topic in @sensors do
     now = now_ms()
-    since = set_since(parse_value(payload), read_since(key(topic)), now, threshold())
+    since = set_since(parse_value(payload), FlowState.get(key(topic), nil), now, threshold())
     FlowState.put(key(topic), since)
     evaluate(now)
   end
@@ -174,7 +174,7 @@ defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
   # ---- orchestration ----
 
   defp evaluate(now) do
-    sinces = @sensors |> Enum.map(&read_since(key(&1)))
+    sinces = @sensors |> Enum.map(&FlowState.get(key(&1), nil))
     hot = Enum.reject(sinces, &is_nil/1)
 
     cond do
@@ -193,7 +193,7 @@ defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
   defp fire(hot, new_last) do
     FlowState.put(:gpu_last_alert, new_last)
     count = FlowState.update(:gpu_alert_count, &(&1 + 1), 0)
-    episode = read_int(:gpu_episode_since) || Enum.min(hot)
+    episode = FlowState.get(:gpu_episode_since, nil) || Enum.min(hot)
     FlowState.put(:gpu_episode_since, episode)
     send_live_update(count, episode)
     notify()
@@ -243,11 +243,11 @@ defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
 
   # ---- display ----
 
-  defp display do
+  def display do
     hot =
       @sensors
       |> Enum.with_index()
-      |> Enum.map(fn {sensor, idx} -> {idx, read_since(key(sensor))} end)
+      |> Enum.map(fn {sensor, idx} -> {idx, FlowState.get(key(sensor), nil)} end)
       |> Enum.reject(fn {_idx, since} -> is_nil(since) end)
 
     case hot do
@@ -255,7 +255,7 @@ defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
         "cool"
 
       _ ->
-        earliest = Enum.min_by(hot, fn {_idx, since} -> since end)
+        {_, earliest} = Enum.min_by(hot, fn {_, since} -> since end)
         elapsed = humanize(now_ms() - earliest)
         cards = hot |> Enum.map(fn {idx, _} -> "gpu#{idx}" end) |> Enum.join(",")
         "hot #{elapsed} (#{cards})"
@@ -286,22 +286,6 @@ defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
   defp key(entity) do
     idx = @sensors |> Enum.find_index(&(&1 == entity)) || 0
     String.to_atom("gpu#{idx}_since")
-  end
-
-  # Read a persisted hot-since. FlowState is disk-backed and outlives the code,
-  # so a stale value from a prior version of this example (e.g. a tuple rather
-  # than an epoch-ms integer) must not reach the arithmetic in display/0 or
-  # gate/5 — a non-integer is treated as "not hot" (nil) and healed on the next
-  # reading. This is what fixes the `:badarith` on a flow that predates the
-  # integer-since format.
-  defp read_since(key), do: read_int(key)
-
-  # Read a persisted integer (epoch-ms), or nil if absent or a stale non-integer.
-  def read_int(key) do
-    case FlowState.get(key, nil) do
-      v when is_integer(v) -> v
-      _ -> nil
-    end
   end
 
   defp now_ms, do: :os.system_time(:millisecond)

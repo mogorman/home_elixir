@@ -714,7 +714,7 @@ defmodule HomeElixir.FlowStore do
       {:ok, {:ok, mod, ^sum}} ->
         {mod, cache}
 
-      {:ok, {:err, sum}} ->
+      {:ok, {:err, ^sum}} ->
         {nil, cache}
 
       _ ->

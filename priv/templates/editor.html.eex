@@ -132,7 +132,7 @@
       </div>
     </div>
   </div>
-  <div id="panels" class="row g-3 d-none">
+  <div id="panels" class="row g-3 mt-3 d-none">
     <div class="col-12 col-lg-6">
       <div class="card h-100">
         <div class="card-header fw-semibold">Controls</div>

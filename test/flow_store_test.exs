@@ -134,6 +134,23 @@ defmodule HomeElixir.FlowStoreTest do
     assert Enum.any?(list, &(&1.name == "store_test"))
   end
 
+  test "a broken flow can be fixed and reloaded (error cache follows the checksum)" do
+    tmp = Application.get_env(:home_elixir, :flows_dir)
+    path = Path.join(tmp, "store_test.ex")
+
+    assert :ok = FlowStore.load("store_test")
+
+    # Break it: the reload fails and the error is cached against this checksum.
+    File.write!(path, "defmodule HomeElixir.Flows.StoreTest do\n  use HomeElixir.Flow\n  this is not elixir (\nend\n")
+    assert {:error, :compile_error} = FlowStore.reload("store_test")
+
+    # Fix it (new checksum): reload must succeed again — a stale error cached
+    # against the old checksum must not pin the module to nil.
+    File.write!(path, @flow_src)
+    assert :ok = FlowStore.reload("store_test")
+    assert Registry.loaded?(@mod)
+  end
+
   test "load and unload push a flow_changed update to web clients" do
     HomeElixir.UI.Hub.subscribe(self())
 
