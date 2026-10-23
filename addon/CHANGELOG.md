@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.104
+- **Fix: deleting a flow no longer left its persisted state behind.** `FlowState` runtime (the per-flow `FlowState.put` values) is keyed by the flow's *module*, and delete only cleared the app-metadata record — so re-copying or re-creating a flow of the same module inherited its old state (the reason the GPU usage alert crash survived a delete + re-copy). Delete and rename now also clear the flow's runtime record, so a re-created flow starts fresh.
+
 ## 0.1.103
 - **Fix: GPU usage alert crashed on load with `:badarith` (surfacing as `String.Chars not implemented for Tuple`) on installs that had run an older version.** The per-card "hot since" state is disk-backed and outlives the code, so a stale non-integer left by a prior version made the elapsed-time arithmetic blow up. The flow now sanitizes every persisted-since read (a non-integer is treated as "cooled"), so a flow that predates the integer-since format loads cleanly and self-heals on the next reading.
 

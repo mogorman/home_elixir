@@ -366,6 +366,19 @@ defmodule HomeElixir.FlowState do
     end)
   end
 
+  # Delete a flow's per-key runtime state — the `{table, module, data}` record.
+  # `forget_flow/1` only scrubs the app-metadata record above; this removes the
+  # actual persisted values (e.g. a flow's `FlowState.put` keys) so a re-created
+  # flow of the same module starts fresh instead of inheriting stale state. The
+  # runtime record is keyed by the flow *module*, not its file name, so this is
+  # the piece `forget_flow/1` can't reach. No-op if the flow stored nothing.
+  def forget_flow_runtime(flow_key) do
+    tx(fn ->
+      :mnesia.delete({@table, flow_key})
+      :ok
+    end)
+  end
+
   # ---- last triggered (app metadata: module => unix ms) ----
 
   # The last time a flow was triggered (processed an inbound message or event),

@@ -507,6 +507,8 @@ From outside a node (tests, scripts), target a flow explicitly with `as/2`:
 
 # `forget_flow`
 
+# `forget_flow_runtime`
+
 # `forget_triggered`
 
 # `get`

@@ -252,6 +252,7 @@ defmodule HomeElixir.FlowStore do
         File.rm(path)
         HomeElixir.FlowState.forget_flow(name)
         if mod, do: HomeElixir.FlowState.forget_triggered(mod)
+        if mod, do: HomeElixir.FlowState.forget_flow_runtime(mod)
         flow_changed()
         {:reply, :ok, cache}
 
@@ -294,6 +295,7 @@ defmodule HomeElixir.FlowStore do
 
         HomeElixir.FlowState.forget_flow(old_name)
         if mod, do: HomeElixir.FlowState.forget_triggered(mod)
+        if mod, do: HomeElixir.FlowState.forget_flow_runtime(mod)
         File.rm(old_path)
         cache = Map.delete(cache, old_name)
         flow_changed()

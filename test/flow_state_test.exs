@@ -103,6 +103,21 @@ defmodule HomeElixir.FlowStateTest do
     end
   end
 
+  test "forget_flow_runtime clears a flow's persisted values (the stale-state bug)" do
+    mod = :zz_runtime_forget_flow
+
+    try do
+      FlowState.as(mod, fn -> FlowState.put(:gpu0_since, {1, 1_792_783_128_528}) end)
+      FlowState.as(mod, fn -> assert FlowState.get(:gpu0_since) == {1, 1_792_783_128_528} end)
+
+      FlowState.forget_flow_runtime(mod)
+
+      FlowState.as(mod, fn -> assert FlowState.get(:gpu0_since, :gone) == :gone end)
+    after
+      FlowState.forget_flow_runtime(mod)
+    end
+  end
+
   test "last_triggered records, lists, and forgets by module" do
     key = :"Elixir.HomeElixir.Flows.ZZTriggerTest"
 
