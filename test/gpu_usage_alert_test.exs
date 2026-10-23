@@ -6,59 +6,75 @@ defmodule HomeElixir.GpuUsageAlertTest do
   alias HomeElixir.Flows.Examples.GpuUsageAlert, as: Gpu
 
   @min 60_000
+  @sustain 10 * @min
+  @cooldown 5 * @min
 
   setup_all do
     Code.require_file(Path.expand("../examples/gpu_usage_alert.ex", __DIR__))
     :ok
   end
 
-  test "crossing above arms the flag but does not alert yet" do
-    {since, last_alert, alert?} = Gpu.decide(20.0, nil, nil, 0)
-    assert since == 0
-    assert last_alert == nil
-    assert alert? == false
+  # ---- parse_value ----
+
+  test "parse_value parses numeric strings and numbers" do
+    assert Gpu.parse_value("100") == 100.0
+    assert Gpu.parse_value("12.5") == 12.5
+    assert Gpu.parse_value(42) == 42
+    assert Gpu.parse_value(15.0) == 15.0
   end
 
-  test "fires once sustained for 10 minutes" do
-    {_, last_alert, alert?} = Gpu.decide(20.0, 0, nil, 10 * @min)
-    assert alert? == true
-    assert last_alert == 10 * @min
+  test "parse_value returns nil for non-numeric / unavailable" do
+    assert Gpu.parse_value("unavailable") == nil
+    assert Gpu.parse_value("unknown") == nil
+    assert Gpu.parse_value("") == nil
+    assert Gpu.parse_value(nil) == nil
   end
 
-  test "does not re-alert within the 5 minute gate" do
-    {_, last_alert, alert?} = Gpu.decide(20.0, 0, 10 * @min, 12 * @min)
-    assert alert? == false
-    assert last_alert == 10 * @min
+  # ---- set_since ----
+
+  test "crossing above threshold arms the since" do
+    assert Gpu.set_since(20.0, nil, 0, 15) == 0
   end
 
-  test "re-alerts after the 5 minute gate while still hot" do
-    {_, last_alert, alert?} = Gpu.decide(20.0, 0, 10 * @min, 15 * @min)
-    assert alert? == true
-    assert last_alert == 15 * @min
+  test "exactly at threshold counts as hot" do
+    assert Gpu.set_since(15.0, nil, 0, 15) == 0
   end
 
-  test "a second sustained GPU is rate-limited by the global gate" do
-    {_, last_alert, alert?} = Gpu.decide(20.0, 0, 10 * @min, 11 * @min)
-    assert alert? == false
-    assert last_alert == 10 * @min
+  test "dropping below threshold cools to nil" do
+    assert Gpu.set_since(5.0, 0, 100, 15) == nil
   end
 
-  test "cooling below threshold disarms; the global gate is preserved" do
-    {since, last_alert, alert?} = Gpu.decide(5.0, 0, 15 * @min, 20 * @min)
-    assert since == nil
-    assert alert? == false
-    assert last_alert == 15 * @min
+  test "staying hot keeps the original since" do
+    assert Gpu.set_since(30.0, 0, 100, 15) == 0
   end
 
-  test "unavailable / non-numeric is ignored (state unchanged)" do
-    {since, last_alert, alert?} = Gpu.decide(nil, 0, nil, 5 * @min)
-    assert since == 0
-    assert last_alert == nil
-    assert alert? == false
+  test "unavailable reading leaves since unchanged" do
+    assert Gpu.set_since(nil, 0, 100, 15) == 0
   end
 
-  test "exactly at threshold (15) counts as hot" do
-    {since, _, _} = Gpu.decide(15.0, nil, nil, 0)
-    assert since == 0
+  # ---- gate ----
+
+  test "no alert before the earliest card is sustained" do
+    assert Gpu.gate([0], nil, 9 * @min, @sustain, @cooldown) == {false, nil}
+  end
+
+  test "alerts once the earliest card is sustained" do
+    assert Gpu.gate([0], nil, 10 * @min, @sustain, @cooldown) == {true, 10 * @min}
+  end
+
+  test "does not re-alert within the cooldown gate" do
+    assert Gpu.gate([0], 10 * @min, 12 * @min, @sustain, @cooldown) == {false, 10 * @min}
+  end
+
+  test "re-alerts after the cooldown gate while still hot" do
+    assert Gpu.gate([0], 10 * @min, 15 * @min, @sustain, @cooldown) == {true, 15 * @min}
+  end
+
+  test "the earliest card drives the sustained check across multiple cards" do
+    # card0 went hot at t=0, card1 at t=8min. At t=9min card0 is not yet
+    # sustained (9 < 10) -> no alert, even though card1 is also hot.
+    assert Gpu.gate([0, 8 * @min], nil, 9 * @min, @sustain, @cooldown) == {false, nil}
+    # at t=10min card0 is sustained -> alert (the chronometer keys to t=0).
+    assert Gpu.gate([0, 8 * @min], nil, 10 * @min, @sustain, @cooldown) == {true, 10 * @min}
   end
 end

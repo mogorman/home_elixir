@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.102
+- **GPU usage alert example rewritten on the handle pattern** so it actually runs — the old version defined a flow-level `run/2`/`subscribe/1` protocol the engine never dispatched, so it could never fire. It now watches **all three** RTX 3090 cards at once via the auto-wired `state_changed` source, and a 1-minute tick re-evaluates so a card *pinned* at a constant high value (which emits no change events) still alerts once it has been hot long enough. The Live Activity chronometer now shows how long **any** card has been running hot (keyed to the earliest hot card), the progress bar fills 1% per alert, and the Signal message still fires on each alert. Threshold/sustain/cooldown/person/service are now editable in the flow config.
+
 ## 0.1.101
 - **Editor config panel now works on phones.** On narrow screens each row stacks — the key, the value (a full-width text box when editing), and the action buttons each get their own line — and the Add row wraps, so nothing overflows horizontally. The desktop single-line layout is unchanged.
 

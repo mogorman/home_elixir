@@ -1,26 +1,33 @@
 defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
   @moduledoc """
   Example flow: alert on sustained GPU utilisation, with an Android/iOS Live
-  Activity (companion) progress bar + elapsed timer.
+  Activity (companion) progress bar + elapsed timer and a Signal message.
 
-  Watches three NVIDIA RTX 3090 utilisation sensors:
+  Uses the **handle pattern**: an HA `state_changed` source feeds every entity
+  change into `handle/1`, which pattern-matches the three NVIDIA RTX 3090
+  utilisation sensors (so it watches **all three cards at once**):
 
     * `sensor.deepthought_geforce_rtx_3090_0`
     * `sensor.deepthought_geforce_rtx_3090_1`
     * `sensor.deepthought_geforce_rtx_3090_2`
 
-  For each card the flow tracks when its value first reached `@threshold` and
-  raises the alert only if it has been at/above the threshold for at least
-  `@sustain` (default 10 minutes) — a short blip never alerts. While the GPU is
-  hot the alert fires at most once per `@cooldown` (default 5 minutes).
+  For each card the flow tracks the moment its value first reached the
+  threshold (`@threshold`, default 15) and raises the alert only once the
+  **earliest** hot card has been at/above the threshold for at least
+  `@sustain` minutes (default 10) — a short blip never alerts. While any card
+  is hot the alert fires at most once per `@cooldown` minutes (default 5). A
+  1-minute `Schedule` tick re-evaluates on a fixed cadence, so a card that is
+  *pinned* at a constant high value (and therefore emits no further change
+  events) still alerts once it has been hot long enough.
 
   Each alert:
 
-    1. fires `@notify_service` (a `notify` service, e.g. `signal_mog`), and
-    2. updates a **Live Activity** (Android/iOS Home Assistant companion app) via
-       the core `HomeElixir.HA.LiveUpdate`, keyed by a fixed tag. The activity
-       shows a progress bar that fills **1% per alert** and a count-up timer of
-       how long the GPUs have been hot.
+    1. sends a **Signal** message via `@notify_service` (a `notify` service), and
+    2. updates a **Live Activity** on `@person`'s companion device via
+       `HomeElixir.HA.LiveUpdate`, keyed by a fixed tag. The activity shows a
+       progress bar that fills **1% per alert** and a chronometer counting up
+       from when the earliest card first went hot — i.e. how long *any* card has
+       been running hot.
 
   When every card has dropped below the threshold the Live Activity is dismissed
   and the counter resets.
@@ -29,26 +36,29 @@ defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
   *live-notification icon* support (the icon does not render); a workaround
   exists — https://github.com/home-assistant/android/issues/5758#issuecomment-3297763341.
 
-  Per-sensor state is tracked in disk-backed flow state (survives restarts) as a
-  `:gpuN_since` key (the epoch-ms `DateTime` the card first went hot, `nil` when
-  cooled); the flow-level alert counter, episode start, and cooldown gate live
-  under the `:gpu_alert_count`, `:gpu_hot_since`, and `:last_alert` keys.
-
   ## Configuration
 
-  * **GPU sensor** (entity): which card's utilisation this alert watches.
-  * **Utilisation %** (threshold, default `15`): alert when a card stays at or
-    above this utilisation.
-  * **Sustained for** (minutes, default `10`): the card must stay at/above the
-    threshold this long before alerting.
-  * **Cooldown** (minutes, default `5`): minimum time between repeated alerts.
+  Editable in the flow's config (panel → config); the sensible defaults are the
+  constants below.
+
+    * `threshold`      — utilisation % at/above which a card counts as hot (default `15`)
+    * `sustain`        — minutes a card must stay hot before alerting (default `10`)
+    * `cooldown`       — minutes between repeated alerts (default `5`)
+    * `person`         — whose companion gets the Live Activity (default `mog`)
+    * `signal_service` — the Signal `notify` service to message (default `signal_mog`)
+
+  The badge on the /controls page shows which cards are hot and for how long.
   """
   use HomeElixir.Flow
 
+  @behaviour HomeElixir.Node
+
   require Logger
 
-  alias HomeElixir.{FlowState, HA}
+  alias HomeElixir.FlowState
+  alias HomeElixir.HA
   alias HomeElixir.HA.LiveUpdate
+  alias HomeElixir.Config
 
   @sensors [
     "sensor.deepthought_geforce_rtx_3090_0",
@@ -56,149 +66,221 @@ defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
     "sensor.deepthought_geforce_rtx_3090_2"
   ]
   @threshold 15
-  @sustain 10 * 60 * 1000
-  @cooldown 5 * 60 * 1000
-  @notify_service "signal_mog"
+  @sustain_min 10
+  @cooldown_min 5
   @person "mog"
+  @signal_service "signal_mog"
   @tag "gpu_hot"
 
-  def input_schema do
-    [
-      %{key: "entity", type: "select", items: @sensors,
-        label: "GPU sensor", required: true, help: "Which card's utilisation this alert watches."}
-    ]
+  # ---- config (seeded defaults; editable in the UI) ----
+
+  def setup do
+    Config.seed(%{
+      threshold: @threshold,
+      sustain: @sustain_min,
+      cooldown: @cooldown_min,
+      person: @person,
+      signal_service: @signal_service
+    })
   end
 
-  def config_schema do
-    [
-      %{key: "threshold", type: "number", default: @threshold, label: "Utilisation %",
-        help: "Alert when a card stays at or above this utilisation."},
-      %{key: "sustain", type: "number", default: 10, unit: "min", min: 0, label: "Sustained for",
-        help: "Minutes the card must stay at/above the threshold before alerting."},
-      %{key: "cooldown", type: "number", default: 5, unit: "min", min: 0, label: "Cooldown",
-        help: "Minutes between repeated alerts."}
-    ]
+  # ---- handler: the flow sees every HA state change and pattern-matches. ----
+
+  # A watched card changed value: update its hot-since, then re-evaluate the
+  # global alert state (the handler source is unfiltered, so the guard picks out
+  # just the three GPUs).
+  def handle(%{payload: payload, topic: topic}) when topic in @sensors do
+    now = now_ms()
+    since = set_since(parse_value(payload), FlowState.get(key(topic), nil), now, threshold())
+    FlowState.put(key(topic), since)
+    evaluate(now)
   end
 
-  def init(config) do
-    %{
-      entity: Map.get(config, :entity),
-      threshold: cfg(config, :threshold, @threshold),
-      sustain: cfg_min(config, :sustain, 10) * 60 * 1000,
-      cooldown: cfg_min(config, :cooldown, 5) * 60 * 1000
-    }
-  end
+  # Periodic tick: re-evaluate on a fixed cadence, so a pinned (constant-value)
+  # card — which emits no change events — still alerts once sustained, and the
+  # badge's elapsed-time display stays fresh.
+  def handle(%{payload: "tick"}), do: evaluate(now_ms())
 
-  def subscribe(flow) do
-    case flow.entity do
-      entity when is_binary(entity) -> [entity]
-      _ -> []
+  # (the catch-all `handle(_), do: nil` is added by the Flow macro)
+
+  # ---- display mirror (state badge; this module doubles as its own node) ----
+
+  @impl true
+  def init(_), do: %{state: display()}
+
+  @impl true
+  def handle(_msg, _data), do: {[nil], %{state: display()}}
+
+  # The 1-minute tick that drives the sustained-hot clock and the badge.
+  node("tick", HomeElixir.Nodes.Schedule, cron: "* * * * *", payload: "tick")
+
+  # The "GPU hot" badge.
+  node("badge", __MODULE__, ui: %{type: "state", label: "GPU hot"})
+
+  # ---- pure logic (unit-tested in test/gpu_usage_alert_test.exs) ----
+
+  # Coerce an HA state to a number, or nil for "unavailable"/"unknown"/garbage.
+  def parse_value(value) do
+    case value do
+      n when is_number(n) ->
+        n
+
+      s when is_binary(s) ->
+        case Float.parse(s) do
+          {f, ""} -> f
+          _ -> nil
+        end
+
+      _ ->
+        nil
     end
   end
 
-  def on_init do
-    :ok = FlowState.put(:last_alert, nil)
-    :ok = FlowState.put(:gpu_alert_count, 0)
-    :ok = FlowState.put(:gpu_hot_since, nil)
-  end
-
-  def run(flow, event) do
-    client = HA.client()
-    now = :os.system_time(:millisecond)
-
-    with {:ok, value} <- parse_value(event),
-         _ <- HA.Client.call(client, "update_entity", %{
-                entity_id: flow.entity_id,
-                attributes: %{"value" => value}
-              }) do
-      since = FlowState.get(key(flow.entity))
-
-      {new_since, last_alert, should_alert?} =
-        decide(value, since, FlowState.get(:last_alert), now, flow.sustain, flow.cooldown)
-
-      FlowState.put(key(flow.entity), new_since)
-
-      if new_since == nil do
-        if all_cooled?() do
-          if FlowState.get(:gpu_alert_count, 0) > 0 do
-            LiveUpdate.dismiss(@person, @tag)
-            FlowState.put(:gpu_alert_count, 0)
-            FlowState.put(:gpu_hot_since, nil)
-          end
-        end
-      else
-        if should_alert? do
-          FlowState.put(:last_alert, last_alert)
-          count = FlowState.get(:gpu_alert_count, 0) + 1
-          FlowState.put(:gpu_alert_count, count)
-          hot_since =
-            case FlowState.get(:gpu_hot_since) do
-              nil -> new_since
-              prev -> min(prev, new_since)
-            end
-
-          FlowState.put(:gpu_hot_since, hot_since)
-          send_live_update(count, hot_since)
-          notify(client, flow.name)
-        end
-      end
-    end
-  rescue
-    e ->
-      Logger.error("GPU usage alert flow error: #{Exception.message(e)}\n" <>
-                     Exception.format_stacktrace(__STACKTRACE__))
-  end
-
-  # Decide (new_since, last_alert, alert?) for a reading. Pure — unit-tested in
-  # `test/gpu_usage_alert_test.exs`; the flow's `run/2` only handles the IO
-  # (state, signal, Live Activity). Timestamps are epoch milliseconds.
-  def decide(value, since, last_alert, now, sustain \\ @sustain, cooldown \\ @cooldown) do
+  # A card's hot-since after one reading. `value` is a number or nil (already
+  # parsed); `since` is the previous hot-since (epoch ms) or nil. Crossing up
+  # arms it to `now`; dropping below the threshold cools it (nil); an
+  # unavailable reading leaves it unchanged.
+  def set_since(value, since, now, threshold) do
     cond do
-      value == nil ->
-        {since, last_alert, false}
+      is_nil(value) -> since
+      value < threshold -> nil
+      is_nil(since) -> now
+      true -> since
+    end
+  end
 
-      value < @threshold ->
-        {nil, last_alert, false}
+  # The global gate over the set of currently-hot since-times. Returns
+  # `{alert?, new_last_alert}`: alert once the earliest hot card has been hot for
+  # at least `sustain`, then re-alert at most every `cooldown` while any stays
+  # hot.
+  def gate(hot_sinces, last_alert, now, sustain, cooldown) do
+    earliest = Enum.min(hot_sinces)
 
-      since == nil ->
-        {now, last_alert, false}
+    cond do
+      now - earliest < sustain ->
+        {false, last_alert}
 
-      last_alert == nil ->
-        alert? = now - since >= sustain
-        new_last = if alert?, do: now, else: last_alert
-        {since, new_last, alert?}
+      is_nil(last_alert) ->
+        {true, now}
+
+      now - last_alert >= cooldown ->
+        {true, now}
 
       true ->
-        alert? = now - last_alert >= cooldown
-        new_last = if alert?, do: now, else: last_alert
-        {since, new_last, alert?}
+        {false, last_alert}
     end
   end
 
-  # Update the Live Activity: 1% progress per alert, count-up timer from the
-  # episode start.
-  defp send_live_update(count, hot_since_ms) do
-    payload = %{
+  # ---- orchestration ----
+
+  defp evaluate(now) do
+    sinces = @sensors |> Enum.map(&FlowState.get(key(&1), nil))
+    hot = Enum.reject(sinces, &is_nil/1)
+
+    cond do
+      hot == [] ->
+        dismiss_if_needed()
+        :ok
+
+      true ->
+        case gate(hot, FlowState.get(:gpu_last_alert, nil), now, sustain_ms(), cooldown_ms()) do
+          {true, new_last} -> fire(hot, new_last)
+          {false, _} -> :ok
+        end
+    end
+  end
+
+  defp fire(hot, new_last) do
+    FlowState.put(:gpu_last_alert, new_last)
+    count = FlowState.update(:gpu_alert_count, &(&1 + 1), 0)
+    episode = FlowState.get(:gpu_episode_since, nil) || Enum.min(hot)
+    FlowState.put(:gpu_episode_since, episode)
+    send_live_update(count, episode)
+    notify()
+    count
+  end
+
+  defp dismiss_if_needed do
+    if FlowState.get(:gpu_alert_count, 0) > 0 do
+      LiveUpdate.dismiss(person(), @tag)
+      FlowState.put(:gpu_alert_count, 0)
+      FlowState.put(:gpu_episode_since, nil)
+      FlowState.put(:gpu_last_alert, nil)
+      Logger.info("GPU usage alert: all cards cooled — live activity dismissed")
+    end
+  end
+
+  # Update the Live Activity: 1% progress per alert, chronometer counting up from
+  # the episode start (the earliest card's hot-since).
+  defp send_live_update(count, episode_ms) do
+    LiveUpdate.update(person(), @tag, %{
       title: "GPU running hot",
       message: "Graphics cards running hot",
       progress: count,
       progress_max: 100,
       chronometer: true,
-      when: DateTime.from_unix!(div(hot_since_ms, 1000)) |> DateTime.to_iso8601(),
+      when: DateTime.from_unix!(div(episode_ms, 1000)) |> DateTime.to_iso8601(),
       notification_icon: "mdi:memory",
       color: "#e53935"
-    }
+    })
+  end
 
-    case LiveUpdate.update(@person, @tag, payload) do
-      {:ok, n} when n > 0 -> :ok
-      {:error, reason} -> Logger.debug("Live Activity skipped for #{@person}: #{inspect(reason)}")
+  defp notify do
+    case HA.client() do
+      nil ->
+        :ok
+
+      client ->
+        HA.Client.call(client, "call_service", %{
+          domain: "notify",
+          service: signal_service(),
+          service_data: %{message: "Graphics cards running hot"}
+        })
+
+        Logger.info("GPU usage alert: notified — cards running hot, sustained")
     end
   end
 
-  # Every card cooled? (all per-sensor `since` keys nil.)
-  defp all_cooled?() do
-    @sensors |> Enum.all?(fn sensor -> is_nil(FlowState.get(key(sensor))) end)
+  # ---- display ----
+
+  defp display do
+    hot =
+      @sensors
+      |> Enum.with_index()
+      |> Enum.map(fn {sensor, idx} -> {idx, FlowState.get(key(sensor), nil)} end)
+      |> Enum.reject(fn {_idx, since} -> is_nil(since) end)
+
+    case hot do
+      [] ->
+        "cool"
+
+      _ ->
+        earliest = Enum.min_by(hot, fn {_idx, since} -> since end)
+        elapsed = humanize(now_ms() - earliest)
+        cards = hot |> Enum.map(fn {idx, _} -> "gpu#{idx}" end) |> Enum.join(",")
+        "hot #{elapsed} (#{cards})"
+    end
   end
+
+  defp humanize(ms) do
+    s = div(max(ms, 0), 1000)
+    m = div(s, 60)
+    h = div(m, 60)
+
+    if h > 0 do
+      "#{h}h #{rem(m, 60)}m"
+    else
+      "#{m}m #{rem(s, 60)}s"
+    end
+  end
+
+  # ---- config accessors ----
+
+  defp threshold, do: Config.get(:threshold, @threshold)
+  defp sustain_ms, do: Config.get(:sustain, @sustain_min) * 60_000
+  defp cooldown_ms, do: Config.get(:cooldown, @cooldown_min) * 60_000
+  defp person, do: Config.get(:person, @person)
+  defp signal_service, do: Config.get(:signal_service, @signal_service)
 
   # The per-sensor state key, from the sensor's position in the flow's list.
   defp key(entity) do
@@ -206,36 +288,5 @@ defmodule HomeElixir.Flows.Examples.GpuUsageAlert do
     String.to_atom("gpu#{idx}_since")
   end
 
-  defp notify(client, name) do
-    HA.Client.call(client, "call_service", %{
-      domain: "notify",
-      service: @notify_service,
-      service_data: %{message: "Graphics cards running hot"}
-    })
-
-    if client != nil do
-      Logger.info("Alert fired: #{name} GPU utilisation at/above threshold, sustained")
-    end
-  end
-
-  defp cfg(config, key, default), do: Map.get(config, key, default)
-
-  defp cfg_min(config, key, default) do
-    config
-    |> Map.get(key, default)
-    |> then(fn v -> if is_integer(v) and v >= 0, do: v, else: default end)
-  end
-
-  defp parse_value(event) do
-    case event.state do
-      v when is_number(v) -> {:ok, v}
-      s when is_binary(s) ->
-        case Float.parse(s) do
-          {f, ""} -> {:ok, f}
-          _ -> {:error, "not a number: #{inspect(s)}"}
-        end
-
-      _ -> {:error, "not a number: #{inspect(event.state)}"}
-    end
-  end
+  defp now_ms, do: :os.system_time(:millisecond)
 end
