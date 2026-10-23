@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.103
+- **Fix: GPU usage alert crashed on load with `:badarith` (surfacing as `String.Chars not implemented for Tuple`) on installs that had run an older version.** The per-card "hot since" state is disk-backed and outlives the code, so a stale non-integer left by a prior version made the elapsed-time arithmetic blow up. The flow now sanitizes every persisted-since read (a non-integer is treated as "cooled"), so a flow that predates the integer-since format loads cleanly and self-heals on the next reading.
+
 ## 0.1.102
 - **GPU usage alert example rewritten on the handle pattern** so it actually runs — the old version defined a flow-level `run/2`/`subscribe/1` protocol the engine never dispatched, so it could never fire. It now watches **all three** RTX 3090 cards at once via the auto-wired `state_changed` source, and a 1-minute tick re-evaluates so a card *pinned* at a constant high value (which emits no change events) still alerts once it has been hot long enough. The Live Activity chronometer now shows how long **any** card has been running hot (keyed to the earliest hot card), the progress bar fills 1% per alert, and the Signal message still fires on each alert. Threshold/sustain/cooldown/person/service are now editable in the flow config.
 

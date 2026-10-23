@@ -4,6 +4,7 @@ defmodule HomeElixir.GpuUsageAlertTest do
   use ExUnit.Case, async: true
 
   alias HomeElixir.Flows.Examples.GpuUsageAlert, as: Gpu
+  alias HomeElixir.FlowState
 
   @min 60_000
   @sustain 10 * @min
@@ -76,5 +77,23 @@ defmodule HomeElixir.GpuUsageAlertTest do
     assert Gpu.gate([0, 8 * @min], nil, 9 * @min, @sustain, @cooldown) == {false, nil}
     # at t=10min card0 is sustained -> alert (the chronometer keys to t=0).
     assert Gpu.gate([0, 8 * @min], nil, 10 * @min, @sustain, @cooldown) == {true, 10 * @min}
+  end
+
+  # ---- read_int: stale persisted-state tolerance (the :badarith guard) ----
+
+  test "read_int returns a stored epoch-ms integer" do
+    FlowState.as(Gpu, fn ->
+      FlowState.put(:gpu0_since, 1_792_783_128_528)
+      assert Gpu.read_int(:gpu0_since) == 1_792_783_128_528
+      FlowState.delete(:gpu0_since)
+    end)
+  end
+
+  test "read_int returns nil for a stale non-integer (e.g. an old tuple value)" do
+    FlowState.as(Gpu, fn ->
+      FlowState.put(:gpu0_since, {1, 1_792_783_128_528})
+      assert Gpu.read_int(:gpu0_since) == nil
+      FlowState.delete(:gpu0_since)
+    end)
   end
 end
