@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.105
+- **Flow-state is now self-cleaning across broken/renamed/out-of-band changes.** A flow's runtime state is keyed by its module, so a module that no longer exists (renamed `defmodule`, a flow whose file was deleted out-of-band, or a stale backup restore) used to leave its old records behind forever. The app now sweeps such "orphaned" records at lifecycle points — before load/reload/save, after unload/delete/rename, and at startup — keyed off the `defmodule` declared by each current flow file (parsed by regex, so it works even on a broken file). A flow's *own* state is never swept (its file declares it), so normal persistence across reloads/restarts is unchanged.
+- **Fixed a crash when a flow fails to load:** the editor's "could not load" path called `to_string/1` on a nested error tuple, which itself raised `String.Chars not implemented for Tuple` and hid the real reason. It now uses `inspect/1`, so the actual load error (e.g. a `:badarith`) is shown.
+
 ## 0.1.104
 - **Fix: deleting a flow no longer left its persisted state behind.** `FlowState` runtime (the per-flow `FlowState.put` values) is keyed by the flow's *module*, and delete only cleared the app-metadata record — so re-copying or re-creating a flow of the same module inherited its old state (the reason the GPU usage alert crash survived a delete + re-copy). Delete and rename now also clear the flow's runtime record, so a re-created flow starts fresh.
 

@@ -528,7 +528,7 @@ defmodule HomeElixir.Web do
                   :ok -> text(conn, 200, "saved " <> new_name <> ".ex (loaded)")
                   {:error, reason} ->
                     text(conn, 400, "saved " <> new_name <> ".ex, but could not load:\n" <>
-                                       to_string(reason))
+                                       inspect(reason))
                 end
             end
           rescue

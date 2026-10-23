@@ -547,6 +547,8 @@ From outside a node (tests, scripts), target a flow explicitly with `as/2`:
 
 # `stop`
 
+# `sweep_orphans`
+
 # `unarchive`
 
 # `update`
@@ -592,6 +594,10 @@ Inject a message into a node of a loaded flow (used by web controls).
 # `clone`
 
 Clone a flow into a sibling file/module with a `Clone` suffix. Returns `{:ok, new_name}`.
+
+# `declared_modules`
+
+The set of module atoms declared by the current flow files.
 
 # `delete`
 

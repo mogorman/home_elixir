@@ -2,6 +2,7 @@ defmodule HomeElixir.FlowStateTest do
   use ExUnit.Case, async: false
 
   alias HomeElixir.FlowState
+  alias HomeElixir.FlowStore
 
   setup_all do
     FlowState.start()
@@ -139,5 +140,56 @@ defmodule HomeElixir.FlowStateTest do
     after
       FlowState.forget_triggered(key)
     end
+  end
+
+  test "sweep_orphans drops only the undeclared module, preserves the rest + metadata" do
+    keep = :"Elixir.HomeElixir.Flows.ZZSweepKeep"
+    orphan = :"Elixir.HomeElixir.Flows.ZZSweepOrphan"
+
+    try do
+      FlowState.as(keep, fn -> FlowState.put(:v, :kept) end)
+      FlowState.as(orphan, fn -> FlowState.put(:v, :dropped) end)
+      FlowState.set_flow_owner("zz-sweep-name", "someone")
+
+      # Sweep every currently-present module EXCEPT the orphan, so only the
+      # orphan is dropped and unrelated flow state is left alone.
+      declared =
+        FlowState.dump_runtime()
+        |> Map.keys()
+        |> Enum.map(&String.to_atom/1)
+        |> MapSet.new()
+        |> MapSet.delete(orphan)
+
+      FlowState.sweep_orphans(declared)
+
+      FlowState.as(keep, fn -> assert FlowState.get(:v) == :kept end)
+      FlowState.as(orphan, fn -> assert FlowState.get(:v, :gone) == :gone end)
+      # the app-metadata record is never touched by the sweep
+      assert FlowState.flow_owner("zz-sweep-name") == "someone"
+    after
+      FlowState.forget_flow("zz-sweep-name")
+      FlowState.forget_flow_runtime(keep)
+      FlowState.forget_flow_runtime(orphan)
+    end
+  end
+
+  test "declared_modules finds defmodule across flow files (incl. a broken body)" do
+    tmp = Path.join(System.tmp_dir!(), "he_declared_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(tmp)
+    orig = Application.get_env(:home_elixir, :flows_dir)
+    Application.put_env(:home_elixir, :flows_dir, tmp)
+
+    on_exit(fn ->
+      File.rm_rf!(tmp)
+      if orig, do: Application.put_env(:home_elixir, :flows_dir, orig)
+    end)
+
+    File.write!(Path.join(tmp, "good.ex"), "defmodule HomeElixir.Flows.Good do end")
+    File.write!(Path.join(tmp, "broken.ex"), "defmodule HomeElixir.Flows.Broken do\n  not valid @@@\nend")
+
+    mods = FlowStore.declared_modules()
+    assert :"Elixir.HomeElixir.Flows.Good" in mods
+    assert :"Elixir.HomeElixir.Flows.Broken" in mods
+    refute :"Elixir.HomeElixir.Flows.Absent" in mods
   end
 end

@@ -379,6 +379,22 @@ defmodule HomeElixir.FlowState do
     end)
   end
 
+  # Drop every flow-runtime record whose module is no longer declared by any
+  # current flow file — an "orphan", left behind by a rename, delete, out-of-band
+  # file removal, or a restore of stale state. `declared` is the set of module
+  # atoms the flows dir currently declares. The app-metadata record is never
+  # touched. Idempotent; safe to call repeatedly.
+  def sweep_orphans(declared) do
+    tx(fn ->
+      :mnesia.match_object({@table, :_, :_})
+      |> Enum.filter(
+        fn {@table, mod, _} -> mod != @meta_flow and not MapSet.member?(declared, mod) end
+      )
+      |> Enum.each(fn {@table, mod, _} -> :mnesia.delete({@table, mod}) end)
+      :ok
+    end)
+  end
+
   # ---- last triggered (app metadata: module => unix ms) ----
 
   # The last time a flow was triggered (processed an inbound message or event),

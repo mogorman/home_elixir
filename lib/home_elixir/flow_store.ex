@@ -99,6 +99,7 @@ defmodule HomeElixir.FlowStore do
   set. Flows that fail to load are logged and skipped.
   """
   def restore do
+    sweep_orphans()
     names =
       case HomeElixir.FlowState.loaded_names() do
         nil -> first_run_names()
@@ -253,6 +254,7 @@ defmodule HomeElixir.FlowStore do
         HomeElixir.FlowState.forget_flow(name)
         if mod, do: HomeElixir.FlowState.forget_triggered(mod)
         if mod, do: HomeElixir.FlowState.forget_flow_runtime(mod)
+        sweep_orphans()
         flow_changed()
         {:reply, :ok, cache}
 
@@ -298,6 +300,7 @@ defmodule HomeElixir.FlowStore do
         if mod, do: HomeElixir.FlowState.forget_flow_runtime(mod)
         File.rm(old_path)
         cache = Map.delete(cache, old_name)
+        sweep_orphans()
         flow_changed()
         {:reply, :ok, cache}
 
@@ -394,6 +397,7 @@ defmodule HomeElixir.FlowStore do
 
   # Load/unload bodies shared by the `load`/`unload`/`reload`/`reload_all` calls.
   defp do_load(name, cache) do
+    sweep_orphans()
     if HomeElixir.FlowState.is_archived?(name) do
       {{:error, :archived}, cache}
     else
@@ -439,6 +443,7 @@ defmodule HomeElixir.FlowStore do
   end
 
   defp do_unload(name, cache) do
+    sweep_orphans()
     case resolve(name) do
       {:ok, path} ->
         {mod, cache} = atom_for(path, cache)
@@ -748,6 +753,42 @@ defmodule HomeElixir.FlowStore do
   defp resolve(name) when is_binary(name) do
     path = Path.join(dir(), "#{name}.ex")
     if File.exists?(path), do: {:ok, path}, else: {:error, :not_found}
+  end
+
+  # Every module atom a current flow file declares (regex on the `defmodule`
+  # line — no compile, so it still works on a broken file). Prefix-agnostic.
+  @doc "The set of module atoms declared by the current flow files."
+  def declared_modules do
+    dir()
+    |> Path.join("**/*.ex")
+    |> Path.wildcard()
+    |> Enum.flat_map(fn path ->
+      case File.read(path) do
+        {:ok, src} ->
+          case Regex.run(~r/defmodule\s+([A-Za-z0-9_.]+)/, src) do
+            [_, mod] -> [qualify_module(mod)]
+            _ -> []
+          end
+
+        _ ->
+          []
+      end
+    end)
+    |> MapSet.new()
+  end
+
+  # Runtime records are keyed by the *compiled* module atom, and the compiler
+  # auto-prepends `Elixir.` to a `defmodule` name that isn't already qualified.
+  # Match that so a flow's own module is recognized as declared (else the sweep
+  # would drop its record).
+  defp qualify_module(mod) do
+    mod = if String.starts_with?(mod, "Elixir."), do: mod, else: "Elixir." <> mod
+    String.to_atom(mod)
+  end
+
+  # Drop orphaned flow-state records (modules no current flow file declares).
+  defp sweep_orphans do
+    HomeElixir.FlowState.sweep_orphans(declared_modules())
   end
 
   defp dir, do: Application.get_env(:home_elixir, :flows_dir, "flows")
