@@ -487,11 +487,17 @@ defmodule HomeElixir.Web do
     source = body(conn)
     header = List.first(get_req_header(conn, "x-flow-name"))
 
-    case name_from_source(source) do
-      nil ->
+    mod = module_name_from_source(source)
+
+    cond do
+      is_nil(mod) ->
         text(conn, 400, "could not find a `defmodule` in the source")
 
-      new_name ->
+      not valid_module_name?(mod) ->
+        text(conn, 400, invalid_module_message(mod))
+
+      true ->
+        new_name = name_from_module(mod)
         # The editor sends the path it was opened on. If the source's module now
         # implies a different name, this is a rename: the file moves to the new
         # name (and the old one is dropped).
@@ -581,21 +587,37 @@ defmodule HomeElixir.Web do
   # Derive the flow file name from the module name in the source (single source
   # of truth, so the name and module can't drift apart). A
   # `HomeElixir.Flows.LivingRoom.Counter` module maps to "LivingRoom/counter".
-  def name_from_source(source) do
+  def name_from_source(source), do: module_name_from_source(source) |> name_from_module()
+
+  # The raw `defmodule` name from the source, or nil if there isn't one.
+  def module_name_from_source(source) do
     case Regex.run(~r/defmodule\s+([A-Za-z0-9_.]+)/, source) do
-      [_, mod] ->
-        case String.split(mod, ".") do
-          ["HomeElixir", "Flows" | rest] ->
-            {dirs, [leaf]} = Enum.split(rest, length(rest) - 1)
-            Enum.join(dirs ++ [Macro.underscore(leaf)], "/")
-
-          parts ->
-            parts |> List.last() |> Macro.underscore()
-        end
-
-      _ ->
-        nil
+      [_, mod] -> mod
+      _ -> nil
     end
+  end
+
+  # Every dot-separated segment of an Elixir module name must start with an
+  # uppercase letter; a lowercase one is unsavable (the compiler rejects it).
+  def valid_module_name?(mod),
+    do: mod |> String.split(".") |> Enum.all?(&(&1 =~ ~r/^[A-Z]/))
+
+  defp name_from_module(nil), do: nil
+
+  defp name_from_module(mod) do
+    case String.split(mod, ".") do
+      ["HomeElixir", "Flows" | rest] ->
+        {dirs, [leaf]} = Enum.split(rest, length(rest) - 1)
+        Enum.join(dirs ++ [Macro.underscore(leaf)], "/")
+
+      parts ->
+        parts |> List.last() |> Macro.underscore()
+    end
+  end
+
+  defp invalid_module_message(mod) do
+    suggested = mod |> String.split(".") |> Enum.map_join(".", &Macro.camelize/1)
+    "invalid module name `#{mod}` — Elixir module names must start with an uppercase letter (try `#{suggested}`)"
   end
 
   defp check_endpoint(conn) do
@@ -683,11 +705,17 @@ defmodule HomeElixir.Web do
   # anyone, existing = owner/admin). Returns a summary of created/updated/skipped.
   defp do_import(pairs, user) do
     Enum.reduce(pairs, %{created: 0, updated: 0, skipped: []}, fn {label, src}, acc ->
-      case name_from_source(src) do
-        nil ->
+      mod = module_name_from_source(src)
+
+      cond do
+        is_nil(mod) ->
           Map.update(acc, :skipped, [], & &1 ++ [%{name: label, reason: "no defmodule"}])
 
-        name ->
+        not valid_module_name?(mod) ->
+          Map.update(acc, :skipped, [], & &1 ++ [%{name: label, reason: invalid_module_message(mod)}])
+
+        true ->
+          name = name_from_module(mod)
           exists = File.exists?(flow_path(name))
 
           case import_perm(user, name) do

@@ -243,6 +243,7 @@ defmodule HomeElixir.WebAuthTest do
       Jason.encode!(%{
         "alpha" => "defmodule HomeElixir.Flows.Alpha do\nend\n",
         "wa_new2" => "defmodule HomeElixir.Flows.WANew2 do\nend\n",
+        "bad_mod" => "defmodule HomeElixir.Flows.badMod do\nend\n",
         "junk" => "just some text, no module"
       })
 
@@ -252,9 +253,22 @@ defmodule HomeElixir.WebAuthTest do
     body = Jason.decode!(r.body)
     assert body["created"] == 1
     assert body["updated"] == 0
-    assert length(body["skipped"]) == 2
+    assert length(body["skipped"]) == 3
     assert "alpha" in Enum.map(body["skipped"], & &1["name"])
+    assert "bad_mod" in Enum.map(body["skipped"], & &1["name"])
     assert File.exists?(Path.join(tmp, "wa_new2.ex"))
+    refute File.exists?(Path.join(tmp, "bad_mod.ex"))
+  end
+
+  test "save rejects an invalid module name without writing the file" do
+    tmp = Application.get_env(:home_elixir, :flows_dir)
+    src = "defmodule HomeElixir.Flows.checkScreenshot do end"
+
+    r = post("/api/flows/save", src, session_cookie("alice", "user"), [{"x-flow-name", "check_screenshot"}])
+    assert r.status == 400
+    assert r.body =~ "invalid module name"
+    assert r.body =~ "`HomeElixir.Flows.CheckScreenshot`"
+    refute File.exists?(Path.join(tmp, "check_screenshot.ex"))
   end
 
   test "import rejects a non-JSON body and a missing format header" do

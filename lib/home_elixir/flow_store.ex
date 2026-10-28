@@ -190,7 +190,7 @@ defmodule HomeElixir.FlowStore do
         Code.compile_file(tmp)
         {:ok, "OK — compiles cleanly"}
       rescue
-        e -> {:error, Exception.message(e)}
+        e -> {:error, compile_error(e, source)}
       after
         File.rm(tmp)
       end
@@ -405,6 +405,7 @@ defmodule HomeElixir.FlowStore do
         {:ok, path} ->
           # Recompile from source so an edited flow is picked up on (re)load.
           # Install declared deps first so the compile can reference them.
+          src = nil
           reply =
             try do
               src = File.read!(path)
@@ -425,7 +426,7 @@ defmodule HomeElixir.FlowStore do
                   {:error, reason}
               end
             rescue
-              e -> {:error, Exception.message(e)}
+              e -> {:error, compile_error(e, src)}
             end
 
           if reply == :ok do
@@ -730,11 +731,38 @@ defmodule HomeElixir.FlowStore do
   end
 
   defp compile_atom_safe(path) do
+    src = File.read(path)
+
     try do
       {:ok, compile_atom(path)}
     rescue
-      e -> {:error, Exception.message(e)}
+      e -> {:error, compile_error(e, src)}
     end
+  end
+
+  # A `defmodule` with a lowercase segment raises ArgumentError whose default
+  # message embeds the raw AST. Prettify that one case, using the name found in
+  # the source; pass every other error through untouched.
+  defp compile_error(e, source) do
+    msg = Exception.message(e)
+
+    if String.starts_with?(msg, "invalid module name") do
+      base = "Elixir module names must start with an uppercase letter"
+      name = if is_binary(source), do: Regex.run(~r/defmodule\s+([A-Za-z0-9_.]+)/, source), else: nil
+
+      case name do
+        [_, n] -> "invalid module name `#{n}` — #{base} (try `#{suggested_name(n)}`)."
+        _ -> "invalid module name — #{base}."
+      end
+    else
+      msg
+    end
+  end
+
+  # "HomeElixir.Flows.check_screenshot" -> "HomeElixir.Flows.CheckScreenshot"
+  defp suggested_name(name) do
+    {prefix, [leaf]} = name |> String.split(".") |> Enum.split(-1)
+    Enum.join(prefix ++ [Macro.camelize(leaf)], ".")
   end
 
   # A flow file's name relative to the flows dir, without the extension —

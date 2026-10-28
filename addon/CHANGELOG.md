@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.107
+- **Invalid `defmodule` names can no longer be saved or imported — and the compiler's raw "invalid module name" error is now human-readable.** Saving a flow whose module has a lowercase segment (e.g. `HomeElixir.Flows.checkScreenshot`) used to write the file and then fail to load with an unreadable raw-AST dump. Saves and bundle imports are now rejected up front with a clear message and a suggested fix (`try HomeElixir.Flows.CheckScreenshot`), and no file is created. Any compile path that still hits the error (e.g. a stale backup restore) shows the friendly message instead of the AST.
+
 ## 0.1.106
 - **Fix: GPU usage alert example crashed on load with `:badarith` while a card was already hot.** `display/0` computed the elapsed time by subtracting from the wrong value — `Enum.min_by/2` returns the whole `{index, since}` element, not the `since`, so the arithmetic ran `now - {index, since}` and raised. It now extracts the `since` first. This is the real root cause behind the "stale tuple" reports; the persisted per-card value was always a plain integer, and the guard added in 0.1.103 is removed (the store only ever holds an integer or `nil` for these keys). **Re-copy the example from Examples** to pick up the fix.
 - **Fix: a flow left in a broken (non-compiling) state could not be saved back to a working state.** The compiled-module cache recorded a compile error against the file's checksum but matched that error against *any* later checksum, so once a flow's compile failed the module was pinned to "none" and every reload kept returning `:compile_error`. The error is now pinned to the file checksum it came from, so editing the file (even just to fix it) triggers a fresh compile and the flow recovers.

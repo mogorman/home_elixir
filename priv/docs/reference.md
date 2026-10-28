@@ -1556,7 +1556,11 @@ Routes:
 
 # `login_path`
 
+# `module_name_from_source`
+
 # `name_from_source`
+
+# `valid_module_name?`
 
 ---
 

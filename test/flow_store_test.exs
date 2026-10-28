@@ -181,6 +181,13 @@ defmodule HomeElixir.FlowStoreTest do
 
     assert {:error, msg} = FlowStore.check("defmodule Broken do use Nope")
     assert msg =~ ~r/undefined|error|missing/i
+
+    assert {:error, msg} =
+             FlowStore.check("defmodule HomeElixir.Flows.checkScreenshot do end")
+
+    assert msg =~ "invalid module name `HomeElixir.Flows.checkScreenshot`"
+    assert msg =~ "uppercase"
+    assert msg =~ "`HomeElixir.Flows.CheckScreenshot`"
   end
 
   test "reload restarts a loaded flow with fresh node state" do
@@ -222,6 +229,17 @@ defmodule HomeElixir.FlowStoreTest do
 
     assert HomeElixir.Web.name_from_source("defmodule HomeElixir.Flows.A.B.DeepFlow do") ==
              "A/B/deep_flow"
+  end
+
+  test "module name validation rejects lowercase segments" do
+    assert HomeElixir.Web.valid_module_name?("HomeElixir.Flows.CheckScreenshot")
+    refute HomeElixir.Web.valid_module_name?("HomeElixir.Flows.checkScreenshot")
+    refute HomeElixir.Web.valid_module_name?("check_screenshot")
+
+    assert HomeElixir.Web.module_name_from_source("defmodule HomeElixir.Flows.checkScreenshot do") ==
+             "HomeElixir.Flows.checkScreenshot"
+
+    assert HomeElixir.Web.module_name_from_source("no module here") == nil
   end
 
   test "list picks up a renamed module after the file changes (no restart)" do
