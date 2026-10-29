@@ -44,20 +44,52 @@ defmodule HomeElixir.Flow do
   survives reloads and restarts). The flow's own module is the implicit key, so
   flows can't collide:
 
-      def handle(%{topic: "sensor.front_door", payload: "open"}),
-        do: HomeElixir.FlowState.update(:count, &(&1 + 1), 0)
-  """
+       def handle(%{topic: "sensor.front_door", payload: "open"}),
+         do: HomeElixir.FlowState.update(:count, &(&1 + 1), 0)
+
+   A flow may serve its own web page with `web_page(path)`. It routes `GET path`
+   to the flow's `page_html/0` EEx template (bindings are bare variables, e.g.
+   `<%= user %>`). The page requires a login by default; `web_page(path,
+   public: true)` allows anonymous access. An optional `page_data/0` supplies
+   extra bindings, run scoped to the flow so it can read its own `FlowState`:
+
+      defmodule Flows.MyPage do
+        use HomeElixir.Flow
+
+        web_page("/my-page")
+        def page_data, do: %{count: HomeElixir.FlowState.get(:count, 0)}
+        def page_html, do: "<html><head></head><body>Count: <%= count %></body></html>"
+      end
+
+   Reserved bindings `user`, `name`, and `base` are always provided. Built-in
+   routes (`/`, `/edit`, `/docs`, `/api/*`) always take precedence, so a page
+   path can never shadow them.
+   """
 
   defmacro __using__(_opts) do
     quote do
       import HomeElixir.Flow.Macro
       Module.register_attribute(__MODULE__, :fe_nodes, accumulate: true)
       Module.register_attribute(__MODULE__, :fe_wires, accumulate: true)
+      Module.register_attribute(__MODULE__, :fe_web_page, accumulate: false)
       @before_compile HomeElixir.Flow
     end
   end
 
   defmacro __before_compile__(context) do
+    # Emitted for every flow: the URL this flow serves (via `web_page/1,2`),
+    # or nil. Referencing `@fe_web_page` here binds the value the module body set.
+    web_page_def =
+      quote do
+        @doc false
+        def __web_page__ do
+          case @fe_web_page do
+            nil -> nil
+            {p, o} -> %{path: p, public: Keyword.get(o, :public, false)}
+          end
+        end
+      end
+
     if Module.defines?(context.module, {:handle, 1}, :def) do
       # A flow that defines handle/1 is a "handler flow": an HA state-change
       # source is wired to &handle/1 and its return is discarded. The injected
@@ -100,11 +132,15 @@ defmodule HomeElixir.Flow do
             wires: @fe_wires ++ auto_in ++ auto_out ++ [{"__he_in__", "__he_handle__"}]
           }
         end
+
+        unquote(web_page_def)
       end
     else
       quote do
         @doc false
         def __flow__, do: %{nodes: @fe_nodes, wires: @fe_wires}
+
+        unquote(web_page_def)
       end
     end
   end

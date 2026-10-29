@@ -63,6 +63,12 @@ defmodule HomeElixir.FlowStore do
   @doc "UI elements declared by loaded flows (name-keyed, for the web UI)."
   def ui, do: call(:ui)
 
+  @doc """
+  The flow that serves a web page at `request_path`: `{:ok, module, public?}`
+  or `:not_found`. Matches any flow whose file compiles (running not required).
+  """
+  def web_page(request_path), do: call({:web_page, request_path})
+
   @doc "Inject a message into a node of a loaded flow (used by web controls)."
   def click(name, node, payload \\ nil), do: call({:click, name, node, payload})
 
@@ -147,6 +153,28 @@ defmodule HomeElixir.FlowStore do
       end
 
     {:reply, elements, cache}
+  end
+
+  def handle_call({:web_page, request_path}, _from, cache) do
+    {flows, cache} = list_flows(cache)
+
+    match =
+      Enum.find_value(flows, fn f ->
+        wp =
+          if f.module && function_exported?(f.module, :__web_page__, 0) do
+            f.module.__web_page__()
+          end
+
+        if wp && wp.path == request_path, do: {f.module, wp.public}
+      end)
+
+    reply =
+      case match do
+        {mod, pub} -> {:ok, mod, pub}
+        _ -> :not_found
+      end
+
+    {:reply, reply, cache}
   end
 
   def handle_call({:click, name, node, payload}, _from, cache) do

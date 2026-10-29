@@ -82,6 +82,13 @@ end
 The build is cached in `~/.cache/home_elixir/deps`, so only the first load of a
 dep set hits the network.
 
+### Flow web pages
+
+A flow can serve its own web page: declare `web_page("/path")` and define
+`page_html/0` (an EEx template) plus an optional `page_data/0` for bindings.
+The page requires a login by default; `web_page("/path", public: true)` allows
+anonymous access. See the reference for `HomeElixir.Flow`.
+
 ### Handler flows
 
 For a flow that just reacts to Home Assistant state changes, define `handle/1`

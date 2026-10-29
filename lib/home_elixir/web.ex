@@ -298,7 +298,14 @@ defmodule HomeElixir.Web do
   def dispatch(%{method: "GET", request_path: "/static/" <> rest} = conn, _opts),
     do: static_file(conn, rest)
 
-  def dispatch(%{method: "GET"} = conn, _opts), do: not_found(conn)
+  # Unmatched GET: render the flow that serves a web page at this path (see
+  # `web_page/1,2`), else 404. Reached last, so built-in routes always win.
+  def dispatch(%{method: "GET"} = conn, _opts) do
+    case HomeElixir.FlowStore.web_page(conn.request_path) do
+      {:ok, mod, _public} -> flow_page(conn, mod)
+      _ -> not_found(conn)
+    end
+  end
 
   # ---- POST ----
 
@@ -1280,6 +1287,47 @@ defmodule HomeElixir.Web do
       theme_script: Template.render("theme_script.html.eex"),
       nav: navbar_html(:iex, user)
     )
+  end
+
+  # Render a flow's own web page: `page_html/0` is an EEx template whose bindings
+  # are bare variables (`<%= user %>`); `page_data/0` (optional) supplies extra
+  # bindings, run scoped to the flow so it can read the flow's own FlowState.
+  # Reserved bindings (user/name/base) always win.
+  defp flow_page(conn, mod) do
+    template =
+      if function_exported?(mod, :page_html, 0) do
+        mod.page_html()
+      else
+        nil
+      end
+
+    case template do
+      nil ->
+        Logger.warning("flow #{inspect(mod)} declares web_page but has no page_html/0")
+        not_found(conn)
+
+      bin when is_binary(bin) ->
+        data =
+          if function_exported?(mod, :page_data, 0) do
+            HomeElixir.FlowState.as(mod, fn -> Map.new(mod.page_data()) end)
+          else
+            %{}
+          end
+
+        bindings =
+          Map.merge(data, %{
+            user: cur(conn),
+            name: mod |> Module.split() |> List.last(),
+            base: conn.assigns[:base] || ""
+          })
+          |> Map.to_list()
+
+        html(conn, EEx.eval_string(bin, bindings))
+
+      other ->
+        Logger.warning("flow #{inspect(mod)} page_html/0 returned #{inspect(other)}")
+        not_found(conn)
+    end
   end
 
   defp not_found(conn) do

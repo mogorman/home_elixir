@@ -22,7 +22,7 @@ defmodule HomeElixir.AuthGuard do
     base = HomeElixir.Web.base_path(conn.request_path)
     rel = if base == "", do: conn.request_path, else: String.replace_prefix(conn.request_path, base, "")
 
-    if public?(rel) do
+    if public?(rel) or flow_page_public?(rel) do
       HomeElixir.Web.call(conn, inner)
     else
       user =
@@ -52,6 +52,17 @@ defmodule HomeElixir.AuthGuard do
 
   defp public?(p) do
     p in @public_paths or String.starts_with?(p, "/static/")
+  end
+
+  # A flow page declared `public: true` (see web_page/1,2) bypasses auth. Only
+  # checked for non-API paths — a flow page is an HTML page, never /api/* — so
+  # hot API traffic skips the lookup entirely.
+  defp flow_page_public?(p) do
+    if String.starts_with?(p, "/api/") do
+      false
+    else
+      match?({:ok, _mod, true}, HomeElixir.FlowStore.web_page(p))
+    end
   end
 
   defp reject(conn, base, rel) do

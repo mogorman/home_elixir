@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.108
+- **A flow can now serve its own web page.** Declare `web_page("/path")` in the flow and define `page_html/0` (an EEx template, kept inline in the flow file) plus an optional `page_data/0` for dynamic bindings. `GET /path` renders the template; the page **requires a login by default**, and `web_page("/path", public: true)` opts out for anonymous access. `page_data/0` runs scoped to the flow so it can read the flow's own `FlowState`. Reserved bindings `user`, `name`, and `base` are always provided; built-in routes always win, so a page path can't shadow `/`, `/edit`, `/docs`, or `/api/*`.
+
 ## 0.1.107
 - **Invalid `defmodule` names can no longer be saved or imported — and the compiler's raw "invalid module name" error is now human-readable.** Saving a flow whose module has a lowercase segment (e.g. `HomeElixir.Flows.checkScreenshot`) used to write the file and then fail to load with an unreadable raw-AST dump. Saves and bundle imports are now rejected up front with a clear message and a suggested fix (`try HomeElixir.Flows.CheckScreenshot`), and no file is created. Any compile path that still hits the error (e.g. a stale backup restore) shows the friendly message instead of the AST.
 

@@ -364,17 +364,17 @@ The source of one example flow, or `{:error, :not_found}`.
 
 Declare a flow as an Elixir module.
 
-   defmodule Flows.Kitchen do
-     use HomeElixir.Flow
+  defmodule Flows.Kitchen do
+    use HomeElixir.Flow
 
-     def exclaim(m), do: %{m | payload: m.payload <> "!"}
+    def exclaim(m), do: %{m | payload: m.payload <> "!"}
 
-     node("in",  HomeElixir.Nodes.Inject, payload: "hi")
-     node("f",   HomeElixir.Nodes.Function, fun: &__MODULE__.exclaim/1)
-     node("out", HomeElixir.Nodes.Sink)
-     wire("in", "f")
-     wire("f", "out")
-   end
+    node("in",  HomeElixir.Nodes.Inject, payload: "hi")
+    node("f",   HomeElixir.Nodes.Function, fun: &__MODULE__.exclaim/1)
+    node("out", HomeElixir.Nodes.Sink)
+    wire("in", "f")
+    wire("f", "out")
+  end
 
 `__flow__` returns the declared nodes and wires; `HomeElixir.Registry` turns
 that into a supervised process tree. Node config must be data (or a remote
@@ -384,7 +384,7 @@ A flow may also define `setup/0`. It runs once when the flow is loaded,
 before any node starts — use it to install external deps at load time
 (Livebook-style), without editing `mix.exs`:
 
-   def setup, do: HomeElixir.Dep.install([{:timex, "~> 3.7"}])
+  def setup, do: HomeElixir.Dep.install([{:timex, "~> 3.7"}])
 
 A flow may instead define `handle/1` (a "handler flow"). It is wired to a
 Home Assistant `state_changed` source automatically. Its return value is
@@ -393,12 +393,12 @@ clauses return a value (the FlowState op's result does) to wake display
 nodes, and unmatched input falls through the catch-all, which returns nil
 and is dropped:
 
-   defmodule Flows.DoorWatch do
-     use HomeElixir.Flow
-     def handle(%{topic: "sensor.front_door", payload: "open"}) do
-       ... # do work
-     end
-   end
+  defmodule Flows.DoorWatch do
+    use HomeElixir.Flow
+    def handle(%{topic: "sensor.front_door", payload: "open"}) do
+      ... # do work
+    end
+  end
 
 The catch-all clause is added for you; write only the clauses you need.
 
@@ -408,6 +408,24 @@ flows can't collide:
 
     def handle(%{topic: "sensor.front_door", payload: "open"}),
       do: HomeElixir.FlowState.update(:count, &(&1 + 1), 0)
+
+A flow may serve its own web page with `web_page(path)`. It routes `GET path`
+to the flow's `page_html/0` EEx template (bindings are bare variables, e.g.
+`<%= user %>`). The page requires a login by default; `web_page(path,
+public: true)` allows anonymous access. An optional `page_data/0` supplies
+extra bindings, run scoped to the flow so it can read its own `FlowState`:
+
+   defmodule Flows.MyPage do
+     use HomeElixir.Flow
+
+     web_page("/my-page")
+     def page_data, do: %{count: HomeElixir.FlowState.get(:count, 0)}
+     def page_html, do: "<html><head></head><body>Count: <%= count %></body></html>"
+   end
+
+Reserved bindings `user`, `name`, and `base` are always provided. Built-in
+routes (`/`, `/edit`, `/docs`, `/api/*`) always take precedence, so a page
+path can never shadow them.
 
 ---
 
@@ -657,6 +675,11 @@ Restore an archived flow back to the flow list (does not load it).
 # `unload`
 
 Stop a loaded flow.
+
+# `web_page`
+
+The flow that serves a web page at `request_path`: `{:ok, module, public?}`
+or `:not_found`. Matches any flow whose file compiles (running not required).
 
 ---
 
