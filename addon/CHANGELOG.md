@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.109
+- **New example: `web_page`.** Demonstrates the flow web-page feature from 0.1.108 — a flow that serves `GET /web_page` from an inline EEx template (`page_html/0`), with `page_data/0` reading the flow's own `FlowState`. A FlowState-backed count is bumped via Controls-page buttons (+1 / Reset) and shown both as a badge there and on the flow's own page. Copy it from Examples to try it.
+
 ## 0.1.108
 - **A flow can now serve its own web page.** Declare `web_page("/path")` in the flow and define `page_html/0` (an EEx template, kept inline in the flow file) plus an optional `page_data/0` for dynamic bindings. `GET /path` renders the template; the page **requires a login by default**, and `web_page("/path", public: true)` opts out for anonymous access. `page_data/0` runs scoped to the flow so it can read the flow's own `FlowState`. Reserved bindings `user`, `name`, and `base` are always provided; built-in routes always win, so a page path can't shadow `/`, `/edit`, `/docs`, or `/api/*`.
 
